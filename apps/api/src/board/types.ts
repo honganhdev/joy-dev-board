@@ -58,3 +58,19 @@ export type Board = {
 
 /** Full ticket detail: the raw HelpDesk record plus the computed category. */
 export type TicketDetail = HelpDeskTicket & { category: Category };
+
+/** What the last pull attempt did, so the UI can say how old the board is. */
+export type PullSummary = {
+  startedAt: string;
+  finishedAt: string | null;
+  ticketCount: number | null;
+  status: 'ok' | 'error';
+  error: string | null;
+};
+
+/**
+ * The board as served: assembled from SQLite, with the last pull attached.
+ * `pulledAt` is the last *successful* pull; `lastPull` may be a later failed
+ * attempt, which is how a stale board is told apart from a fresh one.
+ */
+export type BoardResponse = Board & { lastPull: PullSummary | null };

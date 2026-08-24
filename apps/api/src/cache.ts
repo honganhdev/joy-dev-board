@@ -1,6 +1,12 @@
 /**
- * In-memory TTL cache over a HelpDesk fetch, so the board does not hit HelpDesk
- * on every page load. Concurrent callers share one in-flight request.
+ * In-memory TTL cache over a HelpDesk fetch. Concurrent callers share one
+ * in-flight request.
+ *
+ * Tickets are no longer cached here — SQLite is the cache for those, and a
+ * second layer over it would only make staleness harder to reason about. What
+ * is left is the tag directory: a HelpDesk-side lookup table that the mirror
+ * deliberately does not store, so it still needs somewhere to live between
+ * detail views.
  */
 export class TtlCache<T> {
   private entry: { value: T; loadedAt: string } | null = null;
