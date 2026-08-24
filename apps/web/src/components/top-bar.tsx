@@ -1,4 +1,4 @@
-import { AlertTriangle, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, LogOut, RefreshCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -10,9 +10,21 @@ type TopBarProps = {
   subtitle: string;
   /** Set when the board is being served from storage after a failed pull. */
   warning?: { label: string; detail: string } | null;
+  /** Who the current session belongs to. */
+  username: string | null;
+  onSignOut: () => void;
 };
 
-export function TopBar({ query, onQueryChange, onPull, pulling, subtitle, warning }: TopBarProps) {
+export function TopBar({
+  query,
+  onQueryChange,
+  onPull,
+  pulling,
+  subtitle,
+  warning,
+  username,
+  onSignOut,
+}: TopBarProps) {
   return (
     <header className="flex h-[72px] shrink-0 items-center gap-6 border-b border-stone-200 bg-white px-5">
       <div className="flex shrink-0 items-center gap-2.5">
@@ -50,6 +62,23 @@ export function TopBar({ query, onQueryChange, onPull, pulling, subtitle, warnin
         <RefreshCw className={pulling ? 'animate-spin' : undefined} />
         Pull HelpDesk
       </Button>
+
+      <div className="flex shrink-0 items-center gap-2 border-l border-stone-200 pl-4">
+        {username && (
+          <span className="text-[12px] text-muted-foreground" title="Signed in">
+            {username}
+          </span>
+        )}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={onSignOut}
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut />
+        </Button>
+      </div>
     </header>
   );
 }
