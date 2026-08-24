@@ -34,6 +34,9 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/api/src ./apps/api/src
+# `auth:hash` is run inside this image to produce AUTH_PASSWORD_HASH — the host
+# has no Bun, so leaving the scripts out makes the documented setup impossible.
+COPY apps/api/scripts ./apps/api/scripts
 # Applied on every startup, so an empty volume comes up migrated.
 COPY apps/api/drizzle ./apps/api/drizzle
 COPY --from=build /app/apps/web/dist ./apps/web/dist
