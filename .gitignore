@@ -3,6 +3,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+dist/
 
 # Real ticket payloads pulled from HelpDesk (contains customer emails/domains)
 plans/**/sample-*.json

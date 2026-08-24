@@ -1,0 +1,107 @@
+import { useCallback, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { BoardColumn } from '@/components/board/board-column';
+import { BoardError, BoardSkeleton } from '@/components/board/board-states';
+import { TicketDetailSheet } from '@/components/ticket-detail-sheet';
+import { TopBar } from '@/components/top-bar';
+import { Toaster } from '@/components/ui/sonner';
+import { useBoard } from '@/hooks/use-board';
+import { useTicketDetail } from '@/hooks/use-ticket-detail';
+import { filterBoard } from '@/lib/search';
+
+/** Collapsed categories, keyed by column. Lives as long as the page does. */
+type CollapsedState = Record<string, ReadonlySet<string>>;
+
+const EMPTY_COLLAPSED: ReadonlySet<string> = new Set();
+
+export function App() {
+  const { board, loading, pulling, error, reload, pull } = useBoard();
+  const detail = useTicketDetail();
+  const [query, setQuery] = useState('');
+  const [collapsed, setCollapsed] = useState<CollapsedState>({});
+
+  const filtered = useMemo(() => (board ? filterBoard(board, query) : null), [board, query]);
+
+  const toggleCategory = useCallback((columnStatus: string, category: string, open: boolean) => {
+    setCollapsed((current) => {
+      const next = new Set(current[columnStatus] ?? []);
+      if (open) next.delete(category);
+      else next.add(category);
+      return { ...current, [columnStatus]: next };
+    });
+  }, []);
+
+  const handlePull = useCallback(async () => {
+    try {
+      const pulled = await pull();
+      toast.success(`Pulled ${pulled} tickets from HelpDesk.`);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Pull failed.');
+    }
+  }, [pull]);
+
+  const subtitle = board
+    ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${new Date(board.pulledAt).toLocaleTimeString()}`
+    : 'HelpDesk tickets for JOY Loyalty · read-only';
+
+  const searching = query.trim().length > 0;
+
+  return (
+    <div className="flex h-screen flex-col bg-background">
+      <TopBar
+        query={query}
+        onQueryChange={setQuery}
+        onPull={handlePull}
+        pulling={pulling}
+        subtitle={subtitle}
+      />
+
+      <main className="min-h-0 flex-1 px-4 py-4">
+        {loading && <BoardSkeleton />}
+
+        {!loading && error && <BoardError message={error} onRetry={reload} retrying={pulling} />}
+
+        {!loading && !error && filtered && (
+          <>
+            {searching && filtered.boardTickets === 0 && (
+              <p className="mb-3 text-[13px] text-muted-foreground">
+                Nothing matches “{query.trim()}”.
+              </p>
+            )}
+            <div className="flex h-full min-h-0 gap-4">
+              {filtered.columns.map((column) => (
+                <BoardColumn
+                  key={column.status}
+                  column={column}
+                  collapsed={collapsed[column.status] ?? EMPTY_COLLAPSED}
+                  onToggleCategory={(category, open) =>
+                    toggleCategory(column.status, category, open)
+                  }
+                  onOpenTicket={detail.open}
+                  filtered={searching}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </main>
+
+      {board && board.otherStatuses.length > 0 && (
+        <footer className="shrink-0 border-t border-stone-200 bg-white px-5 py-2 text-[11px] text-muted-foreground">
+          Not on the board:{' '}
+          {board.otherStatuses.map((entry) => `${entry.status} (${entry.count})`).join(' · ')}
+        </footer>
+      )}
+
+      <TicketDetailSheet
+        ticketId={detail.ticketId}
+        detail={detail.detail}
+        loading={detail.loading}
+        error={detail.error}
+        onClose={detail.close}
+      />
+
+      <Toaster position="top-center" />
+    </div>
+  );
+}
