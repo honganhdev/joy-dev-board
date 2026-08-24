@@ -89,3 +89,30 @@ export const pulls = sqliteTable('pulls', {
 
 export type PullRow = typeof pulls.$inferSelect;
 export type TicketStatusHistoryRow = typeof ticketStatusHistory.$inferSelect;
+
+/**
+ * One row per logged-in session.
+ *
+ * Sessions live here rather than in a signed token so they can actually be
+ * withdrawn: logout deletes the row, and a stolen id stops working the moment
+ * it is gone. Storing them in SQLite (not in memory) is also what lets a
+ * restart of the API leave everyone signed in.
+ *
+ * `id` is the opaque random session id — the only thing that ever travels in
+ * the cookie. No username, no claim, nothing the server cannot take back.
+ */
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    username: text('username').notNull(),
+    createdAt: text('createdAt').notNull(),
+    /** Sliding: pushed forward on every authenticated request. */
+    expiresAt: text('expiresAt').notNull(),
+    lastSeenAt: text('lastSeenAt').notNull(),
+  },
+  // Expired rows are swept on read and on login, which is a range scan on this.
+  (table) => [index('sessions_expiresAt_idx').on(table.expiresAt)]
+);
+
+export type SessionRow = typeof sessions.$inferSelect;

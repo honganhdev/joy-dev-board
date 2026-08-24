@@ -14,7 +14,8 @@
     "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck",
     "fixture:pull": "bun run --cwd apps/api fixture:pull",
     "db:generate": "bun run --cwd apps/api db:generate",
-    "db:backup": "bun run --cwd apps/api db:backup"
+    "db:backup": "bun run --cwd apps/api db:backup",
+    "auth:hash": "bun run --cwd apps/api auth:hash"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

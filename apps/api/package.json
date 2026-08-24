@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "fixture:pull": "bun --env-file=../../.env scripts/pull-fixture.ts",
     "db:generate": "drizzle-kit generate",
-    "db:backup": "bun --env-file=../../.env scripts/backup-db.ts"
+    "db:backup": "bun --env-file=../../.env scripts/backup-db.ts",
+    "auth:hash": "bun scripts/hash-password.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",

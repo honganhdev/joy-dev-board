@@ -6,7 +6,8 @@ import { fetchTags } from './helpdesk/client';
 import { createPullRunner } from './pull-service';
 import { createRouter } from './routes';
 
-// Fail loudly and early: a missing API key is a startup error, not a 500 later.
+// Fail loudly and early: missing credentials are a startup error, not a 500
+// later — and a board with no login must never come up at all.
 let config;
 try {
   config = loadConfig();
@@ -23,13 +24,29 @@ const pulls = createPullRunner(db, config);
 // than given a table. Tickets are cached by SQLite itself.
 const tags = new TtlCache(() => fetchTags(config), config.cacheTtlMs * 12);
 
-const server = Bun.serve({ port: config.port, fetch: createRouter({ db, pulls, tags }) });
+const handle = createRouter({
+  db,
+  pulls,
+  tags,
+  auth: config.auth,
+  webDistPath: config.webDistPath,
+});
+
+const server = Bun.serve({
+  port: config.port,
+  // The socket address is passed through so the login throttle can bucket by
+  // client when there is no trusted proxy header to read.
+  fetch: (request, bunServer) => handle(request, bunServer),
+});
 
 const stored = countTickets(db);
 console.log(
   `[joy-dev-board api] listening on http://localhost:${server.port} ` +
     `(app "${config.appName}", year ${config.year}, db ${config.databasePath}, ${stored} tickets stored)`
 );
+if (!config.auth.cookieSecure) {
+  console.warn('[joy-dev-board api] COOKIE_SECURE=false — session cookie will be sent over plain http');
+}
 
 // A fresh database has nothing to serve. Start the first pull straight away
 // rather than waiting for a request; a request arriving meanwhile joins it.
