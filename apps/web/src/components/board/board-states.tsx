@@ -11,16 +11,16 @@ export function BoardSkeleton() {
       {COLUMN_LABELS.map((label, columnIndex) => (
         <section
           key={label}
-          className="flex min-h-0 flex-1 flex-col rounded-lg bg-stone-100/80"
+          className="flex min-h-0 flex-1 flex-col rounded-lg border border-stone-200 bg-white"
           aria-label={`${label} loading`}
         >
-          <header className="flex items-center gap-2 px-3 py-2.5">
+          <header className="flex items-center gap-2 px-4 py-3">
             <span className="flex-1 text-[11px] font-bold tracking-wider text-stone-400 uppercase">
               {label}
             </span>
             <Skeleton className="h-4 w-6 rounded-full" />
           </header>
-          <div className="space-y-2 px-2 pb-3">
+          <div className="space-y-3 px-3 pb-3">
             {Array.from({ length: 4 - (columnIndex % 2) }).map((_, index) => (
               <Skeleton key={index} className="h-[104px] w-full rounded-md" />
             ))}

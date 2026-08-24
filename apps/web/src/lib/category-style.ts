@@ -20,8 +20,26 @@ const STYLES: Record<string, string> = {
 
 const NEUTRAL = 'bg-stone-100 text-stone-600 border-stone-200';
 
+/** Solid marker shown beside a category name in a collapsible group header. */
+const DOTS: Record<string, string> = {
+  'WIDGET / UNIFIED': 'bg-blue-500',
+  'COUPON / CART': 'bg-amber-500',
+  'PROGRAM ADMIN': 'bg-violet-500',
+  'TRANSLATION / EMAIL': 'bg-teal-500',
+  'POINTS / ACTIVITY': 'bg-emerald-500',
+  INTEGRATIONS: 'bg-sky-500',
+  ANALYTICS: 'bg-indigo-500',
+  REFERRAL: 'bg-rose-500',
+  CUSTOMIZATION: 'bg-fuchsia-500',
+  OTHER: 'bg-stone-400',
+};
+
 export function categoryBadgeClass(category: Category | string): string {
   return STYLES[category] ?? NEUTRAL;
+}
+
+export function categoryDotClass(category: Category | string): string {
+  return DOTS[category] ?? 'bg-stone-400';
 }
 
 /** `WIDGET / UNIFIED` → `Widget / Unified` for the card badge. */

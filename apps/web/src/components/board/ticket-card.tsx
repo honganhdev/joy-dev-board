@@ -34,7 +34,7 @@ export function TicketCard({ ticket, onOpen }: TicketCardProps) {
       <div className="mt-1.5">
         <span
           className={cn(
-            'inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium tracking-wide uppercase',
+            'inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium',
             categoryBadgeClass(ticket.category)
           )}
         >
