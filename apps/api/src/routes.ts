@@ -1,6 +1,9 @@
+import { createAuthHandlers, unauthorized, type ClientAddress } from './auth/handlers';
+import { LoginThrottle, type ThrottleOptions } from './auth/throttle';
 import { assembleBoard, toTicketDetail } from './board/assemble';
 import type { BoardResponse, PullSummary } from './board/types';
 import type { TtlCache } from './cache';
+import type { AuthConfig } from './config';
 import type { Db } from './db/client';
 import {
   countTickets,
@@ -13,17 +16,9 @@ import {
 import type { PullRow } from './db/schema';
 import { HelpDeskError } from './helpdesk/client';
 import type { HelpDeskTag } from './helpdesk/types';
+import { CORS_HEADERS, json } from './http';
 import type { PullRunner } from './pull-service';
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: CORS_HEADERS });
-}
+import { createStaticHandler, type StaticHandler } from './static';
 
 /**
  * Turns a failure into an error the UI can show. HelpDesk problems become 502
@@ -86,19 +81,31 @@ export type RouterDeps = {
   db: Db;
   pulls: PullRunner;
   tags: TtlCache<HelpDeskTag[]>;
+  auth: AuthConfig;
+  /** Built web app to serve alongside the API. Omitted in dev and in tests. */
+  webDistPath?: string | null;
+  /** Tightened in tests so a lockout can be provoked without five real logins. */
+  throttle?: ThrottleOptions;
 };
 
 /**
  * Routes every request. Reads come from SQLite so the board survives a HelpDesk
  * outage; only an explicit pull talks upstream, and every upstream call is a GET.
+ *
+ * Everything under `/api/` needs a session except the login endpoint and
+ * `/api/health`, which the container healthcheck has to reach unauthenticated —
+ * so health answers with counts and pull status only, never ticket content.
  */
-export function createRouter({ db, pulls, tags }: RouterDeps) {
+export function createRouter({ db, pulls, tags, auth, webDistPath, throttle }: RouterDeps) {
+  const authHandlers = createAuthHandlers({ db, auth, throttle: new LoginThrottle(throttle) });
+  const serveStatic: StaticHandler = createStaticHandler(webDistPath ?? null);
+
   /** First boot has nothing to serve — pull instead of returning an empty board. */
   async function ensureSeeded(): Promise<void> {
     if (countTickets(db) === 0) await pulls.run();
   }
 
-  return async function handle(request: Request): Promise<Response> {
+  return async function handle(request: Request, server: ClientAddress = null): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -107,8 +114,26 @@ export function createRouter({ db, pulls, tags }: RouterDeps) {
     }
 
     try {
+      // --- Unauthenticated surface: exactly these three paths and nothing else.
       if (pathname === '/api/health') {
         return json({ ok: true, tickets: countTickets(db), lastPull: toPullSummary(readLastPull(db)) });
+      }
+
+      if (pathname === '/api/auth/login' && request.method === 'POST') {
+        return await authHandlers.login(request, server);
+      }
+
+      if (pathname === '/api/auth/logout' && request.method === 'POST') {
+        return authHandlers.logout(request);
+      }
+
+      if (pathname === '/api/auth/me' && request.method === 'GET') {
+        return authHandlers.me(request);
+      }
+
+      // --- Everything else under /api needs a session.
+      if (pathname.startsWith('/api/')) {
+        if (!authHandlers.currentUser(request)) return unauthorized();
       }
 
       if (pathname === '/api/pull' && request.method === 'POST') {
@@ -139,6 +164,19 @@ export function createRouter({ db, pulls, tags }: RouterDeps) {
         }
         const detail = toTicketDetail(ticket);
         return json({ ...detail, tags: await resolveTags(tags, detail.tagIds) });
+      }
+
+      if (pathname.startsWith('/api/')) {
+        return json({ error: 'not_found', message: `No route for ${pathname}` }, 404);
+      }
+
+      // The web app itself. Unauthenticated on purpose: it is a public bundle
+      // that renders the login screen, and every byte of data it shows still
+      // has to come back through the guarded routes above. HEAD is served too:
+      // proxies and uptime checks use it, and a 404 there reads as a dead app.
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        const asset = await serveStatic(pathname);
+        if (asset) return asset;
       }
 
       return json({ error: 'not_found', message: `No route for ${pathname}` }, 404);

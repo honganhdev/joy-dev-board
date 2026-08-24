@@ -7,11 +7,15 @@ classifies each into a category, and opens a full detail drawer per ticket. The 
 SQLite, so it keeps working when HelpDesk does not. Nothing is ever written back to HelpDesk — every
 upstream call is a `GET`.
 
+It shows merchant emails, shop domains, internal Crisp links and member names, so it sits behind a
+login. Every route under `/api/` needs a session except `/api/health`.
+
 ## Layout
 
 ```
-apps/api    Bun HTTP API. Owns the HelpDesk key, pulls into SQLite, classifies, assembles the board.
-apps/web    React + TypeScript + Tailwind + shadcn/ui board UI.
+apps/api    Bun HTTP API. Owns the HelpDesk key and the login, pulls into SQLite, assembles the board.
+apps/web    React + TypeScript + Tailwind + shadcn/ui board UI, plus the login screen.
+deploy/     compose.yaml for the VPS container.
 data/       SQLite database and backups. Gitignored — it holds real merchant data.
 ```
 
@@ -21,11 +25,34 @@ Requires [Bun](https://bun.sh) (built with 1.3.14).
 
 ```bash
 bun install
-cp .env.example .env      # then fill in API_KEY_HELPDESK
+cp .env.example .env               # then fill in API_KEY_HELPDESK and AUTH_USERNAME
+bun run auth:hash                  # paste the AUTH_PASSWORD_HASH line it prints into .env
+echo 'COOKIE_SECURE=false' >> .env # local dev is http, and a Secure cookie is never sent over http
 ```
 
 `.env` lives at the repo root, is gitignored, and is read by the API process only. The browser never
 sees the key — the web dev server proxies `/api` to the Bun API.
+
+### The login password
+
+```bash
+bun run auth:hash                  # prompts, reads stdin, echoes nothing
+echo -n 'your password' | bun run auth:hash
+bun run auth:hash 'your password'  # convenient, but your shell keeps a copy
+```
+
+It prints one line to paste into `.env` and never prints the password itself. There is no
+user-management UI and no signup: one account, from the environment.
+
+The hash is emitted **base64-encoded**, not as the raw `$argon2id$...` string. `bun --env-file`
+expands `$argon2id`, `$v` and `$m` as shell variables — inside single quotes too — so a pasted PHC
+string arrives mangled and every login fails with an unsupported-algorithm error, while Docker's
+`env_file` expands nothing and no single escaping works in both. Base64 has no `$` and so means the
+same thing everywhere. Paste the whole printed line, unquoted.
+
+The API refuses to start without `AUTH_USERNAME` and `AUTH_PASSWORD_HASH`, the same way it refuses to
+start without `API_KEY_HELPDESK`. A board with real customer data and no login should not come up at
+all.
 
 ## Run
 
@@ -52,7 +79,7 @@ bun run fixture:pull   # writes apps/api/tests/fixtures/sample-joy-open-tickets.
 ```
 
 ```bash
-bun test             # unit tests (classifier, board assembly, sync + history, search, formatting)
+bun test             # unit tests (auth, classifier, board assembly, sync + history, search, formatting)
 bun run typecheck    # tsc --noEmit across both apps
 bun run build        # production build of the web app
 ```
@@ -65,7 +92,13 @@ bun run build        # production build of the web app
 | `GET /api/tickets/:ticketId` | Full stored HelpDesk record for one ticket, plus its computed category and resolved tag names. |
 | `GET /api/tickets/:ticketId/history` | That ticket's observed status changes, oldest first. |
 | `POST /api/pull` | Pulls from HelpDesk into SQLite, returns `{ pulled, inserted, statusChanges }`. |
-| `GET /api/health` | Liveness, stored ticket count, last pull attempt. |
+| `GET /api/health` | Liveness, stored ticket count, last pull attempt. **The only unauthenticated data route** — counts and pull status only, no ticket content, because the container healthcheck has to reach it. |
+| `POST /api/auth/login` | `{username, password}` → sets the session cookie, returns `{username}`. |
+| `POST /api/auth/logout` | Deletes the session row and clears the cookie. |
+| `GET /api/auth/me` | `{username}`, or `401` when there is no session. |
+
+Everything else under `/api/` returns `401` without a valid session. In the container the API also
+serves the built web app on the same port, with a client-side-routing fallback to `index.html`.
 
 Reads never touch HelpDesk. A failed pull surfaces as a `502` with a real message, and the board keeps
 serving what is stored — `lastPull` carries the failure so the UI can say the data is stale instead of
@@ -86,6 +119,44 @@ A failing tag directory degrades a detail view to raw tag ids; it never fails th
 | `HELPDESK_APP_NAME` | `JOY Loyalty` | App filter. |
 | `HELPDESK_YEAR` | current year | Year window for the `by-date` query. |
 | `HELPDESK_BASE_URL` | `https://helpdesk.avada.net/api/external` | Upstream base. |
+| `AUTH_USERNAME` | *(required)* | The one account that may sign in. |
+| `AUTH_PASSWORD_HASH` | *(required)* | Base64 of the argon2id hash. From `bun run auth:hash`. |
+| `SESSION_TTL_MS` | `604800000` (7d) | Session lifetime, refreshed on every authenticated request. |
+| `COOKIE_SECURE` | `true` | `Secure` on the session cookie. Set to `false` **only** for local http — over plain http a `Secure` cookie is never sent and no login will stick. |
+| `TRUST_PROXY` | `false` | Believe `X-Forwarded-For`. Set `true` **only** behind a real reverse proxy; otherwise a client can set the header itself and get a fresh bucket for every login guess. |
+| `WEB_DIST_PATH` | `apps/web/dist` | Built web app to serve next to `/api`. Absent in a source checkout, set by the Dockerfile. |
+
+## Authentication
+
+- **Server-side sessions in SQLite**, not JWT. A session is a row, so logout actually withdraws it
+  and a restart of the API leaves everyone signed in. The cookie carries an opaque 256-bit id from
+  `crypto.getRandomValues` and nothing else — no username, no claim.
+- **`board_session`** cookie: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` unless `COOKIE_SECURE=false`.
+- **Sliding expiry.** Reading a session pushes `expiresAt` forward, so the 7 days run from last use.
+  Expired rows are deleted on read and on login; there is no cron.
+- **Passwords** are hashed with `Bun.password` (argon2id, built into Bun — no crypto dependency).
+- **Rate limited.** Failures are counted per username *and* per client IP; five inside fifteen minutes
+  lock that key out for fifteen. A wrong password, an unknown username and a lockout all return the
+  same message and the same body — nothing in the response says which one it was. The counters are in
+  memory, so restarting the API clears them; the alternative is a SQLite write per failed guess,
+  which is its own denial-of-service surface.
+- Passwords, session ids and cookie headers are never logged, at any level.
+
+The `Access-Control-Allow-Origin: *` on the API is deliberate and safe here: without
+`Allow-Credentials` a browser will not attach the session cookie to a cross-origin request, so a
+third-party page gets a `401` and nothing else.
+
+### Content-Security-Policy
+
+The served documents carry `default-src 'self'; script-src 'self'` with no `unsafe-inline` and no
+`unsafe-eval`, plus `frame-ancestors 'none'`, `object-src 'none'` and `connect-src 'self'`.
+`style-src` does allow inline, because Radix positions and animates its overlays through the `style`
+attribute — that is a styling hole, not a code-execution one.
+
+Verified against the production build in headless Chrome over CDP: the login screen, a signed-in
+board, an open detail sheet and sign-out all raise zero CSP violations, and an inline `<script>`
+injected into the page is refused by Chrome. The bundle contains no `eval`, no `new Function`, no
+inline handlers and no remote hosts.
 
 ## Storage
 
@@ -93,8 +164,10 @@ SQLite through `bun:sqlite`, with [Drizzle](https://orm.drizzle.team) for the sc
 The database is opened with `journal_mode = WAL` (the board keeps reading while a pull writes) and
 `foreign_keys = ON` (off by default in SQLite, and set per connection).
 
-Three tables:
+Four tables:
 
+- **`sessions`** — one row per signed-in session. On disk rather than in memory so a restart of the
+  API does not sign everyone out, and deletable so logout is a real revocation.
 - **`tickets`** — one row per ticket, upserted on every pull. Flat columns for what the board queries
   on, plus the untouched HelpDesk payload in `raw`, so no upstream field is ever lost.
 - **`ticket_status_history`** — one row per *observed* status change. HelpDesk only returns a ticket's
@@ -129,14 +202,40 @@ produces a backup that only fails when it is needed.
 
 ### Deploying
 
-The target is a single VPS running one Bun process, which is why SQLite is enough. Two things to get
+The target is a single VPS running one container, which is why SQLite is enough. Two things to get
 right there:
 
-- **`data/` must be on persistent storage.** Running in Docker without a volume mounted at `data/`
-  loses the database — and with it every status history row ever recorded — on each rebuild. That
-  history cannot be re-pulled: HelpDesk does not expose past states.
+- **`/app/data` must be a mounted volume.** Running in Docker without one loses the database — and
+  with it every status history row ever recorded — on each rebuild. That history cannot be re-pulled:
+  HelpDesk does not expose past states. `deploy/compose.yaml` mounts the `board-data` named volume;
+  do not remove it, and do not `docker compose down -v`.
 - **One writer.** WAL allows concurrent readers, but the design assumes a single API process owns the
   file. Do not run two instances against the same database.
+
+## Container
+
+One image, one process: a multi-stage build compiles the web app with Vite, and the Bun API serves
+both `/api/*` and the built `dist/` from a single port. The previous deployment ran a static
+container next to a second API container; nothing here needs two.
+
+```bash
+docker compose -f deploy/compose.yaml up -d --build   # from the repo root
+docker compose -f deploy/compose.yaml logs -f
+```
+
+- Listens on `PORT` (8787) inside the container, published as **`127.0.0.1:4184`**. Publishing on
+  `0.0.0.0` would put the board on the public internet beside Caddy rather than behind it — and with
+  Caddy bypassed there is no TLS, so `Secure` would stop the login working at all.
+- Caddy on the VPS terminates TLS for `issue.anhth.cc` and proxies to `127.0.0.1:4184`.
+- `env_file: ../.env`. On the VPS that file needs `API_KEY_HELPDESK`, `AUTH_USERNAME`,
+  `AUTH_PASSWORD_HASH` and `TRUST_PROXY=true`. Leave `COOKIE_SECURE` unset — it defaults to on, which
+  is what you want behind TLS.
+- Healthcheck hits `/api/health` every 30s, the one route that answers without a session.
+- Migrations run at startup, so a fresh container on an empty volume comes up clean.
+- The build context excludes `.env`, `data/` and the test fixture — none of them can reach a layer.
+- Runs as the unprivileged `bun` user. `/app/data` is created owned by `bun` so a fresh **named**
+  volume inherits that ownership. A **bind mount** does not inherit it: `chown -R 1000:1000` the host
+  directory first, or the process cannot write the database.
 
 ## How the board is built
 

@@ -2,9 +2,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { BoardColumn } from '@/components/board/board-column';
 import { BoardError, BoardSkeleton } from '@/components/board/board-states';
+import { LoginScreen } from '@/components/login-screen';
 import { TicketDetailSheet } from '@/components/ticket-detail-sheet';
 import { TopBar } from '@/components/top-bar';
 import { Toaster } from '@/components/ui/sonner';
+import { useAuth } from '@/hooks/use-auth';
 import { useBoard } from '@/hooks/use-board';
 import { useTicketDetail } from '@/hooks/use-ticket-detail';
 import { formatAge } from '@/lib/format';
@@ -15,7 +17,12 @@ type CollapsedState = Record<string, ReadonlySet<string>>;
 
 const EMPTY_COLLAPSED: ReadonlySet<string> = new Set();
 
-export function App() {
+/**
+ * The board itself. Mounted only once there is a session, so none of its
+ * requests ever fire while signed out — a signed-out visitor gets the login
+ * screen, not a board that 401s its way to an error state.
+ */
+function BoardApp({ username, onSignOut }: { username: string | null; onSignOut: () => void }) {
   const { board, loading, pulling, error, reload, pull } = useBoard();
   const detail = useTicketDetail();
   const [query, setQuery] = useState('');
@@ -68,6 +75,8 @@ export function App() {
         pulling={pulling}
         subtitle={subtitle}
         warning={warning}
+        username={username}
+        onSignOut={onSignOut}
       />
 
       <main className="min-h-0 flex-1 px-4 py-4">
@@ -119,4 +128,23 @@ export function App() {
       <Toaster position="top-center" />
     </div>
   );
+}
+
+/**
+ * Authentication gate. Three states, and `checking` is not cosmetic: without it
+ * a reload with a perfectly good cookie would flash the login form before the
+ * session check came back.
+ */
+export function App() {
+  const { status, username, submitting, error, signIn, signOut } = useAuth();
+
+  if (status === 'checking') {
+    return <div className="min-h-screen bg-stone-50" aria-busy="true" />;
+  }
+
+  if (status === 'anonymous') {
+    return <LoginScreen onSubmit={signIn} submitting={submitting} error={error} />;
+  }
+
+  return <BoardApp username={username} onSignOut={signOut} />;
 }
