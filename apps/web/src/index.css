@@ -31,7 +31,9 @@
 
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.97 0.001 106.42);
+  /* Deliberately a step darker than the column panels, so the five lanes read
+     as raised surfaces instead of blending into the page. */
+  --background: oklch(0.932 0.002 106.42);
   --foreground: oklch(0.216 0.006 56.043);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.216 0.006 56.043);

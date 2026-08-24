@@ -11,6 +11,10 @@ type BoardColumnProps = {
   filtered: boolean;
 };
 
+/**
+ * One workflow lane. The header sits outside the scroll area so the column you
+ * are reading is always named, however far down its cards you have scrolled.
+ */
 export function BoardColumn({
   column,
   collapsed,
@@ -19,18 +23,17 @@ export function BoardColumn({
   filtered,
 }: BoardColumnProps) {
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg bg-stone-100/80">
-      <header className="flex items-center gap-2 px-3 py-2.5">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-stone-300/70 bg-stone-100">
+      <header className="flex shrink-0 items-center gap-2 border-b border-stone-300/70 bg-stone-200/60 px-3 py-2">
         <h2 className="flex-1 truncate text-[11px] font-bold tracking-wider text-stone-700 uppercase">
           {column.label}
         </h2>
-        <span className="shrink-0 text-[10px] text-stone-400">scroll ↓</span>
-        <span className="shrink-0 rounded-full bg-stone-200 px-1.5 py-0.5 text-[11px] tabular-nums text-stone-600">
+        <span className="shrink-0 rounded-full bg-stone-700 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white">
           {column.count}
         </span>
       </header>
 
-      <div className="scrollbar-thin min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3">
         {column.groups.length === 0 ? (
           <p className="px-1 py-3 text-[12px] text-muted-foreground">
             {filtered ? 'No tickets match the search.' : 'No open tickets in this column.'}
