@@ -7,3 +7,6 @@ dist/
 
 # Real ticket payloads pulled from HelpDesk (contains customer emails/domains)
 plans/**/sample-*.json
+
+# Test fixture is a real HelpDesk payload (merchant domains, Crisp links) — pull it, do not commit it
+apps/api/tests/fixtures/sample-joy-open-tickets.json

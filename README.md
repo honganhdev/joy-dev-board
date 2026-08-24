@@ -39,6 +39,13 @@ Open http://localhost:5173.
 
 ## Checks
 
+The API tests read a fixture of real HelpDesk tickets. It carries merchant domains, shop names and
+Crisp session links, so it is gitignored — pull your own copy once after cloning:
+
+```bash
+bun run fixture:pull   # writes apps/api/tests/fixtures/sample-joy-open-tickets.json
+```
+
 ```bash
 bun test             # unit tests (classifier, board assembly, search)
 bun run typecheck    # tsc --noEmit across both apps

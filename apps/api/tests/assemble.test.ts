@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { assembleBoard, findTicketDetail } from '../src/board/assemble';
+import { classify } from '../src/board/classify';
 import { BOARD_COLUMNS } from '../src/board/types';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { loadFixtureTickets } from './fixtures';
@@ -49,18 +50,26 @@ describe('assembleBoard', () => {
   });
 
   test('places fixture tickets in the column matching their tsStatus', () => {
-    // Fixture: 1 dev_fixing, 5 waiting_customer, 1 pending (no column), 1 waiting_customer.
+    // Counts are derived from the fixture, not hardcoded — `bun run fixture:pull`
+    // fetches whichever tickets are open at the time, so a snapshot would rot.
     const byStatus = Object.fromEntries(board.columns.map((c) => [c.status, c.count]));
-    expect(byStatus.dev_fixing).toBe(1);
-    expect(byStatus.waiting_customer).toBe(6);
-    expect(byStatus.doing).toBe(0);
+    for (const column of board.columns) {
+      const expected = fixture.filter((ticket) => ticket.tsStatus === column.status).length;
+      expect(byStatus[column.status]).toBe(expected);
+    }
     expect(board.totalTickets).toBe(fixture.length);
     expect(board.openTickets).toBe(fixture.length);
   });
 
   test('keeps a ticket whose tsStatus has no column visible in otherStatuses', () => {
-    // `pending` is a real production status with no board column.
-    expect(board.otherStatuses).toContainEqual({ status: 'pending', count: 1 });
+    // Production has statuses with no board column (pending, onb, sale_request…).
+    // Which ones land in the fixture depends on the pull, so derive them.
+    const columnStatuses = new Set<string>(BOARD_COLUMNS.map((column) => column.status));
+    for (const ticket of fixture) {
+      if (ticket.tsStatus && !columnStatuses.has(ticket.tsStatus)) {
+        expect(board.otherStatuses.map((other) => other.status)).toContain(ticket.tsStatus);
+      }
+    }
     expect(board.boardTickets + board.otherStatuses.reduce((s, o) => s + o.count, 0)).toBe(
       board.openTickets
     );
@@ -93,18 +102,25 @@ describe('assembleBoard', () => {
   });
 
   test('maps card fields off the real ticket shape', () => {
-    const card = board.columns
+    // Compared against the source ticket, not a frozen snapshot of one id.
+    const cards = board.columns
       .flatMap((column) => column.groups)
-      .flatMap((group) => group.tickets)
-      .find((t) => t.ticketId === 'JOY-260823-ZJaFcq');
+      .flatMap((group) => group.tickets);
+    expect(cards.length).toBeGreaterThan(0);
 
-    expect(card).toBeDefined();
-    expect(card?.subject).toBe('Customize widget');
-    expect(card?.shopName).toBe('The Sample Shop');
-    expect(card?.domain).toBe('sample-shop.myshopify.com');
-    expect(card?.memberNames.length).toBeGreaterThan(0);
-    expect(card?.chatLink).toContain('crisp.chat');
-    expect(card?.category).toBe('WIDGET / UNIFIED');
+    for (const card of cards) {
+      const source = fixture.find((ticket) => ticket.ticketId === card.ticketId);
+      expect(source).toBeDefined();
+      expect(card.subject).toBe(source?.subject ?? '(no subject)');
+      expect(card.shopName).toBe(source?.store?.[0]?.shopName ?? null);
+      expect(card.domain).toBe(source?.store?.[0]?.domain ?? null);
+      expect(card.memberNames).toEqual(
+        (source?.members ?? [])
+          .map((member) => member.displayName)
+          .filter((name): name is string => Boolean(name))
+      );
+      expect(card.category).toBe(classify(source!));
+    }
   });
 
   test('falls back to the store domain when shopName is missing', () => {
@@ -161,10 +177,12 @@ describe('findTicketDetail', () => {
   const fixture = loadFixtureTickets();
 
   test('returns the raw ticket plus its computed category', () => {
-    const detail = findTicketDetail(fixture, 'JOY-260824-V77Mwn');
-    expect(detail?.ticketNumber).toBe('joy262108');
-    expect(detail?.category).toBe('POINTS / ACTIVITY');
-    expect(detail?.description?.length).toBeGreaterThan(100);
+    // Picked from the fixture rather than hardcoded, so a re-pulled fixture still passes.
+    const sample = fixture[0]!;
+    const detail = findTicketDetail(fixture, sample.ticketId);
+    expect(detail?.ticketNumber).toBe(sample.ticketNumber);
+    expect(detail?.subject).toBe(sample.subject);
+    expect(detail?.category).toBe(classify(sample));
   });
 
   test('returns null for an unknown id', () => {

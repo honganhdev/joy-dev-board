@@ -11,7 +11,8 @@
     "dev:web": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
     "test": "bun test",
-    "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck"
+    "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck",
+    "fixture:pull": "bun run --cwd apps/api fixture:pull"
   },
   "devDependencies": {
     "typescript": "^5.9.2"
