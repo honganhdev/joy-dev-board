@@ -1,4 +1,4 @@
-import type { Board, TicketDetail } from '@/types';
+import type { Board, PullResult, StatusHistoryEntry, TicketDetail } from '@/types';
 
 /**
  * Errors carry the message the API produced so the UI can show what actually
@@ -39,11 +39,18 @@ export function fetchBoard(): Promise<Board> {
   return request<Board>('/api/tickets');
 }
 
-/** Re-pulls from HelpDesk. Returns the fresh board and how many tickets came back. */
-export function pullFromHelpDesk(): Promise<{ pulled: number; board: Board }> {
-  return request<{ pulled: number; board: Board }>('/api/pull', { method: 'POST' });
+/** Re-pulls from HelpDesk into the API's database. Returns what changed. */
+export function pullFromHelpDesk(): Promise<PullResult> {
+  return request<PullResult>('/api/pull', { method: 'POST' });
 }
 
 export function fetchTicketDetail(ticketId: string): Promise<TicketDetail> {
   return request<TicketDetail>(`/api/tickets/${encodeURIComponent(ticketId)}`);
+}
+
+/** That ticket's observed status changes, oldest first. */
+export function fetchTicketHistory(ticketId: string): Promise<StatusHistoryEntry[]> {
+  return request<{ entries: StatusHistoryEntry[] }>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/history`
+  ).then((body) => body.entries);
 }

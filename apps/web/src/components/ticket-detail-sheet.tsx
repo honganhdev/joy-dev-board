@@ -2,14 +2,16 @@ import { AlertTriangle, Check, ExternalLink, Square } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatusTimeline } from '@/components/status-timeline';
 import { categoryBadgeClass, categoryLabel } from '@/lib/category-style';
 import { formatFull } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { TicketDetail } from '@/types';
+import type { StatusHistoryEntry, TicketDetail } from '@/types';
 
 type TicketDetailSheetProps = {
   ticketId: string | null;
   detail: TicketDetail | null;
+  history: StatusHistoryEntry[];
   loading: boolean;
   error: string | null;
   onClose: () => void;
@@ -37,7 +39,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function DetailBody({ detail }: { detail: TicketDetail }) {
+function DetailBody({ detail, history }: { detail: TicketDetail; history: StatusHistoryEntry[] }) {
   const store = detail.store?.[0];
   const links = [
     { label: 'Crisp chat', href: detail.chatLink },
@@ -72,6 +74,10 @@ function DetailBody({ detail }: { detail: TicketDetail }) {
         <Field label="Updated" value={formatFull(detail.updatedAt)} />
         <Field label="Due" value={formatFull(detail.dueDate)} />
       </dl>
+
+      <Section title="Status timeline">
+        <StatusTimeline entries={history} />
+      </Section>
 
       <Section title="Description">
         {detail.description?.trim() ? (
@@ -176,6 +182,7 @@ function DetailBody({ detail }: { detail: TicketDetail }) {
 export function TicketDetailSheet({
   ticketId,
   detail,
+  history,
   loading,
   error,
   onClose,
@@ -206,7 +213,7 @@ export function TicketDetailSheet({
           </div>
         )}
 
-        {!loading && !error && detail && <DetailBody detail={detail} />}
+        {!loading && !error && detail && <DetailBody detail={detail} history={history} />}
       </SheetContent>
     </Sheet>
   );

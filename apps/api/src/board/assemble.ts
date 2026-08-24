@@ -93,11 +93,16 @@ export function assembleBoard(tickets: HelpDeskTicket[], pulledAt: string): Boar
   };
 }
 
+/** Attaches the computed category to a raw HelpDesk record. */
+export function toTicketDetail(ticket: HelpDeskTicket): TicketDetail {
+  return { ...ticket, category: classify(ticket) };
+}
+
 /** Finds one ticket by its HelpDesk `ticketId` and attaches its category. */
 export function findTicketDetail(
   tickets: HelpDeskTicket[],
   ticketId: string
 ): TicketDetail | null {
   const match = tickets.find((ticket) => ticket.ticketId === ticketId);
-  return match ? { ...match, category: classify(match) } : null;
+  return match ? toTicketDetail(match) : null;
 }
