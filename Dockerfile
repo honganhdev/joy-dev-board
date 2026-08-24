@@ -31,6 +31,10 @@ ENV NODE_ENV=production \
     DATABASE_PATH=/app/data/board.db
 
 COPY --from=prod-deps /app/node_modules ./node_modules
+# Bun does not hoist every workspace dependency to the root under --production:
+# drizzle-orm resolves to apps/api/node_modules. Copying only the root tree
+# leaves the API unable to import it at runtime.
+COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY package.json ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/api/src ./apps/api/src
