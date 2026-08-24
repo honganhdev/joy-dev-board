@@ -7,6 +7,7 @@ import { TopBar } from '@/components/top-bar';
 import { Toaster } from '@/components/ui/sonner';
 import { useBoard } from '@/hooks/use-board';
 import { useTicketDetail } from '@/hooks/use-ticket-detail';
+import { formatAge } from '@/lib/format';
 import { filterBoard } from '@/lib/search';
 
 /** Collapsed categories, keyed by column. Lives as long as the page does. */
@@ -33,16 +34,28 @@ export function App() {
 
   const handlePull = useCallback(async () => {
     try {
-      const pulled = await pull();
-      toast.success(`Pulled ${pulled} tickets from HelpDesk.`);
+      const { pulled, inserted, statusChanges } = await pull();
+      toast.success(
+        `Pulled ${pulled} tickets · ${inserted} new · ${statusChanges} status ${statusChanges === 1 ? 'change' : 'changes'}.`
+      );
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Pull failed.');
     }
   }, [pull]);
 
   const subtitle = board
-    ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${new Date(board.pulledAt).toLocaleTimeString()}`
+    ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${formatAge(board.pulledAt)}`
     : 'HelpDesk tickets for JOY Loyalty · read-only';
+
+  // The board is served from the API's database, so a failed pull leaves real
+  // tickets on screen. Say how old they are instead of pretending they are fresh.
+  const warning =
+    board && board.lastPull?.status === 'error'
+      ? {
+          label: `Stale · HelpDesk pull failed ${formatAge(board.lastPull.finishedAt ?? board.lastPull.startedAt)}`,
+          detail: board.lastPull.error ?? 'The last pull did not finish.',
+        }
+      : null;
 
   const searching = query.trim().length > 0;
 
@@ -54,6 +67,7 @@ export function App() {
         onPull={handlePull}
         pulling={pulling}
         subtitle={subtitle}
+        warning={warning}
       />
 
       <main className="min-h-0 flex-1 px-4 py-4">
@@ -96,6 +110,7 @@ export function App() {
       <TicketDetailSheet
         ticketId={detail.ticketId}
         detail={detail.detail}
+        history={detail.history}
         loading={detail.loading}
         error={detail.error}
         onClose={detail.close}

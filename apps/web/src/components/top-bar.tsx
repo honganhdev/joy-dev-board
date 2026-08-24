@@ -1,4 +1,4 @@
-import { RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -8,9 +8,11 @@ type TopBarProps = {
   onPull: () => void;
   pulling: boolean;
   subtitle: string;
+  /** Set when the board is being served from storage after a failed pull. */
+  warning?: { label: string; detail: string } | null;
 };
 
-export function TopBar({ query, onQueryChange, onPull, pulling, subtitle }: TopBarProps) {
+export function TopBar({ query, onQueryChange, onPull, pulling, subtitle, warning }: TopBarProps) {
   return (
     <header className="flex h-[72px] shrink-0 items-center gap-6 border-b border-stone-200 bg-white px-5">
       <div className="flex shrink-0 items-center gap-2.5">
@@ -33,6 +35,16 @@ export function TopBar({ query, onQueryChange, onPull, pulling, subtitle }: TopB
           className="h-9 bg-stone-50 pl-9"
         />
       </div>
+
+      {warning && (
+        <div
+          title={warning.detail}
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900"
+        >
+          <AlertTriangle className="size-3.5 shrink-0" />
+          {warning.label}
+        </div>
+      )}
 
       <Button size="sm" className="shrink-0" onClick={onPull} disabled={pulling}>
         <RefreshCw className={pulling ? 'animate-spin' : undefined} />

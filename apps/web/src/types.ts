@@ -43,14 +43,43 @@ export type BoardColumn = {
   groups: BoardGroup[];
 };
 
+/** What the API's last pull attempt did. */
+export type PullSummary = {
+  startedAt: string;
+  finishedAt: string | null;
+  ticketCount: number | null;
+  status: 'ok' | 'error';
+  error: string | null;
+};
+
 export type Board = {
+  /** When the last *successful* pull finished. The board is served from SQLite. */
   pulledAt: string;
   totalTickets: number;
   openTickets: number;
   boardTickets: number;
   columns: BoardColumn[];
   otherStatuses: Array<{ status: string; count: number }>;
-  fromCache?: boolean;
+  /** May be a later failed attempt — that is how stale data is spotted. */
+  lastPull: PullSummary | null;
+};
+
+/** What a `POST /api/pull` changed. */
+export type PullResult = {
+  pulled: number;
+  inserted: number;
+  statusChanges: number;
+};
+
+/**
+ * One observed status change. `observedAt` is when a pull noticed it, not when
+ * it happened — HelpDesk does not report change times.
+ */
+export type StatusHistoryEntry = {
+  fromStatus: string | null;
+  toStatus: string | null;
+  observedAt: string;
+  ticketUpdatedAt: string | null;
 };
 
 export type TicketStore = {
