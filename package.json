@@ -12,7 +12,9 @@
     "build": "bun run --cwd apps/web build",
     "test": "bun test",
     "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck",
-    "fixture:pull": "bun run --cwd apps/api fixture:pull"
+    "fixture:pull": "bun run --cwd apps/api fixture:pull",
+    "db:generate": "bun run --cwd apps/api db:generate",
+    "db:backup": "bun run --cwd apps/api db:backup"
   },
   "devDependencies": {
     "typescript": "^5.9.2"
