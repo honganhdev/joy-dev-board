@@ -1,0 +1,22 @@
+# Secrets and real data must never enter the build context, let alone a layer.
+.env
+.env.*
+!.env.example
+data/
+apps/api/tests/fixtures/sample-joy-open-tickets.json
+
+node_modules
+**/node_modules
+**/dist
+
+.git
+.gitignore
+.DS_Store
+Dockerfile
+.dockerignore
+deploy/
+plans/
+docs/
+README.md
+**/*.test.ts
+apps/api/tests/

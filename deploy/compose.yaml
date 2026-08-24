@@ -1,0 +1,50 @@
+# One container behind the VPS's existing Caddy, which terminates TLS for
+# issue.anhth.cc and proxies to 127.0.0.1:4184.
+#
+#   docker compose -f deploy/compose.yaml up -d --build
+#
+# Run it from the repo root; the build context is the repo.
+
+services:
+  board:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: joy-dev-board:latest
+    container_name: joy-dev-board
+    restart: unless-stopped
+
+    # AUTH_USERNAME, AUTH_PASSWORD_HASH, API_KEY_HELPDESK, COOKIE_SECURE=true,
+    # TRUST_PROXY=true. See .env.example and the README.
+    env_file:
+      - ../.env
+
+    # Bound to loopback on purpose. Publishing on 0.0.0.0 would put the board on
+    # the public internet next to Caddy rather than behind it — and with Caddy
+    # bypassed there is no TLS, so the session cookie's Secure flag would stop
+    # the login working at all.
+    ports:
+      - '127.0.0.1:4184:8787'
+
+    # Not optional. data/board.db holds the observed status history, and history
+    # cannot be re-pulled: HelpDesk only ever returns a ticket's current state.
+    # A rebuild without this volume destroys it permanently.
+    volumes:
+      - board-data:/app/data
+
+    healthcheck:
+      # /api/health is the one route that answers without a session, and it
+      # returns counts only — no ticket content. `$$` is how a literal `$`
+      # survives Compose's own interpolation pass.
+      test:
+        - CMD
+        - bun
+        - -e
+        - 'const r = await fetch(`http://127.0.0.1:$${process.env.PORT ?? 8787}/api/health`); process.exit(r.ok ? 0 : 1)'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  board-data:
