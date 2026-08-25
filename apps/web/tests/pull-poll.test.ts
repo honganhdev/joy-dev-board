@@ -162,3 +162,75 @@ test('pullFromHelpDesk posts to /api/pull and accepts a 202', async () => {
   expect(calls[0]?.url).toBe('/api/pull');
   expect(calls[0]?.init?.method).toBe('POST');
 });
+
+describe('followPull failure handling', () => {
+  test('a 401 partway through a follow stops it at once', async () => {
+    const calls = stub(
+      { status: 200, body: summary('running') },
+      { status: 200, body: summary('running') },
+      { status: 401, body: { message: 'Sign in to use the board.' } },
+      { status: 200, body: summary('ok') }
+    );
+
+    await expect(followPull({ intervalMs: 1 })).rejects.toMatchObject({ status: 401 });
+    expect(calls).toHaveLength(3);
+  });
+
+  test('a 401 sends the app back to the login screen', async () => {
+    let unauthorized = 0;
+    setUnauthorizedHandler(() => {
+      unauthorized += 1;
+    });
+    stub({ status: 401, body: { message: 'Sign in to use the board.' } });
+
+    await expect(followPull({ intervalMs: 1 })).rejects.toThrow(ApiRequestError);
+    expect(unauthorized).toBe(1);
+  });
+
+  test('a server error never sends the app back to the login screen', async () => {
+    let unauthorized = 0;
+    setUnauthorizedHandler(() => {
+      unauthorized += 1;
+    });
+    stub({ status: 500, body: { message: 'boom' } });
+
+    await expect(followPull({ intervalMs: 1 })).rejects.toThrow('boom');
+    expect(unauthorized).toBe(0);
+  });
+
+  test('a 401 is not absorbed by the transient-failure budget', async () => {
+    const calls = stub(
+      new TypeError('fetch failed'),
+      new TypeError('fetch failed'),
+      { status: 401, body: { message: 'Sign in to use the board.' } }
+    );
+
+    // Two blips already banked: the third tick still has to be read as a 401
+    // and end the follow, not counted as the third blip and reported as one.
+    await expect(followPull({ intervalMs: 1 })).rejects.toMatchObject({ status: 401 });
+    expect(calls).toHaveLength(3);
+  });
+
+  test('waits out the interval between failed ticks too', async () => {
+    const calls = stub(
+      new TypeError('fetch failed'),
+      new TypeError('fetch failed'),
+      { status: 200, body: summary('ok') }
+    );
+    const startedAt = performance.now();
+
+    expect(await followPull({ intervalMs: 40 })).toMatchObject({ status: 'ok' });
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(80);
+    expect(calls).toHaveLength(3);
+  });
+
+  test('polls repeatedly before giving up, and gives up quietly', async () => {
+    const calls = stub({ status: 200, body: summary('running') });
+
+    const settled = await followPull({ intervalMs: 5, timeoutMs: 120 });
+
+    expect(settled).toMatchObject({ status: 'running' });
+    expect(settled?.error).toBeNull();
+    expect(calls.length).toBeGreaterThan(1);
+  });
+});

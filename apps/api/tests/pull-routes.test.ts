@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthConfig, Config } from '../src/config';
 import { openDatabase, type Db } from '../src/db/client';
+import { readLastPull } from '../src/db/queries';
+import { pulls as pullRows } from '../src/db/schema';
+import { startPull, sweepInterruptedPulls } from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { createPullRunner, type PullRunner, type TicketFetcher } from '../src/pull-service';
 import { createRouter } from '../src/routes';
@@ -207,5 +210,179 @@ describe('pull routes', () => {
     const run = pulls.run();
     gate.resolve([]);
     await run;
+  });
+});
+
+describe('pull routes: what the caller sees while a pull is in flight', () => {
+  test('a cold board answers without waiting for the pull it starts', async () => {
+    const gate = deferred<HelpDeskTicket[]>();
+    let fetches = 0;
+    const { db, handle, pulls } = harness(() => {
+      fetches += 1;
+      return gate.promise;
+    });
+    const cookie = await login(handle);
+
+    // The fetcher never settles: if this handler still awaited the pull, the
+    // request would hang here and the test would time out rather than fail.
+    const response = await handle(get('/api/tickets', { cookie }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ totalTickets: 0 });
+    expect(fetches).toBe(1);
+    expect(readLastPull(db)).toMatchObject({ status: 'running', finishedAt: null });
+
+    const run = pulls.run();
+    gate.resolve([]);
+    await run;
+  });
+
+  test('the weekly report answers on a cold board without waiting', async () => {
+    const gate = deferred<HelpDeskTicket[]>();
+    let fetches = 0;
+    const { handle, pulls } = harness(() => {
+      fetches += 1;
+      return gate.promise;
+    });
+    const cookie = await login(handle);
+
+    const response = await handle(get('/api/report/weekly?weeks=2', { cookie }));
+
+    expect(response.status).toBe(200);
+    expect(fetches).toBe(1);
+
+    const run = pulls.run();
+    gate.resolve([]);
+    await run;
+  });
+
+  test('a board that already has tickets starts no pull of its own', async () => {
+    let fetches = 0;
+    const { handle, pulls } = harness(async () => {
+      fetches += 1;
+      return [ticket('JOY-1')];
+    });
+    const cookie = await login(handle);
+    await pulls.run();
+
+    const response = await handle(get('/api/tickets', { cookie }));
+
+    expect(await response.json()).toMatchObject({ totalTickets: 1 });
+    expect(fetches).toBe(1);
+  });
+
+  test('the 202 reports the pull it just started, not the one before it', async () => {
+    const gate = deferred<HelpDeskTicket[]>();
+    let fetches = 0;
+    const { db, handle, pulls } = harness(() => {
+      fetches += 1;
+      return fetches === 1 ? Promise.resolve([ticket('JOY-1')]) : gate.promise;
+    });
+    const cookie = await login(handle);
+    await pulls.run();
+    expect(readLastPull(db)?.status).toBe('ok');
+
+    // Reading the pull row before starting one would answer with the settled
+    // row above, so this asserts the order the route does the two things in.
+    const response = await handle(post('/api/pull', undefined, { cookie }));
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ status: 'running', finishedAt: null });
+    expect(db.select().from(pullRows).all()).toHaveLength(2);
+
+    const run = pulls.run();
+    gate.resolve([]);
+    await run;
+  });
+
+  test('two presses answered while one walk of the year writes one row', async () => {
+    const gate = deferred<HelpDeskTicket[]>();
+    let fetches = 0;
+    const { db, handle, pulls } = harness(() => {
+      fetches += 1;
+      return gate.promise;
+    });
+    const cookie = await login(handle);
+
+    const first = await handle(post('/api/pull', undefined, { cookie }));
+    const second = await handle(post('/api/pull', undefined, { cookie }));
+
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(202);
+    expect(await first.json()).toMatchObject({ status: 'running' });
+    expect(await second.json()).toMatchObject({ status: 'running' });
+    expect(fetches).toBe(1);
+    expect(db.select().from(pullRows).all()).toHaveLength(1);
+
+    const run = pulls.run();
+    gate.resolve([]);
+    await run;
+  });
+});
+
+describe('pull routes: rows with no counts recorded', () => {
+  test('a row written before these counts existed serialises them as null', async () => {
+    const { db, handle } = harness(async () => []);
+    const cookie = await login(handle);
+    db.insert(pullRows)
+      .values({
+        startedAt: '2026-08-01T09:00:00.000Z',
+        finishedAt: '2026-08-01T09:00:45.000Z',
+        ticketCount: 42,
+        status: 'ok',
+      })
+      .run();
+
+    const body = (await (await handle(get('/api/pull/status', { cookie }))).json()) as Record<
+      string,
+      unknown
+    >;
+
+    // Present-and-null, not absent: the toast decides on `!== null`, so a
+    // dropped key would read as a number and print "undefined new".
+    expect(Object.keys(body)).toContain('inserted');
+    expect(Object.keys(body)).toContain('statusChanges');
+    expect(body.inserted).toBeNull();
+    expect(body.statusChanges).toBeNull();
+    expect(body.ticketCount).toBe(42);
+  });
+
+  test('the board carries the same nulls on its last pull', async () => {
+    const { db, handle } = harness(async () => []);
+    const cookie = await login(handle);
+    db.insert(pullRows)
+      .values({
+        startedAt: '2026-08-01T09:00:00.000Z',
+        finishedAt: '2026-08-01T09:00:45.000Z',
+        ticketCount: 42,
+        status: 'ok',
+      })
+      .run();
+
+    const board = (await (await handle(get('/api/tickets', { cookie }))).json()) as {
+      lastPull: Record<string, unknown>;
+    };
+
+    expect(Object.keys(board.lastPull)).toContain('inserted');
+    expect(board.lastPull.inserted).toBeNull();
+    expect(board.lastPull.statusChanges).toBeNull();
+  });
+
+  test('a swept pull reads as a failure with no counts', async () => {
+    const { db, handle } = harness(async () => []);
+    const cookie = await login(handle);
+    startPull(db);
+    expect(sweepInterruptedPulls(db)).toBe(1);
+
+    const body = (await (await handle(get('/api/pull/status', { cookie }))).json()) as Record<
+      string,
+      unknown
+    >;
+
+    expect(body).toMatchObject({ status: 'error', error: 'server restarted mid-pull' });
+    expect(body.inserted).toBeNull();
+    expect(body.statusChanges).toBeNull();
+    expect(body.ticketCount).toBeNull();
+    expect(body.finishedAt).not.toBeNull();
   });
 });
