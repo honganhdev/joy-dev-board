@@ -16,6 +16,12 @@ export type WeekSummary = {
   /** `17 Aug` — the column tick. */
   shortLabel: string;
   /**
+   * The week holding `now`: its Sunday has not happened, so every figure on it
+   * is week-to-date. Emitted because the page has to choose a week to land on
+   * and the alternative is the browser reading meaning out of `label`'s prose.
+   */
+  inProgress: boolean;
+  /**
    * Titles for the three headline tiles. Worded per week because the week
    * holding `now` has not finished: its figures are week-to-date, so it cannot
    * be titled with an end-of-week figure. The renderer prints what it is given.

@@ -514,6 +514,7 @@ export function aggregateWeeklyReport(
       key: weekKey(startMs),
       label: inProgress ? `${weekLabel(startMs)} · in progress` : weekLabel(startMs),
       shortLabel: weekShortLabel(startMs),
+      inProgress,
       tileLabels: inProgress ? IN_PROGRESS_TILE_LABELS : FINISHED_TILE_LABELS,
       outstandingCaption: inProgress ? IN_PROGRESS_OUTSTANDING_CAPTION : OUTSTANDING_CAPTION,
       created,

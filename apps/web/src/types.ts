@@ -103,6 +103,8 @@ export type WeekSummary = {
   label: string;
   /** `17 Aug` — the column tick. */
   shortLabel: string;
+  /** The week holding `now`: its figures are week-to-date, not final. */
+  inProgress: boolean;
   /** Titles for the three headline tiles; the week still running is worded differently. */
   tileLabels: { created: string; done: string; outstanding: string };
   /** Why this week's outstanding figure and `openRightNow` differ. */

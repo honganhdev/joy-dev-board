@@ -737,11 +737,13 @@ describe('the week that has not finished yet', () => {
     expect(current.tileLabels.outstanding).not.toContain('week end');
     expect(current.outstandingCaption).not.toContain('historical');
     expect(current.label).toContain('in progress');
+    expect(current.inProgress).toBe(true);
 
     // Every finished week keeps the end-of-week wording.
     expect(previous.tileLabels.outstanding).toContain('week end');
     expect(previous.outstandingCaption).toContain('historical');
     expect(previous.label).not.toContain('in progress');
+    expect(previous.inProgress).toBe(false);
   });
 
   test('says week-to-date on the created and done tiles of the running week', () => {
