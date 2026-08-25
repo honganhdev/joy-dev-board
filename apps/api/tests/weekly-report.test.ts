@@ -757,6 +757,27 @@ describe('the week that has not finished yet', () => {
     expect(previous.tileLabels.created).not.toContain('so far');
     expect(previous.tileLabels.done).not.toContain('so far');
   });
+
+  test('flags exactly one week, the last, and agrees with the wording on it', () => {
+    // The page picks which week to land on from this boolean and prints these
+    // strings beside the figures. Nothing keeps the two in step but this test:
+    // if they part, the report either lands on a partial week or titles a
+    // finished one "so far". Landing also assumes the running week is the last
+    // one in the array, which is asserted here rather than in the browser.
+    const result = report([], 26);
+    const running = result.weeks.filter((week) => week.inProgress);
+
+    expect(running).toHaveLength(1);
+    expect(running[0]).toBe(result.weeks[result.weeks.length - 1]);
+
+    for (const week of result.weeks) {
+      expect(week.label.includes('in progress')).toBe(week.inProgress);
+      expect(week.tileLabels.created.includes('so far')).toBe(week.inProgress);
+      expect(week.tileLabels.done.includes('so far')).toBe(week.inProgress);
+      expect(week.tileLabels.outstanding.includes('week end')).toBe(!week.inProgress);
+      expect(week.outstandingCaption.includes('has not finished')).toBe(week.inProgress);
+    }
+  });
 });
 
 describe('a ticket that belongs to no week', () => {
