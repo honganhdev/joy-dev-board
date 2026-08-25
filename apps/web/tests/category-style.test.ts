@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { categoryBadgeClass, categoryDotClass, categoryLabel } from '../src/lib/category-style';
+import { categoryBadgeClass, categoryDotClass, categoryLabel, DOTS, STYLES } from '../src/lib/category-style';
 import { CATEGORIES } from '../../api/src/board/categories';
 
 /**
@@ -49,6 +49,16 @@ describe('categoryBadgeClass and categoryDotClass', () => {
     );
 
     expect(uncoloured).toEqual([]);
+  });
+
+  test('carry an explicit entry for OTHER', () => {
+    // OTHER is the one label the check above cannot cover: its colours are the
+    // neutral fallback, so no value comparison can tell an entry apart from a
+    // missing one — delete OTHER from both maps and everything still passes,
+    // leaving it to follow whatever the fallback becomes next. Presence is the
+    // only thing left to assert.
+    expect(Object.hasOwn(STYLES, 'OTHER')).toBe(true);
+    expect(Object.hasOwn(DOTS, 'OTHER')).toBe(true);
   });
 
   test('give no two categories the same colour', () => {

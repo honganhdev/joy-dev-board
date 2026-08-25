@@ -153,7 +153,20 @@ export const CATEGORY_KEYWORDS: Array<{ category: Category; keywords: string[] }
   },
   {
     category: 'POINTS',
-    keywords: ['point', 'diem', 'points', 'balance', 'so du', 'lich su', 'activity', 'transaction', 'expire'],
+    keywords: [
+      'point',
+      'diem',
+      'points',
+      'balance',
+      'so du',
+      'lich su',
+      'activity',
+      'transaction',
+      'expire',
+      'expired',
+      'expiry',
+      'expiration',
+    ],
   },
   {
     category: 'COUPON / CHECKOUT',

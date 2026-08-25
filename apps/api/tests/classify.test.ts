@@ -28,6 +28,11 @@ describe('classify', () => {
   test('classifies real fixture subjects', () => {
     const cases: Array<[string, string]> = [
       ['[bug] Điểm thưởng không được cộng cho đơn draft order đã thanh toán', 'POINTS'],
+      // A widget-placement request that lands under COUPON / CHECKOUT by design:
+      // `cart` / `gio hang` sit above WIDGET, so a subject naming both the widget
+      // and the cart is filed by where it happens, not by what is being moved.
+      // Roughly 3 subjects naming `widget` land here for that reason — measured,
+      // and accepted rather than narrowed, since narrowing `cart` moved none of them.
       ['Ẩn nút widget trên trang giỏ hàng và cart drawer', 'COUPON / CHECKOUT'],
       ['[request] Export coupons list', 'ANALYTICS'],
       ['Customize widget', 'WIDGET'],

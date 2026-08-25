@@ -5,7 +5,7 @@ import type { Category } from '@/types';
  * light board. Any category without an entry falls back to neutral, so adding a
  * category to the backend table cannot break rendering.
  */
-const STYLES: Record<string, string> = {
+export const STYLES: Record<string, string> = {
   'DFY SETUP': 'bg-orange-50 text-orange-700 border-orange-100',
   ONBOARDING: 'bg-emerald-50 text-emerald-700 border-emerald-100',
   'BILLING / PLAN': 'bg-red-50 text-red-700 border-red-100',
@@ -28,7 +28,7 @@ const STYLES: Record<string, string> = {
 const NEUTRAL = 'bg-stone-100 text-stone-600 border-stone-200';
 
 /** Solid marker shown beside a category name in a collapsible group header. */
-const DOTS: Record<string, string> = {
+export const DOTS: Record<string, string> = {
   'DFY SETUP': 'bg-orange-500',
   ONBOARDING: 'bg-emerald-500',
   'BILLING / PLAN': 'bg-red-500',
