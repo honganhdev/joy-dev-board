@@ -29,6 +29,7 @@ const handle = createRouter({
   pulls,
   tags,
   auth: config.auth,
+  year: config.year,
   webDistPath: config.webDistPath,
 });
 

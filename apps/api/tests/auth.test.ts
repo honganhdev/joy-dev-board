@@ -40,6 +40,7 @@ function harness(options: { auth?: Partial<AuthConfig>; maxFailures?: number } =
     pulls: { run: async () => ({ pulled: 0, inserted: 0, statusChanges: 0 }) },
     tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
     auth: authConfig(options.auth),
+    year: 2026,
     throttle: { maxFailures: options.maxFailures ?? 5 },
   });
   return { db, handle };
@@ -140,10 +141,21 @@ describe('protected routes', () => {
       get('/api/tickets'),
       get('/api/tickets/T-1'),
       get('/api/tickets/T-1/history'),
+      get('/api/report/weekly'),
       post('/api/pull'),
     ]) {
       expect((await handle(request)).status).toBe(401);
     }
+  });
+
+  test('the weekly report answers behind the gate, not beside it', async () => {
+    // The one thing about that route that can be silently wrong is its position:
+    // above the gate it would publish a year of customer ticket counts to anyone.
+    const { handle } = harness();
+    const response = await handle(get('/api/report/weekly?weeks=12'));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'unauthorized', message: 'Sign in to use the board.' });
   });
 
   test('an unknown or tampered session id is a 401', async () => {

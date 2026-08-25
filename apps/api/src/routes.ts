@@ -2,6 +2,7 @@ import { createAuthHandlers, unauthorized, type ClientAddress } from './auth/han
 import { LoginThrottle, type ThrottleOptions } from './auth/throttle';
 import { assembleBoard, toTicketDetail } from './board/assemble';
 import type { BoardResponse, PullSummary } from './board/types';
+import { aggregateWeeklyReport } from './board/weekly-report';
 import type { TtlCache } from './cache';
 import type { AuthConfig } from './config';
 import type { Db } from './db/client';
@@ -82,6 +83,12 @@ export type RouterDeps = {
   pulls: PullRunner;
   tags: TtlCache<HelpDeskTag[]>;
   auth: AuthConfig;
+  /**
+   * The calendar year the pull covers. The weekly report names it in its
+   * coverage note, which would lie if it were read from the clock instead of
+   * from the config the pull actually used.
+   */
+  year: number;
   /** Built web app to serve alongside the API. Omitted in dev and in tests. */
   webDistPath?: string | null;
   /** Tightened in tests so a lockout can be provoked without five real logins. */
@@ -96,7 +103,7 @@ export type RouterDeps = {
  * `/api/health`, which the container healthcheck has to reach unauthenticated —
  * so health answers with counts and pull status only, never ticket content.
  */
-export function createRouter({ db, pulls, tags, auth, webDistPath, throttle }: RouterDeps) {
+export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttle }: RouterDeps) {
   const authHandlers = createAuthHandlers({ db, auth, throttle: new LoginThrottle(throttle) });
   const serveStatic: StaticHandler = createStaticHandler(webDistPath ?? null);
 
@@ -144,6 +151,16 @@ export function createRouter({ db, pulls, tags, auth, webDistPath, throttle }: R
         if (url.searchParams.get('refresh') === '1') await pulls.run();
         else await ensureSeeded();
         return json(boardFromDb(db));
+      }
+
+      if (pathname === '/api/report/weekly' && request.method === 'GET') {
+        await ensureSeeded();
+        const lastSuccessful = readLastSuccessfulPull(db);
+        const pulledAt = lastSuccessful?.finishedAt ?? new Date(0).toISOString();
+        const weeks = Number(url.searchParams.get('weeks'));
+        return json(
+          aggregateWeeklyReport(readTickets(db), { weeks, now: new Date(), pulledAt, year })
+        );
       }
 
       const historyMatch = pathname.match(/^\/api\/tickets\/([^/]+)\/history$/);
