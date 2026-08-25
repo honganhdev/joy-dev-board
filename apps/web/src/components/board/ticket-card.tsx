@@ -14,6 +14,14 @@ type TicketCardProps = {
  * propagation so it opens the chat rather than the drawer.
  */
 export function TicketCard({ ticket, onOpen }: TicketCardProps) {
+  // Only about a third of tickets carry a Slack thread, and a handful carry no
+  // conversation at all, so the row and its divider are driven by what exists
+  // rather than by chatLink alone.
+  const links = [
+    { label: 'Crisp', href: ticket.chatLink },
+    { label: 'Slack', href: ticket.slackLink },
+  ].filter((link): link is { label: string; href: string } => Boolean(link.href));
+
   return (
     <article
       role="button"
@@ -61,19 +69,26 @@ export function TicketCard({ ticket, onOpen }: TicketCardProps) {
         </span>
       </div>
 
-      {ticket.chatLink && (
+      {links.length > 0 && (
         <>
           <div className="mt-2 border-t border-stone-100" />
-          <a
-            href={ticket.chatLink}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => event.stopPropagation()}
-            className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-stone-500 hover:text-foreground hover:underline"
-          >
-            Crisp
-            <ExternalLink className="size-3" />
-          </a>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {links.map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                target="_blank"
+                rel="noreferrer"
+                // The card itself opens the detail view, so a link inside it has to
+                // stop the click reaching the card or it would do both.
+                onClick={(event) => event.stopPropagation()}
+                className="inline-flex items-center gap-1 text-[11px] text-stone-500 hover:text-foreground hover:underline"
+              >
+                {link.label}
+                <ExternalLink className="size-3" />
+              </a>
+            ))}
+          </div>
         </>
       )}
     </article>
