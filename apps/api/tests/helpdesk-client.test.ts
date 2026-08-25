@@ -121,3 +121,63 @@ describe('fetchTicketsForYear', () => {
     await expect(fetchTicketsForYear(config)).resolves.toHaveLength(53 * 4999);
   });
 });
+
+describe('the year the windows actually cover', () => {
+  /** Milliseconds a calendar year holds, leap years included. */
+  function yearSpan(year: number): number {
+    return Date.UTC(year + 1, 0, 1) - Date.UTC(year, 0, 1);
+  }
+
+  // A common year and a leap one: the loop steps in fixed 7-day jumps, so the
+  // remainder at the end of the year differs between them.
+  for (const year of [2025, 2024]) {
+    test(`tiles ${year} exactly, with no hour asked for twice and none left out`, () => {
+      const windows = chunkYear(year, new Date(Date.UTC(year + 1, 5, 1)));
+
+      expect(windows[0]?.startDate).toBe(new Date(Date.UTC(year, 0, 1)).toISOString());
+      expect(windows.at(-1)?.endDate).toBe(new Date(Date.UTC(year + 1, 0, 1) - 1).toISOString());
+
+      const covered = windows.reduce(
+        (total, window) => total + (Date.parse(window.endDate) - Date.parse(window.startDate) + 1),
+        0
+      );
+      // Every millisecond of the year, counted once — which is only true if the
+      // windows neither overlap nor leave a gap anywhere in the year.
+      expect(covered).toBe(yearSpan(year));
+    });
+  }
+
+  test('asks for one window when the year has only just begun', () => {
+    const windows = chunkYear(2025, new Date('2025-01-02T09:00:00.000Z'));
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toEqual({
+      startDate: '2025-01-01T00:00:00.000Z',
+      endDate: '2025-01-07T23:59:59.999Z',
+    });
+  });
+});
+
+describe('a window that does not come back whole', () => {
+  test('fails the pull instead of returning the rest of the year without it', async () => {
+    // The failure this replaced was a partial pull recorded as a success. A
+    // window that answers with no tickets array is exactly that shape again:
+    // 52 good windows and one hole, which would look like a quiet week.
+    const hole = '2025-07-02T00:00:00.000Z';
+    globalThis.fetch = (async (input: URL | string) => {
+      const url = new URL(String(input));
+      const body =
+        url.searchParams.get('startDate') === hole
+          ? { success: true, data: {} }
+          : { success: true, data: { tickets: [ticket('t', 'JOY Loyalty')], total: 1 } };
+      return new Response(JSON.stringify(body), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const failure = fetchTicketsForYear(config);
+
+    await expect(failure).rejects.toThrow(HelpDeskError);
+    await expect(failure).rejects.toThrow(/no data\.tickets array/);
+  });
+});

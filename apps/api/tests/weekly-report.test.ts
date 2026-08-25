@@ -528,3 +528,189 @@ describe('the fixture', () => {
     }
   });
 });
+
+describe('boundary instants', () => {
+  test('counts a ticket created on the boundary instant in exactly one week', () => {
+    // Mon 00:00 +07:00 is the instant a week opens and the instant the week
+    // before it closes. A half-open window counts it once; an inclusive upper
+    // bound would count the same ticket as created in both weeks, and the
+    // created column would out-total the tickets that exist.
+    const result = report([ticket({ ticketId: 'edge', createdAt: '2026-08-23T17:00:00.000Z' })]);
+
+    expect(result.weeks.reduce((total, week) => total + week.created, 0)).toBe(1);
+    expect(weekByKey(result, '2026-W35').created).toBe(1);
+    expect(weekByKey(result, '2026-W34').created).toBe(0);
+  });
+
+  test('counts a ticket done on the boundary instant in exactly one week', () => {
+    const result = report([
+      ticket({ ticketId: 'edge', createdAt: '2026-08-01T00:00:00+07:00', doneAt: '2026-08-23T17:00:00.000Z' }),
+    ]);
+
+    expect(result.weeks.reduce((total, week) => total + week.done, 0)).toBe(1);
+    expect(weekByKey(result, '2026-W35').done).toBe(1);
+    // Still outstanding at the end of the week before it was finished.
+    expect(weekByKey(result, '2026-W34').outstanding).toBe(1);
+  });
+});
+
+describe('week keys across a year boundary', () => {
+  test('gives every week in a year-long range a key of its own', () => {
+    // A repeated key would collide as a React key, and `find(key)` would focus
+    // the wrong week's numbers under another week's label.
+    const result = report(weeklyHistory(52), 52);
+    const keys = result.weeks.map((week) => week.key);
+
+    expect(result.range.selectedWeeks).toBe(52);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys[0]).toBe('2025-W36');
+    expect(keys.at(-1)).toBe('2026-W35');
+  });
+
+  test('numbers the 53rd week of a 53-week ISO year rather than restarting at 1', () => {
+    // 2026 is a 53-week ISO year. Rolling over to `2027-W01` a week early would
+    // put two different weeks under one key inside a single range.
+    const now = new Date('2027-01-06T03:00:00.000Z');
+    const result = aggregateWeeklyReport(weeklyHistoryEndingAt(6, now), {
+      weeks: 4,
+      now,
+      pulledAt: PULLED_AT,
+      year: 2026,
+    });
+
+    expect(result.weeks.map((week) => week.key)).toEqual([
+      '2026-W51',
+      '2026-W52',
+      '2026-W53',
+      '2027-W01',
+    ]);
+    expect(result.weeks[2]?.label).toBe('Mon 28 Dec 2026 – Sun 3 Jan 2027');
+  });
+});
+
+describe('the panels agree with each other', () => {
+  /**
+   * The backlog stock and the created/done flows are drawn as two panels on one
+   * x-axis, so they have to be two readings of the same movement: whatever a
+   * week created and did not finish is exactly what its backlog gained. An
+   * off-by-one in any of the three windows breaks this and nothing else.
+   *
+   * It holds for any ticket whose done date is not before its created date;
+   * `wholeDaysBetween` clamps that case for the histogram, but a ticket finished
+   * before it existed belongs to no coherent flow and is left out here.
+   */
+  test('moves the backlog by exactly the week its created minus its done', () => {
+    const result = report([
+      ticket({ ticketId: 'spans', createdAt: '2026-06-10T09:00:00+07:00', doneAt: '2026-07-02T09:00:00+07:00' }),
+      ticket({ ticketId: 'same-week', createdAt: '2026-07-02T09:00:00+07:00', doneAt: '2026-07-02T18:00:00+07:00' }),
+      ticket({ ticketId: 'never-done', createdAt: '2026-08-01T09:00:00+07:00', doneAt: null }),
+      ticket({ ticketId: 'ghost', ticketStatus: 'closed', createdAt: '2026-06-20T09:00:00+07:00', doneAt: null }),
+      ticket({ ticketId: 'latest', createdAt: '2026-08-24T00:00:00+07:00', doneAt: '2026-08-25T09:00:00+07:00' }),
+    ]);
+
+    for (const [index, week] of result.weeks.entries()) {
+      if (index === 0) continue;
+      const previous = result.weeks[index - 1];
+      expect({
+        key: week.key,
+        movement: week.outstanding - (previous?.outstanding ?? 0),
+      }).toEqual({ key: week.key, movement: week.created - week.done });
+    }
+  });
+});
+
+describe('bucket boundaries', () => {
+  test('puts an age exactly on a bucket bound inside that bucket, not the next one', () => {
+    // Every label names an inclusive upper bound, so `≤ 1 day` has to hold a
+    // one-day-old ticket. An exclusive test would shift five ages one bucket
+    // right and still produce a plausible-looking histogram.
+    const opened = Date.parse('2026-07-06T09:00:00+07:00');
+    const onBound: Array<[number, string]> = [
+      [0, '≤ 1 day'],
+      [1, '≤ 1 day'],
+      [3, '2–3 days'],
+      [7, '4–7 days'],
+      [14, '8–14 days'],
+      [30, '15–30 days'],
+      [31, 'over 30 days'],
+    ];
+
+    for (const [days, label] of onBound) {
+      const result = report(
+        [
+          ticket({
+            createdAt: new Date(opened).toISOString(),
+            doneAt: new Date(opened + days * 86400000).toISOString(),
+          }),
+        ],
+        26
+      );
+
+      expect(result.timeToFirstDone.sampleSize).toBe(1);
+      expect(result.timeToFirstDone.medianDays).toBe(days);
+      expect(result.timeToFirstDone.buckets.filter((bucket) => bucket.count > 0)).toEqual([
+        { label, count: 1 },
+      ]);
+    }
+  });
+
+  test('leaves a ticket finished after the range out of the sample entirely', () => {
+    // A done date past the current week — clock skew, or a date typed by hand —
+    // has no column to sit in, and must not silently widen the histogram either.
+    const result = report([
+      ticket({ createdAt: '2026-08-01T00:00:00+07:00', doneAt: '2026-09-10T00:00:00+07:00' }),
+    ]);
+
+    expect(result.timeToFirstDone.sampleSize).toBe(0);
+    expect(result.timeToFirstDone.unmeasurable).toBe(0);
+    expect(result.timeToFirstDone.buckets.every((bucket) => bucket.count === 0)).toBe(true);
+  });
+});
+
+describe('what counts as history, and what counts as open', () => {
+  test('still measures a run when the newest ticket is a week old, and stops when it is older', () => {
+    // The mirror is pulled on demand, so the newest ticket sitting in last week
+    // is ordinary. Treating that as "no history" would swap the measured note
+    // for the pull-window one on any quiet week.
+    const lastWeek = report([
+      ticket({ createdAt: new Date(NOW.getTime() - WEEK).toISOString(), doneAt: null }),
+    ]);
+    expect(lastWeek.range.coverageNote).toContain('Continuous HelpDesk history begins');
+
+    const older = report([
+      ticket({ createdAt: new Date(NOW.getTime() - 2 * WEEK).toISOString(), doneAt: null }),
+    ]);
+    expect(older.range.coverageNote).toContain('created in 2026');
+  });
+
+  test('counts a ticket as open only when it says open, not merely when it is not closed', () => {
+    // `ticketStatus` is not a closed enum either. An unseen third value must not
+    // be counted as open, or the live figure drifts away from the board's.
+    const result = report([
+      ticket({ ticketId: 'open-1', ticketStatus: 'open' }),
+      ticket({ ticketId: 'other', ticketStatus: 'pending' }),
+      ticket({ ticketId: 'closed-1', ticketStatus: 'closed', doneAt: '2026-08-18T09:00:00+07:00' }),
+    ]);
+
+    expect(result.openRightNow).toBe(1);
+    expect(result.ghosts.closedTotal).toBe(1);
+  });
+
+  test('serves the default range when the query names no weeks at all', () => {
+    // The route reads `Number(searchParams.get('weeks'))`, which is 0 when the
+    // parameter is absent — not NaN. Both have to land on the default.
+    expect(report([], 0).range.selectedWeeks).toBe(DEFAULT_REQUEST_WEEKS);
+    expect(report([], -4).range.selectedWeeks).toBe(DEFAULT_REQUEST_WEEKS);
+  });
+});
+
+/** What the aggregation falls back to when the request names no usable range. */
+const DEFAULT_REQUEST_WEEKS = 12;
+
+/** `weeklyHistory`, but for a clock other than `NOW`. */
+function weeklyHistoryEndingAt(weeks: number, now: Date): HelpDeskTicket[] {
+  return Array.from({ length: weeks }, (_, index) => {
+    const created = new Date(now.getTime() - index * WEEK).toISOString();
+    return ticket({ ticketId: `history-${index}`, createdAt: created, doneAt: created });
+  });
+}
