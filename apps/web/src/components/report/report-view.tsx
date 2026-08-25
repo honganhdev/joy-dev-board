@@ -15,6 +15,7 @@ import { categoryDotClass } from '@/lib/category-style';
 function ReportSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
+      {/* Matches the measured subject card; server-owned doneRule wrapping can make it drift. */}
       <Skeleton className="h-[89px] w-full rounded-lg" />
       <div className="flex gap-3">
         <Skeleton className="h-28 flex-1 rounded-lg" />
@@ -95,8 +96,9 @@ export function ReportView({ pullToken }: { pullToken: number }) {
           <Button
             size="icon-sm"
             variant="ghost"
-            disabled={previous === null}
-            onClick={() => previous && setFocusedKey(previous)}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            aria-disabled={previous === null}
+            onClick={() => previous !== null && setFocusedKey(previous)}
             aria-label="Previous week"
             title="Previous week"
           >
@@ -106,8 +108,9 @@ export function ReportView({ pullToken }: { pullToken: number }) {
           <Button
             size="icon-sm"
             variant="ghost"
-            disabled={next === null}
-            onClick={() => next && setFocusedKey(next)}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            aria-disabled={next === null}
+            onClick={() => next !== null && setFocusedKey(next)}
             aria-label="Next week"
             title="Next week"
           >

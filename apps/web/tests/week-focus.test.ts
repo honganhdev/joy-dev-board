@@ -27,10 +27,9 @@ describe('defaultFocusWeek', () => {
     expect(defaultFocusWeek([])).toBeNull();
   });
 
-  test('takes the last week when no week in the range is running', () => {
-    // The server always ends the range on the week holding `now`, so this is
-    // the shape a lagging mirror or a clock at a week boundary would produce:
-    // there is nothing partial to step back from, so the last week is the week.
+  test('defensively takes the last week when a malformed payload has no running week', () => {
+    // This server always marks the final week as running; this branch only
+    // keeps the pure helper total for a malformed payload that does not.
     expect(defaultFocusWeek([week('W32', false), week('W33', false)])?.key).toBe('W33');
   });
 });
@@ -79,15 +78,17 @@ describe('a range that no longer holds the focused week', () => {
   });
 });
 
-describe('a single-week range', () => {
-  test('keeps its only week focused and disables both directions', () => {
+describe('a malformed single-week payload', () => {
+  // This server emits at least four weeks; these cases keep the pure helpers
+  // total if a malformed payload contains only one.
+  test('defensively keeps its only week focused and disables both directions', () => {
     const running = [week('W35', true)];
     expect(defaultFocusWeek(running)?.key).toBe('W35');
     expect(neighbourKeys(running, 'W35')).toEqual({ previous: null, next: null });
     expect(defaultFocusWeek([week('W34', false)])?.key).toBe('W34');
   });
 
-  test('falls back to that one week when the stored focus came from a wider range', () => {
+  test('defensively falls back when the stored focus came from a wider range', () => {
     const running = [week('W35', true)];
     const focused = resolveFocusedWeek(running, 'W33');
 
