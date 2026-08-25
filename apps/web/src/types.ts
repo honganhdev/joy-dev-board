@@ -129,6 +129,12 @@ export type TicketDetail = {
   createdAt?: string | null;
   updatedAt?: string | null;
   dueDate?: string | null;
+  /**
+   * When HelpDesk first saw the ticket reach a done-ish state (`done`,
+   * `dev_done`, `done_speed_up`). It is never cleared, so it means "has been
+   * done at least once", not "is done now".
+   */
+  doneAt?: string | null;
 };
 
 export type ApiError = { error: string; message: string };

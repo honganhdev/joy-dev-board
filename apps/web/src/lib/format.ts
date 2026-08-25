@@ -14,6 +14,18 @@ export function formatDayMonth(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : DAY_MONTH.format(date);
 }
 
+const DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/**
+ * Compact fact-row date: `24 Aug 2026`. The exact time is carried in a `title`
+ * beside it rather than spent on width — a row of eight facts has none.
+ */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '—' : DATE.format(date);
+}
+
 /** Detail date: `24 Aug 2026, 10:06`. */
 export function formatFull(iso: string | null | undefined): string {
   if (!iso) return '—';

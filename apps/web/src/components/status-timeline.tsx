@@ -1,66 +1,111 @@
 import { formatDuration, formatFull } from '@/lib/format';
-import type { StatusHistoryEntry } from '@/types';
+import { statusLabel } from '@/lib/status-label';
+import type { TicketTimeline, TimelineEvent } from '@/lib/ticket-timeline';
+import { cn } from '@/lib/utils';
 
-type StatusTimelineProps = { entries: StatusHistoryEntry[] };
-
-function label(status: string | null): string {
-  return status ?? '(no status)';
-}
+type StatusTimelineProps = { timeline: TicketTimeline };
 
 /**
- * A ticket's status timeline, oldest first, with how long each one held.
+ * What each row of the chronology says.
  *
- * Every timestamp here is an *observation*: HelpDesk only ever returns a
- * ticket's current state, so all the board knows is that a change happened
- * somewhere between two pulls. The caption says so rather than letting the
- * times be read as exact.
+ * A board observation is phrased so it cannot be read as a change time: a
+ * `first-seen` row says the board *found* the ticket in that status, and never
+ * how long it had been there — that is the one thing the board cannot know.
  */
-export function StatusTimeline({ entries }: StatusTimelineProps) {
-  if (entries.length === 0) {
+function describe(event: TimelineEvent): string {
+  switch (event.kind) {
+    case 'created':
+      return 'Created in HelpDesk';
+    case 'done':
+      return 'First reached a done state';
+    case 'updated':
+      return 'Last updated in HelpDesk';
+    case 'first-seen':
+      return `First seen by this board, already in ${statusLabel(event.toStatus)}`;
+    case 'transition':
+      return `${statusLabel(event.fromStatus)} → ${statusLabel(event.toStatus)}`;
+  }
+}
+
+/** One-line answer to "how long has it been like this?", or an honest refusal. */
+function Summary({ timeline }: StatusTimelineProps) {
+  const status = <span className="font-medium">{statusLabel(timeline.status)}</span>;
+
+  if (timeline.observedSince && timeline.observedForMs !== null) {
     return (
-      <p className="text-[13px] text-muted-foreground">
-        No status change observed yet — the timeline starts at the first pull that saw this ticket.
+      <p className="text-[13px]">
+        In {status} for{' '}
+        <span className="font-medium">{formatDuration(timeline.observedForMs)}</span> — a pull saw it
+        move on {formatFull(timeline.observedSince)}.
       </p>
     );
   }
 
-  const now = Date.now();
-  const current = entries[entries.length - 1];
+  if (timeline.firstSeenAt) {
+    return (
+      <p className="text-[13px]">
+        In {status}. The board never saw it move here — it was already in that status when first seen
+        on {formatFull(timeline.firstSeenAt)}, so how long it has held is unknown.
+      </p>
+    );
+  }
 
   return (
-    <div className="space-y-2">
-      {current && (
-        <p className="text-[13px]">
-          In <span className="font-medium">{label(current.toStatus)}</span> since{' '}
-          {formatFull(current.observedAt)} ·{' '}
-          <span className="font-medium">{formatDuration(now - Date.parse(current.observedAt))}</span>
-        </p>
-      )}
+    <p className="text-[13px]">
+      In {status}. No pull has recorded a status change for this ticket yet.
+    </p>
+  );
+}
 
-      <ol className="space-y-1.5 border-l border-stone-200 pl-3">
-        {entries.map((entry, index) => {
-          const until = entries[index + 1]?.observedAt;
-          const held = formatDuration((until ? Date.parse(until) : now) - Date.parse(entry.observedAt));
-          return (
-            <li key={`${entry.observedAt}-${index}`} className="text-[12px] leading-snug">
-              <div className="flex flex-wrap items-baseline gap-x-1.5">
-                {entry.fromStatus !== null && (
-                  <span className="text-muted-foreground">{label(entry.fromStatus)} →</span>
+/**
+ * A ticket's chronology, oldest first, keeping HelpDesk's exact timestamps and
+ * this board's observations visually apart — a solid marker is a fact, a hollow
+ * one is only when a pull happened to look.
+ */
+export function StatusTimeline({ timeline }: StatusTimelineProps) {
+  const hasObservations = timeline.events.some((event) => event.source === 'board');
+
+  return (
+    <div className="space-y-2.5">
+      <Summary timeline={timeline} />
+
+      {timeline.events.length > 0 && (
+        <ol className="space-y-2 border-l border-stone-200 pl-3.5">
+          {timeline.events.map((event, index) => (
+            <li key={`${event.at}-${event.kind}-${index}`} className="relative text-[12px] leading-snug">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'absolute top-1 -left-[1.16rem] size-[7px] rounded-full border',
+                  event.source === 'helpdesk'
+                    ? 'border-stone-500 bg-stone-500'
+                    : 'border-stone-300 bg-background'
                 )}
-                <span className="font-medium">{label(entry.toStatus)}</span>
-                <span className="text-muted-foreground">held {held}</span>
+              />
+              <div className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="font-medium break-words">{describe(event)}</span>
+                {event.heldMs !== undefined && (
+                  <span className="text-muted-foreground">held {formatDuration(event.heldMs)}</span>
+                )}
               </div>
               <div className="text-muted-foreground">
-                {entry.fromStatus === null ? 'first seen' : 'observed'} {formatFull(entry.observedAt)}
+                {formatFull(event.at)}
+                {/* Both sides are labelled: a silent row next to an "observed"
+                    one reads as ambiguous rather than as a fact. */}
+                {event.source === 'board' ? ' · observed' : ' · HelpDesk'}
               </div>
             </li>
-          );
-        })}
-      </ol>
+          ))}
+        </ol>
+      )}
 
-      <p className="text-[11px] text-muted-foreground">
-        Times are when a pull noticed the change, not when HelpDesk made it.
-      </p>
+      {hasObservations && (
+        <p className="text-[11px] text-muted-foreground">
+          Rows marked <span className="font-medium">observed</span> are stamped when a pull noticed,
+          not when HelpDesk made the change. Rows marked{' '}
+          <span className="font-medium">HelpDesk</span> are exact.
+        </p>
+      )}
     </div>
   );
 }

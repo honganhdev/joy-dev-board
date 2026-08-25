@@ -61,6 +61,12 @@ export type HelpDeskTicket = {
   createdAt?: string | null;
   updatedAt?: string | null;
   dueDate?: string | null;
+  /**
+   * Set the first time HelpDesk sees the ticket reach a done-ish state
+   * (`done`, `dev_done`, `done_speed_up`) and never cleared afterwards — so it
+   * means "has been done at least once", not "is done now".
+   */
+  doneAt?: string | null;
   deletedAt?: string | null;
   [key: string]: unknown;
 };

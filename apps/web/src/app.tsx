@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { BoardColumn } from '@/components/board/board-column';
 import { BoardError, BoardSkeleton } from '@/components/board/board-states';
 import { LoginScreen } from '@/components/login-screen';
-import { TicketDetailSheet } from '@/components/ticket-detail-sheet';
+import { TicketDetailDialog } from '@/components/ticket-detail-dialog';
 import { TopBar } from '@/components/top-bar';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/hooks/use-auth';
@@ -116,13 +116,14 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         </footer>
       )}
 
-      <TicketDetailSheet
+      <TicketDetailDialog
         ticketId={detail.ticketId}
         detail={detail.detail}
         history={detail.history}
         loading={detail.loading}
         error={detail.error}
         onClose={detail.close}
+        onRestoreFocus={detail.restoreFocus}
       />
 
       <Toaster position="top-center" />
