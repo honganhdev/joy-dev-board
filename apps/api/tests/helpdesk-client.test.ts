@@ -102,6 +102,45 @@ describe('fetchTicketsForYear', () => {
     expect(tickets.every((found) => found.appName === 'JOY Loyalty')).toBe(true);
   });
 
+  test('reports the rows it drops for having no app name at all', async () => {
+    // HelpDesk really does return these — 17 of 1,018 rows in one measured week.
+    // A ticket that names no app cannot be claimed for this one, so it stays out
+    // of the mirror; what it must not do is leave without being counted.
+    const warnings: string[] = [];
+    const realWarn = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.join(' '));
+
+    try {
+      stubHelpDesk(() => [
+        ticket('joy', 'JOY Loyalty'),
+        { id: 'nameless', ticketId: 'nameless', appName: null },
+        { id: 'missing', ticketId: 'missing' },
+        ticket('other', 'JOY Subscription'),
+      ]);
+
+      const tickets = await fetchTicketsForYear(config);
+
+      expect(tickets).toHaveLength(53);
+      expect(warnings.join('\n')).toContain(`${53 * 2} tickets in 2025 carry no appName`);
+    } finally {
+      console.warn = realWarn;
+    }
+  });
+
+  test('says nothing when every row names an app', async () => {
+    const warnings: string[] = [];
+    const realWarn = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.join(' '));
+
+    try {
+      stubHelpDesk(() => [ticket('joy', 'JOY Loyalty'), ticket('other', 'JOY Subscription')]);
+      await fetchTicketsForYear(config);
+      expect(warnings).toHaveLength(0);
+    } finally {
+      console.warn = realWarn;
+    }
+  });
+
   test('fails, naming the window, when one comes back at the row cap', async () => {
     stubHelpDesk((startDate) =>
       startDate === '2025-03-05T00:00:00.000Z'

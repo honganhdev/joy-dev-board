@@ -103,6 +103,10 @@ export type WeekSummary = {
   label: string;
   /** `17 Aug` — the column tick. */
   shortLabel: string;
+  /** Titles for the three headline tiles; the week still running is worded differently. */
+  tileLabels: { created: string; done: string; outstanding: string };
+  /** Why this week's outstanding figure and `openRightNow` differ. */
+  outstandingCaption: string;
   created: number;
   done: number;
   /** Includes `closedWithoutDoneAt`. */
@@ -121,9 +125,6 @@ export type WeekSummary = {
 
 export type GhostAudit = {
   count: number;
-  closedTotal: number;
-  shareOfClosed: number;
-  shareOfOutstandingLatestWeek: number;
   /** Already worded, or `null` when there are none. */
   caveat: string | null;
 };
@@ -152,10 +153,9 @@ export type WeeklyReport = {
   timeToFirstDone: TimeToFirstDone;
   openRightNow: number;
   ghosts: GhostAudit;
-  excluded: { deleted: number; unparseableDate: number };
+  /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */
+  excluded: { deleted: number; unparseableDate: number; undated: number };
   doneRule: string;
-  outstandingCaption: string;
-  pulledAt: string;
 };
 
 export type TicketStore = {

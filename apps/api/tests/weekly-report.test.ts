@@ -11,7 +11,6 @@ import { loadFixtureTickets } from './fixtures';
  * timezone.
  */
 const NOW = new Date('2026-08-26T03:00:00.000Z');
-const PULLED_AT = '2026-08-26T04:00:00.000Z';
 const YEAR = 2026;
 
 function ticket(overrides: Partial<HelpDeskTicket>): HelpDeskTicket {
@@ -27,7 +26,7 @@ function ticket(overrides: Partial<HelpDeskTicket>): HelpDeskTicket {
 }
 
 function report(tickets: HelpDeskTicket[], weeks = 12): WeeklyReport {
-  return aggregateWeeklyReport(tickets, { weeks, now: NOW, pulledAt: PULLED_AT, year: YEAR });
+  return aggregateWeeklyReport(tickets, { weeks, now: NOW, year: YEAR });
 }
 
 function weekByKey(result: WeeklyReport, key: string) {
@@ -57,8 +56,12 @@ describe('week boundaries', () => {
     // ISO week 1 of 2026 opens on Mon 29 Dec 2025; keying it 2025-W01 would sort
     // it before every 2025 week and print the wrong year.
     const result = aggregateWeeklyReport(
-      [ticket({ createdAt: '2025-12-01T00:00:00+07:00', doneAt: '2025-12-29T00:00:00+07:00' })],
-      { weeks: 52, now: NOW, pulledAt: PULLED_AT, year: 2025 }
+      [
+        ticket({ createdAt: '2025-12-01T00:00:00+07:00', doneAt: '2025-12-29T00:00:00+07:00' }),
+        // Reaches far enough back that the range on offer holds the New Year.
+        ticket({ ticketId: 'anchor', createdAt: '2025-07-01T00:00:00+07:00', doneAt: null }),
+      ],
+      { weeks: 52, now: NOW, year: 2025 }
     );
 
     const week = weekByKey(result, '2026-W01');
@@ -159,11 +162,9 @@ describe('cohorts', () => {
     ]);
 
     expect(withGhosts.ghosts.count).toBe(2);
-    expect(withGhosts.ghosts.closedTotal).toBe(3);
-    expect(withGhosts.ghosts.shareOfClosed).toBe(0.667);
-    // Three tickets are outstanding at the latest week: two ghosts and one open.
-    expect(withGhosts.ghosts.shareOfOutstandingLatestWeek).toBe(0.667);
     expect(withGhosts.ghosts.caveat).toContain('2 finished tickets carry no done date');
+    // Both ghosts are outstanding at the latest week, and reported again there.
+    expect(withGhosts.weeks[withGhosts.weeks.length - 1]?.closedWithoutDoneAt).toBe(2);
 
     // One ghost reads as a sentence, not as `1 finished tickets carry`.
     const single = report([
@@ -173,7 +174,6 @@ describe('cohorts', () => {
 
     const clean = report([ticket({ createdAt: '2026-08-01T00:00:00+07:00', doneAt: null })]);
     expect(clean.ghosts.count).toBe(0);
-    expect(clean.ghosts.shareOfClosed).toBe(0);
     expect(clean.ghosts.caveat).toBeNull();
   });
 
@@ -367,12 +367,13 @@ describe('time to first done', () => {
 
   test('takes the midpoint of an even-sized sample', () => {
     const ages = [0, 2, 5, 20];
+    const opened = '2026-08-03T00:00:00+07:00';
     const result = report(
       ages.map((days, index) =>
         ticket({
           ticketId: `age-${index}`,
-          createdAt: '2026-08-01T00:00:00+07:00',
-          doneAt: new Date(Date.parse('2026-08-01T00:00:00+07:00') + days * 86400000).toISOString(),
+          createdAt: opened,
+          doneAt: new Date(Date.parse(opened) + days * 86400000).toISOString(),
         })
       )
     );
@@ -422,14 +423,35 @@ describe('the horizon the mirror can answer for', () => {
     expect(report(weeklyHistory(48), 52).range.selectedWeeks).toBe(52);
   });
 
-  test('names the date continuous history begins', () => {
+  test('names the date the mirror\'s history starts', () => {
     // NOW is Wed 26 Aug 2026; 23 weeks before it is Wed 18 Mar 2026.
     expect(report(weeklyHistory(24), 12).range.coverageNote).toContain(
-      'Continuous HelpDesk history begins 18 Mar 2026'
+      "The mirror's earliest HelpDesk ticket was created 18 Mar 2026"
     );
   });
 
-  test('counts a ticket older than the run without letting it stretch the range', () => {
+  test('a week with nothing in it does not cut the history short', () => {
+    // 30 weeks of history with one silent week in the middle. A week in which
+    // nobody opened a ticket is an answer, and cannot be told apart from an
+    // unfetched week by counting tickets — so counting it as absence used to
+    // truncate coverage at the gap and withhold ranges the mirror can answer.
+    const withGap = weeklyHistory(30).filter((_, index) => index !== 10);
+    const quiet = report(withGap, 52);
+
+    expect(quiet.range.selectedWeeks).toBe(26);
+    expect(quiet.range.presets.map((preset) => preset.available)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(quiet.range.coverageNote).toContain('quiet week, not missing data');
+
+    // The same history with no gap answers identically: the gap changes nothing.
+    expect(report(weeklyHistory(30), 52).range.selectedWeeks).toBe(26);
+  });
+
+  test('measures back to the oldest ticket it holds, however alone that ticket is', () => {
     const outlier = ticket({
       ticketId: 'outlier',
       createdAt: new Date(NOW.getTime() - 40 * WEEK).toISOString(),
@@ -437,20 +459,28 @@ describe('the horizon the mirror can answer for', () => {
     });
     const result = report([outlier, ...weeklyHistory(24)], 52);
 
-    // Named, not hidden: it is in the note, and outstanding in every week drawn.
-    expect(result.range.coverageNote).toContain('One ticket created 19 Nov 2025');
-    expect(result.range.coverageNote).toContain('does not stretch the range');
+    // The mirror does hold that week, so the note says so and the span reaches
+    // it. 41 weeks is still short of 52, which stays withheld.
+    expect(result.range.coverageNote).toContain('19 Nov 2025');
     expect(result.range.selectedWeeks).toBe(26);
+    expect(result.range.presets.map((preset) => preset.available)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
     for (const week of result.weeks) expect(week.outstanding).toBeGreaterThanOrEqual(1);
   });
 
-  test('falls back to the pull window when no run of weeks reaches the present', () => {
-    // One ticket from January, nothing since: there is no history to measure, so
-    // the note names the window the pull asked for rather than inventing a run.
-    const result = report([ticket({ createdAt: '2026-01-05T00:00:00+07:00' })], 12);
+  test('names the pull window only when there is no ticket at all to measure from', () => {
+    // One ticket from January and nothing since is not an unmeasurable mirror:
+    // it covers January onward, and those weeks are empty rather than unknown.
+    const january = report([ticket({ createdAt: '2026-01-05T00:00:00+07:00' })], 12);
+    expect(january.range.coverageNote).toContain('5 Jan 2026');
+    expect(january.range.selectedWeeks).toBe(12);
 
-    expect(result.range.coverageNote).toContain('created in 2026');
-    expect(result.range.selectedWeeks).toBe(12);
+    // An empty mirror has nothing to measure, so the note says what was asked for.
+    expect(report([], 12).range.coverageNote).toContain('created in 2026');
   });
 });
 
@@ -478,10 +508,12 @@ describe('range and fixed strings', () => {
 
   test('carries the rules and captions the page renders verbatim', () => {
     const result = report([]);
-    expect(result.doneRule).toContain('Done, Dev Done, Done Speed Up');
-    expect(result.outstandingCaption).toContain('open right now');
+    // The rule is the date, not a list of statuses: `tsStatus` is open-ended, so
+    // any enumerated list in this sentence is one release from being untrue.
+    expect(result.doneRule).toContain('reached a done state in HelpDesk at any point');
+    expect(result.doneRule).not.toContain('Dev Done');
     expect(result.timeToFirstDone.caption).toContain('not time to customer delivery');
-    expect(result.pulledAt).toBe(PULLED_AT);
+    for (const week of result.weeks) expect(week.outstandingCaption).toContain('open right now');
   });
 
   test('counts open tickets live, over the whole mirror rather than a week', () => {
@@ -503,7 +535,6 @@ describe('the fixture', () => {
     const result = aggregateWeeklyReport(fixture, {
       weeks: 52,
       now: NOW,
-      pulledAt: PULLED_AT,
       year: YEAR,
     });
 
@@ -574,7 +605,6 @@ describe('week keys across a year boundary', () => {
     const result = aggregateWeeklyReport(weeklyHistoryEndingAt(6, now), {
       weeks: 4,
       now,
-      pulledAt: PULLED_AT,
       year: 2026,
     });
 
@@ -667,20 +697,92 @@ describe('bucket boundaries', () => {
   });
 });
 
+describe('the week that has not finished yet', () => {
+  test('words the running week differently from the ones behind it', () => {
+    const result = report([]);
+    const current = result.weeks[result.weeks.length - 1];
+    const previous = result.weeks[result.weeks.length - 2];
+    if (!current || !previous) throw new Error('the range must hold at least two weeks');
+
+    // Its Sunday has not happened, so no figure on it can be an end-of-week one.
+    expect(current.tileLabels.outstanding).not.toContain('week end');
+    expect(current.outstandingCaption).not.toContain('historical');
+    expect(current.label).toContain('in progress');
+
+    // Every finished week keeps the end-of-week wording.
+    expect(previous.tileLabels.outstanding).toContain('week end');
+    expect(previous.outstandingCaption).toContain('historical');
+    expect(previous.label).not.toContain('in progress');
+  });
+
+  test('says week-to-date on the created and done tiles of the running week', () => {
+    const result = report([]);
+    const current = result.weeks[result.weeks.length - 1];
+    const previous = result.weeks[result.weeks.length - 2];
+    if (!current || !previous) throw new Error('the range must hold at least two weeks');
+
+    expect(current.tileLabels.created).toContain('so far');
+    expect(current.tileLabels.done).toContain('so far');
+    expect(previous.tileLabels.created).not.toContain('so far');
+    expect(previous.tileLabels.done).not.toContain('so far');
+  });
+});
+
+describe('a ticket that belongs to no week', () => {
+  test('names a ticket with neither a created nor a done date instead of losing it', () => {
+    // It can be placed in no week, so it reaches no total, no category row and
+    // no priority row — while still being counted in the live open figure. If
+    // nothing names it, the page shows an outstanding count of 0 beside an open
+    // count of 1 and a caption explaining a difference that is not the cause.
+    const result = report([
+      ticket({ ticketId: 'undated', createdAt: null, doneAt: null, ticketStatus: 'open' }),
+    ]);
+
+    expect(result.excluded.undated).toBe(1);
+    expect(result.openRightNow).toBe(1);
+    for (const week of result.weeks) {
+      expect(week.created).toBe(0);
+      expect(week.done).toBe(0);
+      expect(week.outstanding).toBe(0);
+      expect(week.categories).toHaveLength(0);
+      expect(week.priorities).toHaveLength(0);
+    }
+  });
+
+  test('keeps the three exclusion reasons apart', () => {
+    const result = report([
+      ticket({ ticketId: 'gone', deletedAt: '2026-08-01T00:00:00+07:00' }),
+      ticket({ ticketId: 'garbled', createdAt: 'not a date' }),
+      ticket({ ticketId: 'undated', createdAt: null, doneAt: null }),
+      ticket({ ticketId: 'fine', createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]);
+
+    expect(result.excluded).toEqual({ deleted: 1, unparseableDate: 1, undated: 1 });
+    // A ticket with a done date but no created date still belongs to a week.
+    const dated = report([
+      ticket({ ticketId: 'done-only', createdAt: null, doneAt: '2026-08-18T09:00:00+07:00' }),
+    ]);
+    expect(dated.excluded.undated).toBe(0);
+    expect(weekByKey(dated, '2026-W34').done).toBe(1);
+  });
+});
+
 describe('what counts as history, and what counts as open', () => {
-  test('still measures a run when the newest ticket is a week old, and stops when it is older', () => {
+  test('measures history from the oldest ticket however stale the newest one is', () => {
     // The mirror is pulled on demand, so the newest ticket sitting in last week
-    // is ordinary. Treating that as "no history" would swap the measured note
-    // for the pull-window one on any quiet week.
+    // is ordinary. Treating that as "no history" swapped the measured note for
+    // the pull-window one on any quiet week.
     const lastWeek = report([
       ticket({ createdAt: new Date(NOW.getTime() - WEEK).toISOString(), doneAt: null }),
     ]);
-    expect(lastWeek.range.coverageNote).toContain('Continuous HelpDesk history begins');
+    expect(lastWeek.range.coverageNote).toContain('19 Aug 2026');
 
+    // Two weeks stale is just as measurable: how recently the mirror was pulled
+    // is not what decides which weeks it can answer for.
     const older = report([
       ticket({ createdAt: new Date(NOW.getTime() - 2 * WEEK).toISOString(), doneAt: null }),
     ]);
-    expect(older.range.coverageNote).toContain('created in 2026');
+    expect(older.range.coverageNote).toContain('12 Aug 2026');
   });
 
   test('counts a ticket as open only when it says open, not merely when it is not closed', () => {
@@ -693,7 +795,8 @@ describe('what counts as history, and what counts as open', () => {
     ]);
 
     expect(result.openRightNow).toBe(1);
-    expect(result.ghosts.closedTotal).toBe(1);
+    // The closed ticket carries a done date, so it is not part of the residue.
+    expect(result.ghosts.count).toBe(0);
   });
 
   test('serves the default range when the query names no weeks at all', () => {

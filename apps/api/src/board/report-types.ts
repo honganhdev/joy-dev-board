@@ -15,6 +15,18 @@ export type WeekSummary = {
   label: string;
   /** `17 Aug` — the column tick. */
   shortLabel: string;
+  /**
+   * Titles for the three headline tiles. Worded per week because the week
+   * holding `now` has not finished: its figures are week-to-date, so it cannot
+   * be titled with an end-of-week figure. The renderer prints what it is given.
+   */
+  tileLabels: { created: string; done: string; outstanding: string };
+  /**
+   * Why this week's outstanding figure and `openRightNow` differ. Week-scoped
+   * for the same reason as `tileLabels`: the sentence for a finished week calls
+   * the figure historical, which is untrue of the week still running.
+   */
+  outstandingCaption: string;
   created: number;
   done: number;
   /** Includes `closedWithoutDoneAt`. */
@@ -51,12 +63,6 @@ export type WeekSummary = {
 export type GhostAudit = {
   /** Closed-with-no-doneAt, over the whole mirror. */
   count: number;
-  /** All tickets with `ticketStatus === 'closed'`, ghosts included. */
-  closedTotal: number;
-  /** `count / closedTotal`, 0 when `closedTotal` is 0. Rounded to 3 dp. */
-  shareOfClosed: number;
-  /** `count / outstanding` at the latest week in range, 0 when that is 0. */
-  shareOfOutstandingLatestWeek: number;
   /**
    * The caveat, already worded, or `null` when `count` is 0. Naming the number of
    * finished tickets that cannot be dated is the whole of the ghost remedy — no
@@ -94,17 +100,17 @@ export type WeeklyReport = {
   timeToFirstDone: TimeToFirstDone;
   /**
    * `ticketStatus === 'open'` right now, across the whole mirror. Not week-scoped
-   * and not derivable from any week — see `outstandingCaption`.
+   * and not derivable from any week — see each week's `outstandingCaption`.
    */
   openRightNow: number;
-  /** The measured ghost population. Both shares, so one render answers both questions. */
+  /** The measured ghost population, and the caveat naming it. */
   ghosts: GhostAudit;
-  /** Tickets in no cohort at all, named so nothing vanishes silently. */
-  excluded: { deleted: number; unparseableDate: number };
+  /**
+   * Tickets in no cohort at all, named so nothing vanishes silently. `undated`
+   * is a ticket with neither a created nor a done date: it can be placed in no
+   * week, so no total and no breakdown row can hold it.
+   */
+  excluded: { deleted: number; unparseableDate: number; undated: number };
   /** The done rule, in words, rendered on screen verbatim. */
   doneRule: string;
-  /** Why OUTSTANDING AT WEEK END and `openRightNow` differ. Rendered verbatim. */
-  outstandingCaption: string;
-  /** Last successful HelpDesk pull, for the "as of" line. */
-  pulledAt: string;
 };

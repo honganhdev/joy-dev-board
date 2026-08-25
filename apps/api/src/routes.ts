@@ -155,12 +155,8 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
 
       if (pathname === '/api/report/weekly' && request.method === 'GET') {
         await ensureSeeded();
-        const lastSuccessful = readLastSuccessfulPull(db);
-        const pulledAt = lastSuccessful?.finishedAt ?? new Date(0).toISOString();
         const weeks = Number(url.searchParams.get('weeks'));
-        return json(
-          aggregateWeeklyReport(readTickets(db), { weeks, now: new Date(), pulledAt, year })
-        );
+        return json(aggregateWeeklyReport(readTickets(db), { weeks, now: new Date(), year }));
       }
 
       const historyMatch = pathname.match(/^\/api\/tickets\/([^/]+)\/history$/);

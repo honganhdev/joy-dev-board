@@ -29,6 +29,9 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
   const [view, setView] = useState<BoardView>('board');
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<CollapsedState>({});
+  // Bumped by a finished pull. The board re-reads itself inside `pull()`; the
+  // report is mounted elsewhere and needs telling that its numbers just aged.
+  const [pullToken, setPullToken] = useState(0);
 
   const filtered = useMemo(() => (board ? filterBoard(board, query) : null), [board, query]);
 
@@ -44,6 +47,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
   const handlePull = useCallback(async () => {
     try {
       const { pulled, inserted, statusChanges } = await pull();
+      setPullToken((token) => token + 1);
       toast.success(
         `Pulled ${pulled} tickets · ${inserted} new · ${statusChanges} status ${statusChanges === 1 ? 'change' : 'changes'}.`
       );
@@ -96,7 +100,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
             panels is unreachable at any window size. */}
         {view === 'report' ? (
           <div className="h-full overflow-y-auto">
-            <ReportView />
+            <ReportView pullToken={pullToken} />
           </div>
         ) : (
           <>

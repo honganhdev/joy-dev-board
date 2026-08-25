@@ -50,9 +50,14 @@ function ReportError({ message, onRetry }: { message: string; onRetry: () => voi
  * because the response already carries every week's breakdowns: clicking a
  * column picks an element out of an array the browser is holding, and must never
  * refetch or blank the chart under the cursor.
+ *
+ * `pullToken` is how a pull reaches those numbers without moving the request
+ * back up into `BoardApp`: the header reports a pull the whole page has to
+ * honour, and a report left at its pre-pull figures under a header saying
+ * "pulled just now" is worse than one that says it is loading.
  */
-export function ReportView() {
-  const { report, loading, error, setWeeks, reload } = useWeeklyReport();
+export function ReportView({ pullToken }: { pullToken: number }) {
+  const { report, loading, error, setWeeks, reload } = useWeeklyReport(pullToken);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
   const weeks = report?.weeks ?? [];
@@ -101,6 +106,15 @@ export function ReportView() {
       } with an unreadable date`
     );
   }
+  // Neither a created nor a done date: in no week, so in no figure on this page,
+  // and still counted in the live open total. Named here or it vanishes.
+  if (report.excluded.undated > 0) {
+    footnotes.push(
+      `${report.excluded.undated} ${
+        report.excluded.undated === 1 ? 'ticket' : 'tickets'
+      } with no created or done date`
+    );
+  }
 
   return (
     <div className="space-y-3 pb-4">
@@ -112,11 +126,7 @@ export function ReportView() {
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.doneRule}</p>
       </section>
 
-      <HeadlineTiles
-        week={focused}
-        openRightNow={report.openRightNow}
-        outstandingCaption={report.outstandingCaption}
-      />
+      <HeadlineTiles week={focused} openRightNow={report.openRightNow} />
 
       <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={setFocusedKey} />
 

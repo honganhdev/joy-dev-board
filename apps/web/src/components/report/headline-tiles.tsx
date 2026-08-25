@@ -4,8 +4,6 @@ import type { WeekSummary } from '@/types';
 type HeadlineTilesProps = {
   week: WeekSummary;
   openRightNow: number;
-  /** Why the historical number and the live one differ. Rendered verbatim. */
-  outstandingCaption: string;
 };
 
 function Tile({ label, children }: { label: string; children: ReactNode }) {
@@ -30,17 +28,22 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  * ghosts inside the figure read first, where a caption cannot reach them. Both
  * values come off the wire, so this does no arithmetic — and the `+N` sentence
  * is the server's, worded for the week on screen and absent when it is zero.
+ *
+ * The three tile titles and the caption under the outstanding figure come off
+ * the wire too. The week holding today has not finished, so `Outstanding at week
+ * end` would name a Sunday that has not happened; the server words that week
+ * differently and this prints whichever wording it was sent.
  */
-export function HeadlineTiles({ week, openRightNow, outstandingCaption }: HeadlineTilesProps) {
+export function HeadlineTiles({ week, openRightNow }: HeadlineTilesProps) {
   const doneMax = Math.max(1, week.done);
 
   return (
     <div className="flex gap-3">
-      <Tile label="New this week">
+      <Tile label={week.tileLabels.created}>
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.created}</p>
       </Tile>
 
-      <Tile label="Done this week">
+      <Tile label={week.tileLabels.done}>
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.done}</p>
         {week.doneByStatus.length > 0 && (
           <>
@@ -65,7 +68,7 @@ export function HeadlineTiles({ week, openRightNow, outstandingCaption }: Headli
         )}
       </Tile>
 
-      <Tile label="Outstanding at week end">
+      <Tile label={week.tileLabels.outstanding}>
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">
           {week.outstandingWithDoneDate}
         </p>
@@ -77,7 +80,7 @@ export function HeadlineTiles({ week, openRightNow, outstandingCaption }: Headli
         <p className="mt-2 text-[11px] text-muted-foreground">
           open right now: <span className="tabular-nums">{openRightNow}</span>
         </p>
-        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{outstandingCaption}</p>
+        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{week.outstandingCaption}</p>
       </Tile>
     </div>
   );

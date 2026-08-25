@@ -39,13 +39,44 @@ const PRESET_GRACE_WEEKS = 4;
 const NO_PRIORITY = '(no priority)';
 const NO_STATUS = '(no status)';
 
+/**
+ * `tsStatus` is not a closed enum, so naming the done statuses here could only
+ * ever be a snapshot of the ones that existed when the sentence was written.
+ * The rule the code runs is the date, not the status: any ticket HelpDesk has
+ * stamped with a done date counts in the week that date falls in.
+ */
 const DONE_RULE =
-  'Done = reached a done state in HelpDesk (Done, Dev Done, Done Speed Up), dated by ' +
-  "HelpDesk's own done date.";
+  'Done = reached a done state in HelpDesk at any point, dated by HelpDesk\'s own done date.';
 
 const OUTSTANDING_CAPTION =
   'Outstanding at week end is historical, counted from the mirror; open right now is ' +
   "today's live count of tickets whose status is open.";
+
+/**
+ * The same caption for the week that is still running. Its Sunday has not
+ * happened, so nothing about it can be described as an end-of-week figure.
+ */
+const IN_PROGRESS_OUTSTANDING_CAPTION =
+  'This week has not finished, so every figure here is week-to-date rather than final. ' +
+  'Outstanding counts tickets created and not yet done; open right now is ' +
+  "today's live count of tickets whose status is open.";
+
+/**
+ * Titles for the three headline tiles, worded per week rather than fixed in the
+ * renderer: a week still in progress cannot be titled with a week-end figure,
+ * and only the server knows which week that is.
+ */
+const FINISHED_TILE_LABELS = {
+  created: 'New this week',
+  done: 'Done this week',
+  outstanding: 'Outstanding at week end',
+};
+
+const IN_PROGRESS_TILE_LABELS = {
+  created: 'New so far this week',
+  done: 'Done so far this week',
+  outstanding: 'Outstanding so far',
+};
 
 const TIME_TO_FIRST_DONE_CAPTION =
   "Measured from a ticket's created date to the first time HelpDesk marked it done, which " +
@@ -102,10 +133,6 @@ function timestamp(value: unknown): number | null {
   return new Date(value).getTime();
 }
 
-function round3(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
-
 /** Days between two instants, floored at 0 — a done date before a created date is 0, not negative. */
 function wholeDaysBetween(fromMs: number, toMs: number): number {
   return Math.max(0, Math.floor((toMs - fromMs) / DAY_MS));
@@ -123,7 +150,6 @@ type Counted = {
   createdMs: number | null;
   doneMs: number | null;
   isGhost: boolean;
-  isClosed: boolean;
   category: string;
   priority: string;
   status: string;
@@ -150,8 +176,8 @@ function byWeightThenKey(last: string) {
 /**
  * How many whole weeks the pull window itself spans: it covers one calendar
  * year, so nothing before the week holding 1 January of that year was ever
- * fetched. This is the floor used when the mirror holds no recent history to
- * measure — it says what was asked for rather than what arrived.
+ * fetched. This is what an empty mirror reports: with no ticket to measure a
+ * span from, the honest answer is what the pull asked for.
  */
 function pullWindowWeeks(year: number, nowMs: number): number {
   const yearStart = weekStartMs(Date.UTC(year, 0, 1) - 7 * 60 * 60 * 1000);
@@ -162,60 +188,43 @@ function pullWindowWeeks(year: number, nowMs: number): number {
 /**
  * What the mirror can actually answer for, measured from the tickets in it.
  *
- * Coverage runs back from the current week along an unbroken run of weeks that
- * hold at least one created ticket. A ticket older than that run stays in every
- * total — nothing is filtered, hidden or excluded — but it does not stretch the
- * range, so one stray record cannot open a season of columns that can never
- * hold anything.
+ * Coverage is the span from the earliest ticket the mirror holds to the current
+ * week. Interior weeks with nothing in them are inside that span, not outside
+ * it: a week in which nobody opened a ticket is an answer — zero — and cannot be
+ * told apart from a week the pull never reached by looking at ticket counts
+ * alone. Treating a quiet week as absence used to truncate coverage at the first
+ * one and withhold ranges the mirror could answer perfectly well.
  */
 type Horizon = {
-  /** Whole weeks from the current week back to where continuous history starts. */
+  /** Whole weeks from the current week back to the week holding the earliest ticket. */
   weeks: number;
-  /** Earliest created date inside that run, or `null` when there is no run. */
+  /** Earliest created date in the mirror, or `null` when it holds none. */
   startsAtMs: number | null;
-  /** Created before the run: counted everywhere, covered by nothing. */
-  earlier: { count: number; earliestMs: number };
 };
 
 function historyHorizon(counted: Counted[], nowMs: number, year: number): Horizon {
   const latestWeekStart = weekStartMs(nowMs);
-  const populated = new Set<number>();
-  for (const ticket of counted) {
-    if (ticket.createdMs !== null) populated.add(weekStartMs(ticket.createdMs));
-  }
 
-  const newest = populated.size === 0 ? null : Math.max(...populated);
-  // A mirror whose newest ticket is more than a week stale has no run reaching
-  // the present to measure, so the window the pull asked for is all we can claim.
-  if (newest === null || latestWeekStart - newest > WEEK_MS) {
-    return {
-      weeks: pullWindowWeeks(year, nowMs),
-      startsAtMs: null,
-      earlier: { count: 0, earliestMs: 0 },
-    };
-  }
-
-  let runStart = newest;
-  while (populated.has(runStart - WEEK_MS)) runStart -= WEEK_MS;
-
-  let startsAtMs: number | null = null;
-  let earlierCount = 0;
-  let earliestMs = 0;
+  let earliestMs: number | null = null;
   for (const ticket of counted) {
     const created = ticket.createdMs;
-    if (created === null) continue;
-    if (created >= runStart) {
-      if (startsAtMs === null || created < startsAtMs) startsAtMs = created;
-    } else {
-      earlierCount += 1;
-      if (earlierCount === 1 || created < earliestMs) earliestMs = created;
-    }
+    // `Number.isFinite` rejects a NaN date as well as a null one. The upstream
+    // exclusion already keeps unparseable dates out of `counted`, so this is
+    // belt and braces — but a NaN reaching the arithmetic below would silently
+    // produce a NaN week count and a report with no weeks in it at all.
+    if (created === null || !Number.isFinite(created)) continue;
+    if (earliestMs === null || created < earliestMs) earliestMs = created;
   }
 
+  // Nothing to measure: say what the pull asked for rather than inventing a run.
+  if (earliestMs === null) {
+    return { weeks: pullWindowWeeks(year, nowMs), startsAtMs: null };
+  }
+
+  const firstWeekStart = weekStartMs(earliestMs);
   return {
-    weeks: Math.max(1, Math.round((latestWeekStart - runStart) / WEEK_MS) + 1),
-    startsAtMs,
-    earlier: { count: earlierCount, earliestMs },
+    weeks: Math.max(1, Math.round((latestWeekStart - firstWeekStart) / WEEK_MS) + 1),
+    startsAtMs: earliestMs,
   };
 }
 
@@ -231,17 +240,11 @@ function coverageNote(horizon: Horizon, year: number): string {
     );
   }
 
-  const note =
-    `Continuous HelpDesk history begins ${dayLabel(horizon.startsAtMs)}; earlier weeks hold ` +
-    'nothing, so backlog is a floor, not a total.';
-  const { count, earliestMs } = horizon.earlier;
-  if (count === 0) return note;
-
-  return count === 1
-    ? `${note} One ticket created ${dayLabel(earliestMs)} sits before that and is counted in ` +
-        'every total, but it does not stretch the range.'
-    : `${note} ${count} tickets created before that, the earliest on ${dayLabel(earliestMs)}, ` +
-        'are counted in every total, but they do not stretch the range.';
+  return (
+    `The mirror's earliest HelpDesk ticket was created ${dayLabel(horizon.startsAtMs)}; nothing ` +
+    'opened before that is in it, so backlog is a floor, not a total. A week inside that span ' +
+    'with no tickets is a quiet week, not missing data.'
+  );
 }
 
 /**
@@ -314,16 +317,11 @@ function outstandingCaveat(closedWithoutDoneAt: number): string | null {
     : `+${closedWithoutDoneAt} tickets closed with no done date`;
 }
 
-function ghostAudit(counted: Counted[], latest: WeekSummary | undefined): GhostAudit {
+function ghostAudit(counted: Counted[]): GhostAudit {
   const count = counted.filter((ticket) => ticket.isGhost).length;
-  const closedTotal = counted.filter((ticket) => ticket.isClosed).length;
-  const latestOutstanding = latest?.outstanding ?? 0;
 
   return {
     count,
-    closedTotal,
-    shareOfClosed: closedTotal === 0 ? 0 : round3(count / closedTotal),
-    shareOfOutstandingLatestWeek: latestOutstanding === 0 ? 0 : round3(count / latestOutstanding),
     caveat:
       count === 0
         ? null
@@ -343,10 +341,10 @@ function ghostAudit(counted: Counted[], latest: WeekSummary | undefined): GhostA
  */
 export function aggregateWeeklyReport(
   tickets: HelpDeskTicket[],
-  options: { weeks: number; now: Date; pulledAt: string; year: number }
+  options: { weeks: number; now: Date; year: number }
 ): WeeklyReport {
   const nowMs = options.now.getTime();
-  const excluded = { deleted: 0, unparseableDate: 0 };
+  const excluded = { deleted: 0, unparseableDate: 0, undated: 0 };
   const counted: Counted[] = [];
 
   for (const ticket of tickets) {
@@ -365,11 +363,18 @@ export function aggregateWeeklyReport(
       continue;
     }
 
+    // Neither date: it belongs to no week, so it can be in no created, done or
+    // outstanding cohort and in no category or priority row. Counting it here is
+    // what keeps it from disappearing between the totals and the footnote.
+    if (createdMs === null && doneMs === null) {
+      excluded.undated += 1;
+      continue;
+    }
+
     const isClosed = ticket.ticketStatus === 'closed';
     counted.push({
       createdMs,
       doneMs,
-      isClosed,
       isGhost: isClosed && doneMs === null,
       category: classify(ticket),
       priority: isPresent(ticket.priority) ? ticket.priority.trim() : NO_PRIORITY,
@@ -389,6 +394,10 @@ export function aggregateWeeklyReport(
 
   const weeks: WeekSummary[] = weekStarts.map((startMs) => {
     const endMs = startMs + WEEK_MS;
+    // The range always reaches the week holding `now`, because the question the
+    // page answers is about this week. That week's Sunday has not happened, so
+    // its figures are week-to-date and every string naming it has to say so.
+    const inProgress = startMs === latestWeekStart;
     const categories = new Map<string, Pair>();
     const priorities = new Map<string, Pair>();
     const statuses = new Map<string, number>();
@@ -422,8 +431,10 @@ export function aggregateWeeklyReport(
 
     return {
       key: weekKey(startMs),
-      label: weekLabel(startMs),
+      label: inProgress ? `${weekLabel(startMs)} · in progress` : weekLabel(startMs),
       shortLabel: weekShortLabel(startMs),
+      tileLabels: inProgress ? IN_PROGRESS_TILE_LABELS : FINISHED_TILE_LABELS,
+      outstandingCaption: inProgress ? IN_PROGRESS_OUTSTANDING_CAPTION : OUTSTANDING_CAPTION,
       created,
       done,
       outstanding,
@@ -455,10 +466,8 @@ export function aggregateWeeklyReport(
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.
     openRightNow: tickets.filter((ticket) => ticket.ticketStatus === 'open').length,
-    ghosts: ghostAudit(counted, weeks[weeks.length - 1]),
+    ghosts: ghostAudit(counted),
     excluded,
     doneRule: DONE_RULE,
-    outstandingCaption: OUTSTANDING_CAPTION,
-    pulledAt: options.pulledAt,
   };
 }

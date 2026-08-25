@@ -100,17 +100,38 @@ async function get<T>(config: Config, url: URL): Promise<T> {
  * the year is walked in `CHUNK_DAYS` windows and the results concatenated.
  * `/tickets/admin` is not used instead: it cannot filter by app and would need
  * cursor pagination.
+ *
+ * `appName` is matched here rather than upstream, and about 1.7% of the rows a
+ * window returns carry `appName: null` — 17 of 1,018 in one measured week. A
+ * ticket that does not name an app cannot be claimed for this one, so those rows
+ * stay out of the mirror; what they must not do is leave quietly. The count is
+ * logged at the end of the pull, because a filter that drops rows and reports
+ * success is the exact shape of the omission this windowing was written to fix.
  */
 export async function fetchTicketsForYear(config: Config): Promise<HelpDeskTicket[]> {
   const tickets: HelpDeskTicket[] = [];
+  let unnamedApp = 0;
 
   for (const window of chunkYear(config.year)) {
     for (const ticket of await fetchWindow(config, window)) {
       if (ticket.appName === config.appName) tickets.push(ticket);
+      else if (!isPresent(ticket.appName)) unnamedApp += 1;
     }
   }
 
+  if (unnamedApp > 0) {
+    console.warn(
+      `[helpdesk] ${unnamedApp} tickets in ${config.year} carry no appName and are not in the ` +
+        `mirror: they cannot be attributed to ${config.appName} or to any other app.`
+    );
+  }
+
   return tickets;
+}
+
+/** A usable app name: present, a string, and not blank. */
+function isPresent(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
 }
 
 /**
