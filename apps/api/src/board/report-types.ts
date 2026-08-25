@@ -72,8 +72,18 @@ export type GhostAudit = {
 };
 
 export type RangeMeta = {
-  /** Already clamped to what the mirror can answer. */
-  presets: Array<{ weeks: number; label: string; available: boolean }>;
+  /**
+   * Already clamped to what the mirror can answer. `unavailableNote` is why a
+   * withheld preset is withheld, worded here and rendered verbatim: the control
+   * explains nothing in its own words, so it cannot go on explaining a rule the
+   * server no longer applies.
+   */
+  presets: Array<{
+    weeks: number;
+    label: string;
+    available: boolean;
+    unavailableNote: string | null;
+  }>;
   /** What the server actually used — may differ from the request, so the client can see it. */
   selectedWeeks: number;
   /** Printed under the backlog panel. Names the mirror's horizon honestly. */
@@ -96,6 +106,12 @@ export type WeeklyReport = {
   weeks: WeekSummary[];
   /** What the range control may offer. The client derives no week keys itself. */
   range: RangeMeta;
+  /**
+   * The backlog panel's heading. Worded here because only the server knows
+   * whether the last column is a finished week or the running one, and a
+   * heading promising an end-of-week figure over a mid-week column is false.
+   */
+  backlogTitle: string;
   /** Range-scoped, not week-scoped. See its own caption. */
   timeToFirstDone: TimeToFirstDone;
   /**
@@ -111,6 +127,13 @@ export type WeeklyReport = {
    * week, so no total and no breakdown row can hold it.
    */
   excluded: { deleted: number; unparseableDate: number; undated: number };
+  /**
+   * The same exclusions in words, or `null` when there are none. The counts
+   * above stay on the wire for anything that wants to do arithmetic with them;
+   * this is what the page prints, so the browser writes no prose and picks no
+   * plural.
+   */
+  excludedNote: string | null;
   /** The done rule, in words, rendered on screen verbatim. */
   doneRule: string;
 };

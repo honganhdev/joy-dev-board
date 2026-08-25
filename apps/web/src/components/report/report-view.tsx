@@ -93,29 +93,6 @@ export function ReportView({ pullToken }: { pullToken: number }) {
     outstanding: row.outstanding,
   }));
 
-  const footnotes: string[] = [];
-  if (report.excluded.deleted > 0) {
-    footnotes.push(
-      `${report.excluded.deleted} deleted ${report.excluded.deleted === 1 ? 'ticket' : 'tickets'}`
-    );
-  }
-  if (report.excluded.unparseableDate > 0) {
-    footnotes.push(
-      `${report.excluded.unparseableDate} ${
-        report.excluded.unparseableDate === 1 ? 'ticket' : 'tickets'
-      } with an unreadable date`
-    );
-  }
-  // Neither a created nor a done date: in no week, so in no figure on this page,
-  // and still counted in the live open total. Named here or it vanishes.
-  if (report.excluded.undated > 0) {
-    footnotes.push(
-      `${report.excluded.undated} ${
-        report.excluded.undated === 1 ? 'ticket' : 'tickets'
-      } with no created or done date`
-    );
-  }
-
   return (
     <div className="space-y-3 pb-4">
       <section className="rounded-lg border border-stone-200 bg-white p-4">
@@ -133,6 +110,7 @@ export function ReportView({ pullToken }: { pullToken: number }) {
       <BacklogColumns
         weeks={weeks}
         focusedKey={focused.key}
+        title={report.backlogTitle}
         coverageNote={report.range.coverageNote}
         ghostCaveat={report.ghosts.caveat}
       />
@@ -152,10 +130,13 @@ export function ReportView({ pullToken }: { pullToken: number }) {
 
       <DurationHistogram data={report.timeToFirstDone} />
 
-      {footnotes.length > 0 && (
-        <p className="px-1 text-[11px] text-muted-foreground">
-          Not counted: {footnotes.join(' · ')}.
-        </p>
+      {/*
+        What reached no week, named so nothing vanishes silently — in the
+        server's own words. The wording is not "not counted": an undated ticket
+        that is open is still in the live open figure above.
+      */}
+      {report.excludedNote && (
+        <p className="px-1 text-[11px] text-muted-foreground">{report.excludedNote}</p>
       )}
     </div>
   );

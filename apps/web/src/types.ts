@@ -130,8 +130,13 @@ export type GhostAudit = {
 };
 
 export type RangeMeta = {
-  /** Already clamped to what the mirror can answer. */
-  presets: Array<{ weeks: number; label: string; available: boolean }>;
+  /** Already clamped to what the mirror can answer; `unavailableNote` says why not. */
+  presets: Array<{
+    weeks: number;
+    label: string;
+    available: boolean;
+    unavailableNote: string | null;
+  }>;
   /** What the server actually used — may differ from what was requested. */
   selectedWeeks: number;
   coverageNote: string;
@@ -149,12 +154,16 @@ export type WeeklyReport = {
   /** Oldest first. Drives every panel. */
   weeks: WeekSummary[];
   range: RangeMeta;
+  /** The backlog panel's heading, worded for whether the last column is a finished week. */
+  backlogTitle: string;
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;
   openRightNow: number;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */
   excluded: { deleted: number; unparseableDate: number; undated: number };
+  /** The same exclusions in words, or `null` when there are none. Rendered verbatim. */
+  excludedNote: string | null;
   doneRule: string;
 };
 

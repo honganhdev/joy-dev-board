@@ -62,6 +62,15 @@ const IN_PROGRESS_OUTSTANDING_CAPTION =
   "today's live count of tickets whose status is open.";
 
 /**
+ * The backlog panel's heading. Every column but the last is an end-of-week
+ * figure; the last is the running week, whose Sunday has not happened. A
+ * heading promising Sunday over a Tuesday value contradicts the column label
+ * right beneath it, so the running week is named in the heading too.
+ */
+const BACKLOG_TITLE = 'Backlog at each week end';
+const IN_PROGRESS_BACKLOG_TITLE = 'Backlog at each week end, and so far this week';
+
+/**
  * Titles for the three headline tiles, worded per week rather than fixed in the
  * renderer: a week still in progress cannot be titled with a week-end figure,
  * and only the server knows which week that is.
@@ -198,22 +207,40 @@ function pullWindowWeeks(year: number, nowMs: number): number {
 type Horizon = {
   /** Whole weeks from the current week back to the week holding the earliest ticket. */
   weeks: number;
-  /** Earliest created date in the mirror, or `null` when it holds none. */
+  /** Earliest date on any counted ticket, or `null` when the mirror holds none. */
   startsAtMs: number | null;
 };
+
+/**
+ * The earliest date that places a ticket anywhere on this page — its created
+ * date, or its done date when it has none.
+ *
+ * A ticket with a done date and no created date is deliberately counted: it
+ * lands in the done cohort of the week its done date falls in. Measuring the
+ * horizon from created dates alone made that ticket invisible to the range, so
+ * the week holding its completion could fall outside every range on offer and
+ * the ticket appeared in no figure and in no exclusion count either.
+ */
+function earliestDateOf(ticket: Counted): number | null {
+  const dates = [ticket.createdMs, ticket.doneMs].filter(
+    // `Number.isFinite` rejects a NaN date as well as a null one. The upstream
+    // exclusion already keeps unparseable dates out of `counted`, so this is
+    // belt and braces — but a NaN reaching the arithmetic below would silently
+    // produce a NaN week count and a report with no weeks in it at all.
+    (value): value is number => value !== null && Number.isFinite(value)
+  );
+  if (dates.length === 0) return null;
+  return Math.min(...dates);
+}
 
 function historyHorizon(counted: Counted[], nowMs: number, year: number): Horizon {
   const latestWeekStart = weekStartMs(nowMs);
 
   let earliestMs: number | null = null;
   for (const ticket of counted) {
-    const created = ticket.createdMs;
-    // `Number.isFinite` rejects a NaN date as well as a null one. The upstream
-    // exclusion already keeps unparseable dates out of `counted`, so this is
-    // belt and braces — but a NaN reaching the arithmetic below would silently
-    // produce a NaN week count and a report with no weeks in it at all.
-    if (created === null || !Number.isFinite(created)) continue;
-    if (earliestMs === null || created < earliestMs) earliestMs = created;
+    const earliest = earliestDateOf(ticket);
+    if (earliest === null) continue;
+    if (earliestMs === null || earliest < earliestMs) earliestMs = earliest;
   }
 
   // Nothing to measure: say what the pull asked for rather than inventing a run.
@@ -240,10 +267,32 @@ function coverageNote(horizon: Horizon, year: number): string {
     );
   }
 
+  // Not "created": the earliest date may be a done date, on a ticket HelpDesk
+  // never gave a created one. Naming it a creation date would state something
+  // untrue of exactly the ticket that set the horizon.
   return (
-    `The mirror's earliest HelpDesk ticket was created ${dayLabel(horizon.startsAtMs)}; nothing ` +
-    'opened before that is in it, so backlog is a floor, not a total. A week inside that span ' +
-    'with no tickets is a quiet week, not missing data.'
+    `The mirror reaches back to ${dayLabel(horizon.startsAtMs)}, the earliest date on any ticket ` +
+    'it holds; nothing older than that is in it, so backlog is a floor, not a total. A week ' +
+    'inside that span with no tickets is a quiet week, not missing data.'
+  );
+}
+
+/** `1 week`, `12 weeks` — so no caller has to pick the plural. */
+function weekSpan(weeks: number): string {
+  return weeks === 1 ? '1 week' : `${weeks} weeks`;
+}
+
+/**
+ * Why a preset is withheld, in words, for the control to render verbatim.
+ *
+ * The reason is the span, and only the span: a gap inside the history is not
+ * missing data — the coverage note says so on the same screen — so a sentence
+ * blaming discontinuity would contradict it.
+ */
+function unavailableNote(preset: number, horizon: Horizon): string {
+  return (
+    `The mirror spans ${weekSpan(horizon.weeks)}, which is not enough for a range of ` +
+    `${weekSpan(preset)}: most of it would be empty.`
   );
 }
 
@@ -268,6 +317,7 @@ function resolveRange(requested: number, horizon: Horizon, year: number): RangeM
       weeks,
       label: `${weeks} weeks`,
       available: weeks <= reach,
+      unavailableNote: weeks <= reach ? null : unavailableNote(weeks, horizon),
     })),
     selectedWeeks,
     coverageNote: coverageNote(horizon, year),
@@ -315,6 +365,37 @@ function outstandingCaveat(closedWithoutDoneAt: number): string | null {
   return closedWithoutDoneAt === 1
     ? '+1 ticket closed with no done date'
     : `+${closedWithoutDoneAt} tickets closed with no done date`;
+}
+
+/**
+ * The footnote naming what reached no week, worded here like every other string
+ * on the page so the browser composes no prose and picks no plural.
+ *
+ * "Not counted" is the wrong claim for the undated bucket: a ticket with
+ * neither date is in no *weekly* cohort, but an open one is still in the live
+ * open figure this page prints beside them. The sentence says which.
+ */
+function excludedNote(excluded: WeeklyReport['excluded']): string | null {
+  const parts: string[] = [];
+  if (excluded.deleted > 0) {
+    parts.push(`${excluded.deleted} deleted ${excluded.deleted === 1 ? 'ticket' : 'tickets'}`);
+  }
+  if (excluded.unparseableDate > 0) {
+    const noun = excluded.unparseableDate === 1 ? 'ticket' : 'tickets';
+    parts.push(`${excluded.unparseableDate} ${noun} with an unreadable date`);
+  }
+  if (excluded.undated > 0) {
+    const noun = excluded.undated === 1 ? 'ticket' : 'tickets';
+    parts.push(`${excluded.undated} ${noun} with neither a created nor a done date`);
+  }
+  if (parts.length === 0) return null;
+
+  const sentence = `In no week on this page: ${parts.join(' · ')}.`;
+  if (excluded.undated === 0) return sentence;
+  return (
+    `${sentence} A ticket with neither date is in no weekly figure, but is still counted in ` +
+    'open right now while its status is open.'
+  );
 }
 
 function ghostAudit(counted: Counted[]): GhostAudit {
@@ -462,12 +543,16 @@ export function aggregateWeeklyReport(
   return {
     weeks,
     range,
+    backlogTitle: weeks.some((week) => week.key === weekKey(latestWeekStart))
+      ? IN_PROGRESS_BACKLOG_TITLE
+      : BACKLOG_TITLE,
     timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.
     openRightNow: tickets.filter((ticket) => ticket.ticketStatus === 'open').length,
     ghosts: ghostAudit(counted),
     excluded,
+    excludedNote: excludedNote(excluded),
     doneRule: DONE_RULE,
   };
 }

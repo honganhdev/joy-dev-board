@@ -5,6 +5,12 @@ import type { WeekSummary } from '@/types';
 type BacklogColumnsProps = {
   weeks: WeekSummary[];
   focusedKey: string;
+  /**
+   * Printed verbatim as the panel heading. The last column is the running week,
+   * whose Sunday has not happened, so only the server can say whether "at each
+   * week end" is true of this range.
+   */
+  title: string;
   /** Printed verbatim under the stack; both name what the mirror cannot see. */
   coverageNote: string;
   ghostCaveat: string | null;
@@ -22,6 +28,7 @@ type BacklogColumnsProps = {
 export function BacklogColumns({
   weeks,
   focusedKey,
+  title,
   coverageNote,
   ghostCaveat,
 }: BacklogColumnsProps) {
@@ -29,7 +36,7 @@ export function BacklogColumns({
 
   return (
     <Panel
-      title="Backlog at each week end"
+      title={title}
       aside={
         <Legend
           items={[

@@ -10,6 +10,10 @@ type RangePickerProps = {
  * The four whole-week presets, as the server clamped them against the mirror's
  * own history. A preset the mirror cannot answer renders disabled with its label
  * unchanged — a range control that silently changes shape reads as a bug.
+ *
+ * Why it is withheld is the server's sentence, not one written here: an
+ * explanation composed in the browser goes on describing whichever rule was in
+ * force when it was typed, long after the server stopped applying it.
  */
 export function RangePicker({ range, onSelect, disabled }: RangePickerProps) {
   return (
@@ -26,11 +30,7 @@ export function RangePicker({ range, onSelect, disabled }: RangePickerProps) {
               type="button"
               disabled={disabled || !preset.available}
               onClick={() => onSelect(preset.weeks)}
-              title={
-                preset.available
-                  ? undefined
-                  : 'The mirror has no continuous history that far back, so most of that range would be empty.'
-              }
+              title={preset.unavailableNote ?? undefined}
               className={`rounded-md border px-2.5 py-1 text-[12px] tabular-nums disabled:cursor-not-allowed disabled:opacity-40 ${
                 selected
                   ? 'border-stone-800 bg-stone-800 font-semibold text-white'

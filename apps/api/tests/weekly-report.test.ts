@@ -423,10 +423,39 @@ describe('the horizon the mirror can answer for', () => {
     expect(report(weeklyHistory(48), 52).range.selectedWeeks).toBe(52);
   });
 
+  test('measures the horizon from a done date when that is the only date a ticket has', () => {
+    // A ticket with a done date and no created date is deliberately counted: it
+    // lands in the done cohort of the week its done date falls in. A horizon
+    // read from created dates alone left that week outside every range on
+    // offer, so the completion showed up in no week, in no exclusion count, and
+    // the note called the one surviving created date the mirror's earliest.
+    const result = aggregateWeeklyReport(
+      [
+        ticket({ ticketId: 'done-only', createdAt: null, doneAt: '2026-04-01T00:00:00+07:00' }),
+        ticket({ ticketId: 'open-only', createdAt: '2026-08-18T09:00:00+07:00', doneAt: null }),
+      ],
+      { weeks: 52, now: NOW, year: YEAR }
+    );
+
+    expect(result.weeks[0]?.key).toBe('2026-W10');
+    expect(weekByKey(result, '2026-W14').done).toBe(1);
+    expect(result.weeks.reduce((total, week) => total + week.done, 0)).toBe(1);
+    expect(result.range.coverageNote).toContain('1 Apr 2026');
+  });
+
+  test('does not call the earliest date a creation date when it came from a done date', () => {
+    const result = report([
+      ticket({ ticketId: 'done-only', createdAt: null, doneAt: '2026-04-01T00:00:00+07:00' }),
+    ]);
+
+    expect(result.range.coverageNote).toContain('1 Apr 2026');
+    expect(result.range.coverageNote).not.toContain('created');
+  });
+
   test('names the date the mirror\'s history starts', () => {
     // NOW is Wed 26 Aug 2026; 23 weeks before it is Wed 18 Mar 2026.
     expect(report(weeklyHistory(24), 12).range.coverageNote).toContain(
-      "The mirror's earliest HelpDesk ticket was created 18 Mar 2026"
+      'The mirror reaches back to 18 Mar 2026'
     );
   });
 
@@ -764,6 +793,57 @@ describe('a ticket that belongs to no week', () => {
     ]);
     expect(dated.excluded.undated).toBe(0);
     expect(weekByKey(dated, '2026-W34').done).toBe(1);
+  });
+});
+
+describe('the strings the page prints', () => {
+  test('names the running week in the backlog heading instead of promising a week end', () => {
+    // The range always reaches the week holding `now`, whose Sunday has not
+    // happened. A heading saying "at each week end" over a Tuesday value
+    // contradicts the column label sitting right beneath it.
+    const result = report([ticket({ createdAt: '2026-08-18T09:00:00+07:00' })]);
+
+    expect(result.weeks[result.weeks.length - 1]?.label).toContain('in progress');
+    expect(result.backlogTitle).toBe('Backlog at each week end, and so far this week');
+  });
+
+  test('words the exclusion footnote, and does not call an undated open ticket uncounted', () => {
+    const result = report([
+      ticket({ ticketId: 'gone', deletedAt: '2026-08-01T00:00:00+07:00', ticketStatus: 'closed' }),
+      ticket({ ticketId: 'garbled', createdAt: 'not a date', ticketStatus: 'closed' }),
+      ticket({ ticketId: 'undated', createdAt: null, doneAt: null, ticketStatus: 'open' }),
+    ]);
+
+    expect(result.excludedNote).toContain('1 deleted ticket');
+    expect(result.excludedNote).toContain('1 ticket with an unreadable date');
+    expect(result.excludedNote).toContain('1 ticket with neither a created nor a done date');
+    // It reaches no week, but it is in the live open figure printed above it,
+    // so the page must not say it was not counted.
+    expect(result.excludedNote).toContain('open right now');
+    expect(result.excludedNote).not.toContain('Not counted');
+    expect(result.openRightNow).toBe(1);
+  });
+
+  test('has no exclusion footnote at all when nothing was excluded', () => {
+    const result = report([ticket({ createdAt: '2026-08-18T09:00:00+07:00' })]);
+
+    expect(result.excluded).toEqual({ deleted: 0, unparseableDate: 0, undated: 0 });
+    expect(result.excludedNote).toBeNull();
+  });
+
+  test('blames the span for a withheld preset, not a gap in the history', () => {
+    // A gap is not missing data — the coverage note says so on the same screen,
+    // so the reason a preset is withheld cannot be discontinuity.
+    const presets = report(weeklyHistory(6), 12).range.presets;
+
+    expect(presets[0]?.unavailableNote).toBeNull();
+    expect(presets[1]?.unavailableNote).toBe(
+      'The mirror spans 6 weeks, which is not enough for a range of 12 weeks: most of it would be empty.'
+    );
+    expect(presets[3]?.unavailableNote).toContain('range of 52 weeks');
+    for (const preset of presets) {
+      expect(preset.unavailableNote ?? '').not.toContain('continuous');
+    }
   });
 });
 
