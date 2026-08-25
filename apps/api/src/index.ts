@@ -35,6 +35,14 @@ const handle = createRouter({
 
 const server = Bun.serve({
   port: config.port,
+  // Bun's default closes an idle connection after ~10s. A manual pull now walks
+  // the year in 7-day windows and takes ~45s, sending nothing until it finishes,
+  // so the default cut the socket mid-pull: the pull completed and committed
+  // while the caller — and Caddy in front of it — saw an EOF and reported 502.
+  // 255 is Bun's maximum. This buys headroom, not a guarantee: the pull grows
+  // with the corpus, and the real fix is for /api/pull to answer immediately and
+  // let the client poll the pull status it already records.
+  idleTimeout: 255,
   // The socket address is passed through so the login throttle can bucket by
   // client when there is no trusted proxy header to read.
   fetch: (request, bunServer) => handle(request, bunServer),
