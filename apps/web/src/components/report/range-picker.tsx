@@ -19,7 +19,7 @@ export function RangePicker({ range, onSelect, disabled }: RangePickerProps) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-        Range
+        History
       </span>
       <div className="flex items-center gap-1">
         {range.presets.map((preset) => {

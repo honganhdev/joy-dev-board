@@ -1,11 +1,12 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
 import { BacklogColumns } from './backlog-columns';
 import { DurationHistogram } from './duration-histogram';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
 import { RangePicker } from './range-picker';
 import { WeekColumns } from './week-columns';
+import { neighbourKeys, resolveFocusedWeek } from './week-focus';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useWeeklyReport } from '@/hooks/use-weekly-report';
@@ -14,7 +15,7 @@ import { categoryDotClass } from '@/lib/category-style';
 function ReportSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
-      <Skeleton className="h-16 w-full rounded-lg" />
+      <Skeleton className="h-[89px] w-full rounded-lg" />
       <div className="flex gap-3">
         <Skeleton className="h-28 flex-1 rounded-lg" />
         <Skeleton className="h-28 flex-1 rounded-lg" />
@@ -61,19 +62,13 @@ export function ReportView({ pullToken }: { pullToken: number }) {
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
   const weeks = report?.weeks ?? [];
-  const lastKey = weeks[weeks.length - 1]?.key ?? null;
-  const focusExists = focusedKey !== null && weeks.some((week) => week.key === focusedKey);
-
-  // A new range may not contain the week that was focused in the old one.
-  useEffect(() => {
-    if (!focusExists) setFocusedKey(lastKey);
-  }, [focusExists, lastKey]);
 
   if (loading) return <ReportSkeleton />;
   if (error) return <ReportError message={error} onRetry={reload} />;
   if (!report) return null;
 
-  const focused = weeks.find((week) => week.key === focusedKey) ?? weeks[weeks.length - 1];
+  const focused = resolveFocusedWeek(weeks, focusedKey);
+  const { previous, next } = neighbourKeys(weeks, focused?.key ?? null);
   if (!focused) return null;
 
   const categoryRows: PairedRow[] = focused.categories.map((row) => ({
@@ -96,14 +91,37 @@ export function ReportView({ pullToken }: { pullToken: number }) {
   return (
     <div className="space-y-3 pb-4">
       <section className="rounded-lg border border-stone-200 bg-white p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
-          <span className="ml-auto text-[12px] font-medium">{focused.label}</span>
+        <div className="flex items-center gap-2">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={previous === null}
+            onClick={() => previous && setFocusedKey(previous)}
+            aria-label="Previous week"
+            title="Previous week"
+          >
+            <ChevronLeft />
+          </Button>
+          <span className="text-[15px] font-semibold">{focused.label}</span>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={next === null}
+            onClick={() => next && setFocusedKey(next)}
+            aria-label="Next week"
+            title="Next week"
+          >
+            <ChevronRight />
+          </Button>
         </div>
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.doneRule}</p>
       </section>
 
       <HeadlineTiles week={focused} openRightNow={report.openRightNow} />
+
+      <div className="px-1">
+        <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
+      </div>
 
       <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={setFocusedKey} />
 
@@ -117,14 +135,14 @@ export function ReportView({ pullToken }: { pullToken: number }) {
 
       <div className="flex gap-3">
         <PairedBars
-          title="By category — this week"
+          title="By category"
           rows={categoryRows}
-          emptyMessage="No tickets in either cohort this week."
+          emptyMessage="No tickets in either cohort."
         />
         <PairedBars
-          title="By priority — this week"
+          title="By priority"
           rows={priorityRows}
-          emptyMessage="No tickets in either cohort this week."
+          emptyMessage="No tickets in either cohort."
         />
       </div>
 
