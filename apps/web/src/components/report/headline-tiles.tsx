@@ -23,6 +23,10 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  * The three numbers the request actually asked for. A chart of one number is
  * decoration, so these are figures — the only proportion drawn here is the done
  * split, where the proportion is the point.
+ *
+ * The outstanding tile carries its own ghost caveat: it is the figure read
+ * first, and a large part of it is finished work HelpDesk never dated. The
+ * sentence is the server's, for the week on screen.
  */
 export function HeadlineTiles({ week, openRightNow, outstandingCaption }: HeadlineTilesProps) {
   const doneMax = Math.max(1, week.done);
@@ -65,6 +69,11 @@ export function HeadlineTiles({ week, openRightNow, outstandingCaption }: Headli
         <p className="mt-2 text-[11px] text-muted-foreground">
           open right now: <span className="tabular-nums">{openRightNow}</span>
         </p>
+        {week.outstandingCaveat && (
+          <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+            {week.outstandingCaveat}
+          </p>
+        )}
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{outstandingCaption}</p>
       </Tile>
     </div>

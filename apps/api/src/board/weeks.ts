@@ -77,3 +77,9 @@ export function weekLabel(startMs: number): string {
 export function weekShortLabel(startMs: number): string {
   return dayAndMonth(localParts(startMs));
 }
+
+/** `20 Mar 2026` — a single calendar day, for prose that names one date. */
+export function dayLabel(ms: number): string {
+  const parts = localParts(ms);
+  return `${dayAndMonth(parts)} ${parts.year}`;
+}

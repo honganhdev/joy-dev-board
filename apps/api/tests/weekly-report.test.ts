@@ -176,6 +176,23 @@ describe('cohorts', () => {
     expect(clean.ghosts.shareOfClosed).toBe(0);
     expect(clean.ghosts.caveat).toBeNull();
   });
+
+  test('admits the residue beside the figure it qualifies, week by week', () => {
+    const result = report([
+      ticket({ ticketId: 'g1', ticketStatus: 'closed', createdAt: '2026-08-17T09:00:00+07:00', doneAt: null }),
+      ticket({ ticketId: 'g2', ticketStatus: 'closed', createdAt: '2026-08-24T09:00:00+07:00', doneAt: null }),
+    ]);
+
+    // The tile shows one week at a time, so its caveat counts that week's own
+    // residue: one ghost had not been created yet in the week before.
+    expect(weekByKey(result, '2026-W34').outstandingCaveat).toBe(
+      '1 of these was closed in HelpDesk with no done date.'
+    );
+    expect(weekByKey(result, '2026-W35').outstandingCaveat).toBe(
+      '2 of these were closed in HelpDesk with no done date.'
+    );
+    expect(weekByKey(result, '2026-W33').outstandingCaveat).toBeNull();
+  });
 });
 
 describe('accounting identities', () => {
@@ -349,6 +366,76 @@ describe('time to first done', () => {
     // Middle two are 2 and 5.
     expect(result.timeToFirstDone.medianDays).toBe(3.5);
     expect(result.timeToFirstDone.buckets.map((bucket) => bucket.count)).toEqual([1, 1, 1, 0, 1, 0]);
+  });
+});
+
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * `weeks` tickets, one per week, ending in the week `NOW` falls in — an unbroken
+ * run of weeks the mirror holds tickets for. Each is created and done in the
+ * same instant so the run measures coverage without also moving any cohort.
+ */
+function weeklyHistory(weeks: number): HelpDeskTicket[] {
+  return Array.from({ length: weeks }, (_, index) => {
+    const created = new Date(NOW.getTime() - index * WEEK).toISOString();
+    return ticket({ ticketId: `history-${index}`, createdAt: created, doneAt: created });
+  });
+}
+
+describe('the horizon the mirror can answer for', () => {
+  test('withholds a preset the history cannot nearly fill, and keeps one it can', () => {
+    // 24 weeks of unbroken history: 26 weeks is three columns short and fills
+    // itself within a month, 52 weeks is half empty and never would.
+    const presets = report(weeklyHistory(24), 12).range.presets;
+
+    expect(presets.map((preset) => preset.weeks)).toEqual([4, 12, 26, 52]);
+    expect(presets.map((preset) => preset.available)).toEqual([true, true, true, false]);
+
+    // Six weeks of history leaves only the shortest preset with something to draw.
+    const short = report(weeklyHistory(6), 12).range.presets;
+    expect(short.map((preset) => preset.available)).toEqual([true, false, false, false]);
+  });
+
+  test('offers the longest preset once the history reaches it', () => {
+    const presets = report(weeklyHistory(48), 12).range.presets;
+    expect(presets.map((preset) => preset.available)).toEqual([true, true, true, true]);
+  });
+
+  test('clamps a request to the longest range the history can answer', () => {
+    expect(report(weeklyHistory(24), 52).range.selectedWeeks).toBe(26);
+    expect(report(weeklyHistory(48), 52).range.selectedWeeks).toBe(52);
+  });
+
+  test('names the date continuous history begins', () => {
+    // NOW is Wed 26 Aug 2026; 23 weeks before it is Wed 18 Mar 2026.
+    expect(report(weeklyHistory(24), 12).range.coverageNote).toContain(
+      'Continuous HelpDesk history begins 18 Mar 2026'
+    );
+  });
+
+  test('counts a ticket older than the run without letting it stretch the range', () => {
+    const outlier = ticket({
+      ticketId: 'outlier',
+      createdAt: new Date(NOW.getTime() - 40 * WEEK).toISOString(),
+      doneAt: null,
+    });
+    const result = report([outlier, ...weeklyHistory(24)], 52);
+
+    // Named, not hidden: it is in the note, and outstanding in every week drawn.
+    expect(result.range.coverageNote).toContain('One ticket created 19 Nov 2025');
+    expect(result.range.coverageNote).toContain('does not stretch the range');
+    expect(result.range.selectedWeeks).toBe(26);
+    for (const week of result.weeks) expect(week.outstanding).toBeGreaterThanOrEqual(1);
+  });
+
+  test('falls back to the pull window when no run of weeks reaches the present', () => {
+    // One ticket from January, nothing since: there is no history to measure, so
+    // the note names the window the pull asked for rather than inventing a run.
+    const result = report([ticket({ createdAt: '2026-01-05T00:00:00+07:00' })], 12);
+
+    expect(result.range.coverageNote).toContain('created in 2026');
+    expect(result.range.selectedWeeks).toBe(12);
   });
 });
 

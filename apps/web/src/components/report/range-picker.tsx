@@ -7,9 +7,9 @@ type RangePickerProps = {
 };
 
 /**
- * The four whole-week presets, as the server clamped them. A preset the mirror
- * cannot answer renders disabled with its label unchanged — a range control that
- * silently changes shape reads as a bug.
+ * The four whole-week presets, as the server clamped them against the mirror's
+ * own history. A preset the mirror cannot answer renders disabled with its label
+ * unchanged — a range control that silently changes shape reads as a bug.
  */
 export function RangePicker({ range, onSelect, disabled }: RangePickerProps) {
   return (
@@ -29,7 +29,7 @@ export function RangePicker({ range, onSelect, disabled }: RangePickerProps) {
               title={
                 preset.available
                   ? undefined
-                  : 'The mirror does not reach that far back — it covers one calendar year.'
+                  : 'The mirror has no continuous history that far back, so most of that range would be empty.'
               }
               className={`rounded-md border px-2.5 py-1 text-[12px] tabular-nums disabled:cursor-not-allowed disabled:opacity-40 ${
                 selected

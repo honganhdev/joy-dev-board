@@ -27,6 +27,12 @@ export type WeekSummary = {
   outstandingWithDoneDate: number;
   /** The ghost residue *inside* `outstanding`, drawn as its own segment. */
   closedWithoutDoneAt: number;
+  /**
+   * The residue admitted in words, beside the figure it qualifies, or `null`
+   * when this week has none. Week-scoped rather than mirror-scoped so the line
+   * under the tile always describes the week the tile is showing.
+   */
+  outstandingCaveat: string | null;
   /** The done cohort split by each ticket's *current* tsStatus. Sums to `done`. */
   doneByStatus: Array<{ status: string; label: string; count: number }>;
   /**

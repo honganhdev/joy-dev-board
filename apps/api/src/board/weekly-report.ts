@@ -20,7 +20,7 @@ import type {
   WeeklyReport,
   WeekSummary,
 } from './report-types';
-import { WEEK_MS, weekKey, weekLabel, weekShortLabel, weekStartMs } from './weeks';
+import { WEEK_MS, dayLabel, weekKey, weekLabel, weekShortLabel, weekStartMs } from './weeks';
 import type { HelpDeskTicket } from '../helpdesk/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,6 +28,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Whole-week ranges the control offers, smallest first. */
 const PRESET_WEEKS = [4, 12, 26, 52];
 const DEFAULT_WEEKS = 12;
+
+/**
+ * How far past the mirror's history a preset may reach and still be offered.
+ * The covered range grows by one week every week, so a preset within a month of
+ * being full fills itself within a month; one that is half empty never does.
+ */
+const PRESET_GRACE_WEEKS = 4;
 
 const NO_PRIORITY = '(no priority)';
 const NO_STATUS = '(no status)';
@@ -141,35 +148,126 @@ function byWeightThenKey(last: string) {
 }
 
 /**
- * How many whole weeks the mirror can answer for: the pull covers one calendar
- * year, so nothing before the week holding 1 January of that year exists.
+ * How many whole weeks the pull window itself spans: it covers one calendar
+ * year, so nothing before the week holding 1 January of that year was ever
+ * fetched. This is the floor used when the mirror holds no recent history to
+ * measure — it says what was asked for rather than what arrived.
  */
-function coveredWeeks(year: number, nowMs: number): number {
+function pullWindowWeeks(year: number, nowMs: number): number {
   const yearStart = weekStartMs(Date.UTC(year, 0, 1) - 7 * 60 * 60 * 1000);
   const latest = weekStartMs(nowMs);
   return Math.max(1, Math.round((latest - yearStart) / WEEK_MS) + 1);
 }
 
 /**
+ * What the mirror can actually answer for, measured from the tickets in it.
+ *
+ * Coverage runs back from the current week along an unbroken run of weeks that
+ * hold at least one created ticket. A ticket older than that run stays in every
+ * total — nothing is filtered, hidden or excluded — but it does not stretch the
+ * range, so one stray record cannot open a season of columns that can never
+ * hold anything.
+ */
+type Horizon = {
+  /** Whole weeks from the current week back to where continuous history starts. */
+  weeks: number;
+  /** Earliest created date inside that run, or `null` when there is no run. */
+  startsAtMs: number | null;
+  /** Created before the run: counted everywhere, covered by nothing. */
+  earlier: { count: number; earliestMs: number };
+};
+
+function historyHorizon(counted: Counted[], nowMs: number, year: number): Horizon {
+  const latestWeekStart = weekStartMs(nowMs);
+  const populated = new Set<number>();
+  for (const ticket of counted) {
+    if (ticket.createdMs !== null) populated.add(weekStartMs(ticket.createdMs));
+  }
+
+  const newest = populated.size === 0 ? null : Math.max(...populated);
+  // A mirror whose newest ticket is more than a week stale has no run reaching
+  // the present to measure, so the window the pull asked for is all we can claim.
+  if (newest === null || latestWeekStart - newest > WEEK_MS) {
+    return {
+      weeks: pullWindowWeeks(year, nowMs),
+      startsAtMs: null,
+      earlier: { count: 0, earliestMs: 0 },
+    };
+  }
+
+  let runStart = newest;
+  while (populated.has(runStart - WEEK_MS)) runStart -= WEEK_MS;
+
+  let startsAtMs: number | null = null;
+  let earlierCount = 0;
+  let earliestMs = 0;
+  for (const ticket of counted) {
+    const created = ticket.createdMs;
+    if (created === null) continue;
+    if (created >= runStart) {
+      if (startsAtMs === null || created < startsAtMs) startsAtMs = created;
+    } else {
+      earlierCount += 1;
+      if (earlierCount === 1 || created < earliestMs) earliestMs = created;
+    }
+  }
+
+  return {
+    weeks: Math.max(1, Math.round((latestWeekStart - runStart) / WEEK_MS) + 1),
+    startsAtMs,
+    earlier: { count: earlierCount, earliestMs },
+  };
+}
+
+/**
+ * The note under the backlog panel, built from the mirror rather than written
+ * down, so it cannot go on describing a horizon the data no longer has.
+ */
+function coverageNote(horizon: Horizon, year: number): string {
+  if (horizon.startsAtMs === null) {
+    return (
+      `Counts cover HelpDesk tickets created in ${year}. Tickets opened before 1 Jan ${year} ` +
+      'are not in the mirror and appear in no week, so backlog is a floor, not a total.'
+    );
+  }
+
+  const note =
+    `Continuous HelpDesk history begins ${dayLabel(horizon.startsAtMs)}; earlier weeks hold ` +
+    'nothing, so backlog is a floor, not a total.';
+  const { count, earliestMs } = horizon.earlier;
+  if (count === 0) return note;
+
+  return count === 1
+    ? `${note} One ticket created ${dayLabel(earliestMs)} sits before that and is counted in ` +
+        'every total, but it does not stretch the range.'
+    : `${note} ${count} tickets created before that, the earliest on ${dayLabel(earliestMs)}, ` +
+        'are counted in every total, but they do not stretch the range.';
+}
+
+/**
  * The range actually served. An unusable `weeks` is not a 400: the response
  * echoes what was used, so an overridden request is visible rather than silent.
+ *
+ * A preset is offered when the mirror's own history reaches all but the last
+ * few of its columns, and withheld — labelled, disabled, never relabelled —
+ * when it does not.
  */
-function resolveRange(requested: number, year: number, nowMs: number): RangeMeta {
-  const available = coveredWeeks(year, nowMs);
+function resolveRange(requested: number, horizon: Horizon, year: number): RangeMeta {
+  const reach = horizon.weeks + PRESET_GRACE_WEEKS;
   const wanted = Number.isInteger(requested) && requested > 0 ? requested : DEFAULT_WEEKS;
-  const usable = PRESET_WEEKS.filter((weeks) => weeks <= wanted && weeks <= available);
-  const selectedWeeks = usable[usable.length - 1] ?? PRESET_WEEKS[0] ?? DEFAULT_WEEKS;
+  const offered = PRESET_WEEKS.filter((weeks) => weeks <= reach);
+  const usable = offered.filter((weeks) => weeks <= wanted);
+  const selectedWeeks =
+    usable[usable.length - 1] ?? offered[0] ?? PRESET_WEEKS[0] ?? DEFAULT_WEEKS;
 
   return {
     presets: PRESET_WEEKS.map((weeks) => ({
       weeks,
       label: `${weeks} weeks`,
-      available: weeks <= available,
+      available: weeks <= reach,
     })),
     selectedWeeks,
-    coverageNote:
-      `Counts cover HelpDesk tickets created in ${year}. Tickets opened before 1 Jan ${year} ` +
-      'are not in the mirror and appear in no week, so backlog is a floor, not a total.',
+    coverageNote: coverageNote(horizon, year),
   };
 }
 
@@ -201,6 +299,18 @@ function timeToFirstDone(counted: Counted[], rangeStartMs: number, rangeEndMs: n
   };
 }
 
+/**
+ * The same admission as the backlog footnote, scoped to one week and worded for
+ * the tile that prints the figure it qualifies. The number is the week's own
+ * residue, not the mirror's, so the line stays true as the focus moves.
+ */
+function outstandingCaveat(closedWithoutDoneAt: number): string | null {
+  if (closedWithoutDoneAt === 0) return null;
+  return closedWithoutDoneAt === 1
+    ? '1 of these was closed in HelpDesk with no done date.'
+    : `${closedWithoutDoneAt} of these were closed in HelpDesk with no done date.`;
+}
+
 function ghostAudit(counted: Counted[], latest: WeekSummary | undefined): GhostAudit {
   const count = counted.filter((ticket) => ticket.isGhost).length;
   const closedTotal = counted.filter((ticket) => ticket.isClosed).length;
@@ -225,21 +335,14 @@ function ghostAudit(counted: Counted[], latest: WeekSummary | undefined): GhostA
  *
  * `now` and `year` are injected rather than read from the clock and the
  * environment: the tests need a fixed range without freezing the runner's
- * timezone, and the coverage note must name the window the pull actually used.
+ * timezone, and a mirror with no history to measure still has to say which
+ * window the pull asked for.
  */
 export function aggregateWeeklyReport(
   tickets: HelpDeskTicket[],
   options: { weeks: number; now: Date; pulledAt: string; year: number }
 ): WeeklyReport {
   const nowMs = options.now.getTime();
-  const range = resolveRange(options.weeks, options.year, nowMs);
-
-  const latestWeekStart = weekStartMs(nowMs);
-  const weekStarts = Array.from(
-    { length: range.selectedWeeks },
-    (_, index) => latestWeekStart - (range.selectedWeeks - 1 - index) * WEEK_MS
-  );
-
   const excluded = { deleted: 0, unparseableDate: 0 };
   const counted: Counted[] = [];
 
@@ -270,6 +373,16 @@ export function aggregateWeeklyReport(
       status: isPresent(ticket.tsStatus) ? ticket.tsStatus.trim() : NO_STATUS,
     });
   }
+
+  // The range is resolved from the counted tickets, not before them: what the
+  // mirror can answer for is a property of the mirror.
+  const range = resolveRange(options.weeks, historyHorizon(counted, nowMs, options.year), options.year);
+
+  const latestWeekStart = weekStartMs(nowMs);
+  const weekStarts = Array.from(
+    { length: range.selectedWeeks },
+    (_, index) => latestWeekStart - (range.selectedWeeks - 1 - index) * WEEK_MS
+  );
 
   const weeks: WeekSummary[] = weekStarts.map((startMs) => {
     const endMs = startMs + WEEK_MS;
@@ -313,6 +426,7 @@ export function aggregateWeeklyReport(
       outstanding,
       outstandingWithDoneDate: outstanding - closedWithoutDoneAt,
       closedWithoutDoneAt,
+      outstandingCaveat: outstandingCaveat(closedWithoutDoneAt),
       doneByStatus: [...statuses.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([status, count]) => ({ status, label: statusLabel(status), count })),
