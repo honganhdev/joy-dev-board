@@ -177,7 +177,7 @@ describe('cohorts', () => {
     expect(clean.ghosts.caveat).toBeNull();
   });
 
-  test('admits the residue beside the figure it qualifies, week by week', () => {
+  test('words the residue as the addend the tile prints, week by week', () => {
     const result = report([
       ticket({ ticketId: 'g1', ticketStatus: 'closed', createdAt: '2026-08-17T09:00:00+07:00', doneAt: null }),
       ticket({ ticketId: 'g2', ticketStatus: 'closed', createdAt: '2026-08-24T09:00:00+07:00', doneAt: null }),
@@ -186,12 +186,27 @@ describe('cohorts', () => {
     // The tile shows one week at a time, so its caveat counts that week's own
     // residue: one ghost had not been created yet in the week before.
     expect(weekByKey(result, '2026-W34').outstandingCaveat).toBe(
-      '1 of these was closed in HelpDesk with no done date.'
+      '+1 ticket closed with no done date'
     );
     expect(weekByKey(result, '2026-W35').outstandingCaveat).toBe(
-      '2 of these were closed in HelpDesk with no done date.'
+      '+2 tickets closed with no done date'
     );
-    expect(weekByKey(result, '2026-W33').outstandingCaveat).toBeNull();
+
+    // The line is an addend, so it must add up: headline plus residue is the
+    // total the tile no longer prints.
+    const week = weekByKey(result, '2026-W35');
+    expect(week.outstandingWithDoneDate + week.closedWithoutDoneAt).toBe(week.outstanding);
+  });
+
+  test('leaves a week with no residue a single figure and no addend', () => {
+    const result = report([
+      ticket({ ticketId: 'a', ticketStatus: 'open', createdAt: '2026-08-17T09:00:00+07:00', doneAt: null }),
+    ]);
+
+    const week = weekByKey(result, '2026-W34');
+    expect(week.closedWithoutDoneAt).toBe(0);
+    expect(week.outstandingCaveat).toBeNull();
+    expect(week.outstandingWithDoneDate).toBe(week.outstanding);
   });
 });
 

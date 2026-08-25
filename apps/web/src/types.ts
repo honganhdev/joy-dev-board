@@ -111,7 +111,7 @@ export type WeekSummary = {
   outstandingWithDoneDate: number;
   /** The ghost residue *inside* `outstanding`, drawn as its own segment. */
   closedWithoutDoneAt: number;
-  /** The residue in words, for the tile that prints `outstanding`; `null` when none. */
+  /** The residue as the tile's second figure, added to `outstandingWithDoneDate`; `null` when none. */
   outstandingCaveat: string | null;
   doneByStatus: Array<{ status: string; label: string; count: number }>;
   /** Any number of rows, any names — both come from the classifier at runtime. */

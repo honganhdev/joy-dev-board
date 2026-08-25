@@ -44,8 +44,8 @@ const DONE_RULE =
   "HelpDesk's own done date.";
 
 const OUTSTANDING_CAPTION =
-  'Outstanding at week end is historical and counts tickets HelpDesk closed without a done ' +
-  "date; open right now is today's live count of tickets whose status is open.";
+  'Outstanding at week end is historical, counted from the mirror; open right now is ' +
+  "today's live count of tickets whose status is open.";
 
 const TIME_TO_FIRST_DONE_CAPTION =
   "Measured from a ticket's created date to the first time HelpDesk marked it done, which " +
@@ -300,15 +300,18 @@ function timeToFirstDone(counted: Counted[], rangeStartMs: number, rangeEndMs: n
 }
 
 /**
- * The same admission as the backlog footnote, scoped to one week and worded for
- * the tile that prints the figure it qualifies. The number is the week's own
- * residue, not the mirror's, so the line stays true as the focus moves.
+ * The residue as the tile's second figure: the tile prints
+ * `outstandingWithDoneDate` on its own, and this line adds back the rest. It
+ * opens with `+N` because it is an addend, not a footnote about the number
+ * above it. The count is the week's own residue, not the mirror's, so the line
+ * stays true as the focus moves; `null` when the week has none, which is what
+ * keeps a `+0` line off the tile.
  */
 function outstandingCaveat(closedWithoutDoneAt: number): string | null {
   if (closedWithoutDoneAt === 0) return null;
   return closedWithoutDoneAt === 1
-    ? '1 of these was closed in HelpDesk with no done date.'
-    : `${closedWithoutDoneAt} of these were closed in HelpDesk with no done date.`;
+    ? '+1 ticket closed with no done date'
+    : `+${closedWithoutDoneAt} tickets closed with no done date`;
 }
 
 function ghostAudit(counted: Counted[], latest: WeekSummary | undefined): GhostAudit {

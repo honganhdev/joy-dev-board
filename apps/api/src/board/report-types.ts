@@ -28,9 +28,11 @@ export type WeekSummary = {
   /** The ghost residue *inside* `outstanding`, drawn as its own segment. */
   closedWithoutDoneAt: number;
   /**
-   * The residue admitted in words, beside the figure it qualifies, or `null`
-   * when this week has none. Week-scoped rather than mirror-scoped so the line
-   * under the tile always describes the week the tile is showing.
+   * The residue as the tile's second figure — `+N tickets closed with no done
+   * date`, the addend that takes `outstandingWithDoneDate` back up to
+   * `outstanding` — or `null` when this week has none, so the tile renders a
+   * single clean figure. Week-scoped rather than mirror-scoped so the line
+   * always describes the week the tile is showing.
    */
   outstandingCaveat: string | null;
   /** The done cohort split by each ticket's *current* tsStatus. Sums to `done`. */

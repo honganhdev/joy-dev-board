@@ -24,9 +24,12 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  * decoration, so these are figures — the only proportion drawn here is the done
  * split, where the proportion is the point.
  *
- * The outstanding tile carries its own ghost caveat: it is the figure read
- * first, and a large part of it is finished work HelpDesk never dated. The
- * sentence is the server's, for the week on screen.
+ * The outstanding tile prints two figures rather than one. Its headline is
+ * `outstandingWithDoneDate` and the line under it is the `+N` residue, the same
+ * split the backlog stack draws; printing `outstanding` alone would put the
+ * ghosts inside the figure read first, where a caption cannot reach them. Both
+ * values come off the wire, so this does no arithmetic — and the `+N` sentence
+ * is the server's, worded for the week on screen and absent when it is zero.
  */
 export function HeadlineTiles({ week, openRightNow, outstandingCaption }: HeadlineTilesProps) {
   const doneMax = Math.max(1, week.done);
@@ -64,16 +67,16 @@ export function HeadlineTiles({ week, openRightNow, outstandingCaption }: Headli
 
       <Tile label="Outstanding at week end">
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">
-          {week.outstanding}
-        </p>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          open right now: <span className="tabular-nums">{openRightNow}</span>
+          {week.outstandingWithDoneDate}
         </p>
         {week.outstandingCaveat && (
-          <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+          <p className="mt-1 text-[11px] leading-snug tabular-nums text-muted-foreground">
             {week.outstandingCaveat}
           </p>
         )}
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          open right now: <span className="tabular-nums">{openRightNow}</span>
+        </p>
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{outstandingCaption}</p>
       </Tile>
     </div>
