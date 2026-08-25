@@ -15,6 +15,13 @@
       "when": 1787561233157,
       "tag": "0001_elite_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787655761388,
+      "tag": "0002_rainy_maria_hill",
+      "breakpoints": true
     }
   ]
 }

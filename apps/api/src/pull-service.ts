@@ -8,19 +8,20 @@
 import type { Config } from './config';
 import type { Db } from './db/client';
 import { failPull, finishPull, startPull, syncPull, type SyncResult } from './db/sync';
-import { fetchTicketsForYear } from './helpdesk/client';
+import type { HelpDeskTicket } from './helpdesk/types';
 
 export type PullRunner = { run: () => Promise<SyncResult> };
+export type TicketFetcher = (config: Config) => Promise<HelpDeskTicket[]>;
 
-export function createPullRunner(db: Db, config: Config): PullRunner {
+export function createPullRunner(db: Db, config: Config, fetchTickets: TicketFetcher): PullRunner {
   let inFlight: Promise<SyncResult> | null = null;
 
   async function execute(): Promise<SyncResult> {
     const pullId = startPull(db);
     try {
-      const tickets = await fetchTicketsForYear(config);
+      const tickets = await fetchTickets(config);
       const result = syncPull(db, tickets, pullId);
-      finishPull(db, pullId, result.pulled);
+      finishPull(db, pullId, result);
       console.log(
         `[pull ${pullId}] ${result.pulled} tickets, ${result.inserted} new, ${result.statusChanges} status changes`
       );
@@ -28,6 +29,7 @@ export function createPullRunner(db: Db, config: Config): PullRunner {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       failPull(db, pullId, message);
+      console.error(`[pull ${pullId}] failed:`, message);
       throw cause;
     }
   }

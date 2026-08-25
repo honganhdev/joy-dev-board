@@ -88,11 +88,12 @@ bun run build        # production build of the web app
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/tickets` | Board payload from SQLite: five columns, category groups, counts, and `lastPull`. `?refresh=1` pulls first. |
+| `GET /api/tickets` | Board payload from SQLite: five columns, category groups, counts, and `lastPull`. `?refresh=1` starts a pull and returns the board as it stands. |
 | `GET /api/tickets/:ticketId` | Full stored HelpDesk record for one ticket, plus its computed category and resolved tag names. |
 | `GET /api/tickets/:ticketId/history` | That ticket's observed status changes, oldest first. |
 | `GET /api/report/weekly` | Weekly issue report from SQLite: one entry per week in range with created, done, outstanding and their category, priority and status breakdowns, plus every label and caption the page renders. `?weeks=` picks 4, 12, 26 or 52 and is clamped to what the mirror covers. |
-| `POST /api/pull` | Pulls from HelpDesk into SQLite, returns `{ pulled, inserted, statusChanges }`. |
+| `POST /api/pull` | Starts a HelpDesk pull and returns `202` with the current pull summary; the client follows it on `GET /api/pull/status`. |
+| `GET /api/pull/status` | The last pull attempt: `startedAt`, `finishedAt`, `ticketCount`, `inserted`, `statusChanges`, `status` (`running` / `ok` / `error`), `error`. |
 | `GET /api/health` | Liveness, stored ticket count, last pull attempt. **The only unauthenticated data route** — counts and pull status only, no ticket content, because the container healthcheck has to reach it. |
 | `POST /api/auth/login` | `{username, password}` → sets the session cookie, returns `{username}`. |
 | `POST /api/auth/logout` | Deletes the session row and clears the cookie. |
@@ -176,8 +177,9 @@ Four tables:
   `observedAt` is when a pull noticed it, and `ticketUpdatedAt` is HelpDesk's own `updatedAt`. An
   unchanged ticket writes nothing, so a pull every five minutes does not append a row per ticket.
 - **`pulls`** — one row per pull attempt, so the history has a known observation window. A row is
-  written as `error` when the pull starts and flipped to `ok` only once the sync commits, so a process
-  killed mid-pull leaves an honest record instead of a phantom success.
+  written as `running` when the pull starts and flipped to `ok` only once the sync commits. Any row
+  still `running` at the next boot is swept to `error`, so a killed process still leaves an honest
+  record instead of a phantom success.
 
 Ticket upserts and their history rows are written in one transaction: a crash mid-pull cannot leave
 tickets updated with their history missing.
@@ -205,6 +207,8 @@ produces a backup that only fails when it is needed.
 
 The target is a single VPS running one container, which is why SQLite is enough. Two things to get
 right there:
+
+After this deploy, ask anyone with an open board tab to reload so it picks up the new pull response.
 
 - **`/app/data` must be a mounted volume.** Running in Docker without one loses the database — and
   with it every status history row ever recorded — on each rebuild. That history cannot be re-pulled:

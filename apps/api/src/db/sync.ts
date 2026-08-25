@@ -58,16 +58,22 @@ function toRow(incoming: HelpDeskTicket, observedAt: string) {
   };
 }
 
-/** Opens a pull row. Starts as `error` so an interrupted pull cannot read as a success. */
+/** Opens a pull as `running`; the next boot sweeps it if this process dies. */
 export function startPull(db: Db, startedAt = new Date().toISOString()): number {
-  const [row] = db.insert(pulls).values({ startedAt, status: 'error' }).returning({ id: pulls.id }).all();
+  const [row] = db.insert(pulls).values({ startedAt, status: 'running' }).returning({ id: pulls.id }).all();
   if (!row) throw new Error('Could not open a pull row');
   return row.id;
 }
 
-export function finishPull(db: Db, pullId: number, ticketCount: number): void {
+export function finishPull(db: Db, pullId: number, result: SyncResult): void {
   db.update(pulls)
-    .set({ status: 'ok', finishedAt: new Date().toISOString(), ticketCount })
+    .set({
+      status: 'ok',
+      finishedAt: new Date().toISOString(),
+      ticketCount: result.pulled,
+      inserted: result.inserted,
+      statusChanges: result.statusChanges,
+    })
     .where(eq(pulls.id, pullId))
     .run();
 }
@@ -77,6 +83,24 @@ export function failPull(db: Db, pullId: number, error: string): void {
     .set({ status: 'error', finishedAt: new Date().toISOString(), error })
     .where(eq(pulls.id, pullId))
     .run();
+}
+
+/**
+ * Flips every pull left `running` by a dead process to an honest failure.
+ * Assumes a single writer process: any `running` row present at boot
+ * provably belongs to a process that is no longer alive.
+ */
+export function sweepInterruptedPulls(db: Db): number {
+  return db
+    .update(pulls)
+    .set({
+      status: 'error',
+      error: 'server restarted mid-pull',
+      finishedAt: new Date().toISOString(),
+    })
+    .where(eq(pulls.status, 'running'))
+    .returning({ id: pulls.id })
+    .all().length;
 }
 
 /**

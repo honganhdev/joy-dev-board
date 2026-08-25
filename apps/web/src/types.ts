@@ -55,7 +55,10 @@ export type PullSummary = {
   startedAt: string;
   finishedAt: string | null;
   ticketCount: number | null;
-  status: 'ok' | 'error';
+  /** Null on rows written before these were recorded. */
+  inserted: number | null;
+  statusChanges: number | null;
+  status: 'ok' | 'error' | 'running';
   error: string | null;
 };
 
@@ -69,13 +72,6 @@ export type Board = {
   otherStatuses: Array<{ status: string; count: number }>;
   /** May be a later failed attempt — that is how stale data is spotted. */
   lastPull: PullSummary | null;
-};
-
-/** What a `POST /api/pull` changed. */
-export type PullResult = {
-  pulled: number;
-  inserted: number;
-  statusChanges: number;
 };
 
 /**

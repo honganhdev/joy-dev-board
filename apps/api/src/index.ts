@@ -1,8 +1,9 @@
 import { TtlCache } from './cache';
+import { bootstrap } from './bootstrap';
 import { loadConfig } from './config';
 import { openDatabase } from './db/client';
 import { countTickets } from './db/queries';
-import { fetchTags } from './helpdesk/client';
+import { fetchTags, fetchTicketsForYear } from './helpdesk/client';
 import { createPullRunner } from './pull-service';
 import { createRouter } from './routes';
 
@@ -17,7 +18,10 @@ try {
 }
 
 const { db } = openDatabase(config.databasePath);
-const pulls = createPullRunner(db, config);
+// A pull left `running` belongs to a process that is gone. Sweep before
+// anything can start a new one, or this would kill the live row.
+bootstrap(db);
+const pulls = createPullRunner(db, config, fetchTicketsForYear);
 
 // The tag directory is the one thing still read live from HelpDesk: it is a
 // lookup table, not part of the ticket mirror, so it is cached in memory rather
@@ -35,14 +39,9 @@ const handle = createRouter({
 
 const server = Bun.serve({
   port: config.port,
-  // Bun's default closes an idle connection after ~10s. A manual pull now walks
-  // the year in 7-day windows and takes ~45s, sending nothing until it finishes,
-  // so the default cut the socket mid-pull: the pull completed and committed
-  // while the caller — and Caddy in front of it — saw an EOF and reported 502.
-  // 255 is Bun's maximum. This buys headroom, not a guarantee: the pull grows
-  // with the corpus, and the real fix is for /api/pull to answer immediately and
-  // let the client poll the pull status it already records.
-  idleTimeout: 255,
+  // Nothing holds a connection for a pull any more. The longest legitimate
+  // handler left is a cold tag fetch, whose own abort fires at 30s.
+  idleTimeout: 45,
   // The socket address is passed through so the login throttle can bucket by
   // client when there is no trusted proxy header to read.
   fetch: (request, bunServer) => handle(request, bunServer),

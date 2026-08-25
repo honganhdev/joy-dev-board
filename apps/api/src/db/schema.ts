@@ -74,16 +74,20 @@ export const ticketStatusHistory = sqliteTable(
 /**
  * One row per pull attempt, so history has a known observation window.
  *
- * A row is inserted as `error` when the pull starts and flipped to `ok` only
- * once the sync commits, so a process killed mid-pull leaves an honest record
- * (`status = 'error'`, `finishedAt = null`) rather than a phantom success.
+ * A row is inserted as `running` when the pull starts and flipped to `ok` only
+ * once the sync commits. A process killed mid-pull leaves its row `running`,
+ * and the next boot sweeps every such row to `error` — so a killed process
+ * still leaves an honest record rather than a phantom success, written by the
+ * only actor that can tell the difference.
  */
 export const pulls = sqliteTable('pulls', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   startedAt: text('startedAt').notNull(),
   finishedAt: text('finishedAt'),
   ticketCount: integer('ticketCount'),
-  status: text('status', { enum: ['ok', 'error'] }).notNull(),
+  inserted: integer('inserted'),
+  statusChanges: integer('statusChanges'),
+  status: text('status', { enum: ['ok', 'error', 'running'] }).notNull(),
   error: text('error'),
 });
 

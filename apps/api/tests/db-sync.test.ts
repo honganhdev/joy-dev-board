@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { openDatabase, type Db } from '../src/db/client';
+import { pulls } from '../src/db/schema';
 import {
   countTickets,
   readLastPull,
@@ -8,7 +9,7 @@ import {
   readTicket,
   readTickets,
 } from '../src/db/queries';
-import { failPull, finishPull, startPull, syncPull } from '../src/db/sync';
+import { failPull, finishPull, startPull, sweepInterruptedPulls, syncPull } from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 
 /** A fresh, migrated, throwaway database per test. */
@@ -32,7 +33,7 @@ function ticket(ticketId: string, overrides: Partial<HelpDeskTicket> = {}): Help
 function pull(db: Db, tickets: HelpDeskTicket[], observedAt?: string) {
   const pullId = startPull(db);
   const result = syncPull(db, tickets, pullId, observedAt);
-  finishPull(db, pullId, result.pulled);
+  finishPull(db, pullId, result);
   return { pullId, ...result };
 }
 
@@ -152,11 +153,46 @@ describe('pull records', () => {
     const db = freshDb();
     const pullId = startPull(db);
 
-    expect(readLastPull(db)).toMatchObject({ status: 'error', finishedAt: null });
+    expect(readLastPull(db)).toMatchObject({ status: 'running', finishedAt: null });
     expect(readLastSuccessfulPull(db)).toBeNull();
 
-    finishPull(db, pullId, 7);
+    finishPull(db, pullId, { pulled: 7, inserted: 0, statusChanges: 0 });
     expect(readLastSuccessfulPull(db)).toMatchObject({ status: 'ok', ticketCount: 7 });
+  });
+
+  test('a finished pull records what it changed', () => {
+    const db = freshDb();
+    pull(db, [ticket('JOY-1')]);
+
+    expect(readLastPull(db)).toMatchObject({
+      status: 'ok',
+      ticketCount: 1,
+      inserted: 1,
+      statusChanges: 1,
+    });
+  });
+
+  test('the boot sweep turns an interrupted pull into an honest failure', () => {
+    const db = freshDb();
+    startPull(db);
+
+    expect(sweepInterruptedPulls(db)).toBe(1);
+    expect(readLastPull(db)).toMatchObject({
+      status: 'error',
+      error: 'server restarted mid-pull',
+    });
+    expect(readLastPull(db)?.finishedAt).not.toBeNull();
+    expect(readLastSuccessfulPull(db)).toBeNull();
+  });
+
+  test('the sweep leaves settled pulls alone', () => {
+    const db = freshDb();
+    pull(db, [ticket('JOY-1')]);
+    failPull(db, startPull(db), 'HelpDesk responded 401 Unauthorized');
+    const before = db.select().from(pulls).all();
+
+    expect(sweepInterruptedPulls(db)).toBe(0);
+    expect(db.select().from(pulls).all()).toEqual(before);
   });
 
   test('a failed pull keeps its error and does not become the last successful one', () => {

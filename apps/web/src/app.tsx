@@ -46,11 +46,21 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
 
   const handlePull = useCallback(async () => {
     try {
-      const { pulled, inserted, statusChanges } = await pull();
-      setPullToken((token) => token + 1);
-      toast.success(
-        `Pulled ${pulled} tickets · ${inserted} new · ${statusChanges} status ${statusChanges === 1 ? 'change' : 'changes'}.`
-      );
+      const summary = await pull();
+      if (summary?.status === 'ok') {
+        setPullToken((token) => token + 1);
+        if (summary.inserted !== null && summary.statusChanges !== null) {
+          toast.success(
+            `Pulled ${summary.ticketCount} tickets · ${summary.inserted} new · ${summary.statusChanges} status ${summary.statusChanges === 1 ? 'change' : 'changes'}.`
+          );
+        } else {
+          toast.success(`Pulled ${summary.ticketCount} tickets.`);
+        }
+      } else if (summary?.status === 'running') {
+        toast.message('Pull still running — reload to check.');
+      } else {
+        toast.error(summary?.error ?? 'Pull failed.');
+      }
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Pull failed.');
     }
@@ -88,6 +98,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         onQueryChange={setQuery}
         onPull={handlePull}
         pulling={pulling}
+        pullLabel={pulling ? 'Pulling…' : undefined}
         subtitle={subtitle}
         warning={warning}
         username={username}

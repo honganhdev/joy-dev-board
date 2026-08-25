@@ -1,4 +1,4 @@
-import type { Board, PullResult, StatusHistoryEntry, TicketDetail, WeeklyReport } from '@/types';
+import type { Board, PullSummary, StatusHistoryEntry, TicketDetail, WeeklyReport } from '@/types';
 
 /**
  * Errors carry the message the API produced so the UI can show what actually
@@ -61,9 +61,14 @@ export function fetchWeeklyReport(weeks: number): Promise<WeeklyReport> {
   return request<WeeklyReport>(`/api/report/weekly?weeks=${weeks}`);
 }
 
-/** Re-pulls from HelpDesk into the API's database. Returns what changed. */
-export function pullFromHelpDesk(): Promise<PullResult> {
-  return request<PullResult>('/api/pull', { method: 'POST' });
+/** Starts a HelpDesk pull and returns the current server-side attempt. */
+export function pullFromHelpDesk(): Promise<PullSummary | null> {
+  return request<PullSummary | null>('/api/pull', { method: 'POST' });
+}
+
+/** The API's last pull attempt, however it ended. */
+export function fetchPullStatus(): Promise<PullSummary | null> {
+  return request<PullSummary | null>('/api/pull/status');
 }
 
 export function fetchTicketDetail(ticketId: string): Promise<TicketDetail> {

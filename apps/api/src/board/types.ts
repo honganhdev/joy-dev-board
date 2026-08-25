@@ -64,7 +64,10 @@ export type PullSummary = {
   startedAt: string;
   finishedAt: string | null;
   ticketCount: number | null;
-  status: 'ok' | 'error';
+  /** Null on rows written before these were recorded. */
+  inserted: number | null;
+  statusChanges: number | null;
+  status: 'ok' | 'error' | 'running';
   error: string | null;
 };
 

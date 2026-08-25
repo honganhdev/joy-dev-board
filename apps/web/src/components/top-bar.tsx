@@ -12,6 +12,8 @@ type TopBarProps = {
   onQueryChange: (query: string) => void;
   onPull: () => void;
   pulling: boolean;
+  /** Replaces the Pull button's label while a pull is being followed. */
+  pullLabel?: string;
   subtitle: string;
   /** Set when the board is being served from storage after a failed pull. */
   warning?: { label: string; detail: string } | null;
@@ -32,6 +34,7 @@ export function TopBar({
   onQueryChange,
   onPull,
   pulling,
+  pullLabel,
   subtitle,
   warning,
   username,
@@ -100,7 +103,7 @@ export function TopBar({
 
       <Button size="sm" className="shrink-0" onClick={onPull} disabled={pulling}>
         <RefreshCw className={pulling ? 'animate-spin' : undefined} />
-        Pull HelpDesk
+        {pullLabel ?? 'Pull HelpDesk'}
       </Button>
 
       <div className="flex shrink-0 items-center gap-2 border-l border-stone-200 pl-4">

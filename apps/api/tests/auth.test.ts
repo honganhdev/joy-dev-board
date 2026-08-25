@@ -142,6 +142,7 @@ describe('protected routes', () => {
       get('/api/tickets/T-1'),
       get('/api/tickets/T-1/history'),
       get('/api/report/weekly'),
+      get('/api/pull/status'),
       post('/api/pull'),
     ]) {
       expect((await handle(request)).status).toBe(401);

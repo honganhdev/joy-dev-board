@@ -63,8 +63,8 @@ async function resolveTags(
 
 function toPullSummary(row: PullRow | null): PullSummary | null {
   if (!row) return null;
-  const { startedAt, finishedAt, ticketCount, status, error } = row;
-  return { startedAt, finishedAt, ticketCount, status, error };
+  const { startedAt, finishedAt, ticketCount, inserted, statusChanges, status, error } = row;
+  return { startedAt, finishedAt, ticketCount, inserted, statusChanges, status, error };
 }
 
 /** Assembles the board out of SQLite. No HelpDesk call happens on this path. */
@@ -107,9 +107,14 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
   const authHandlers = createAuthHandlers({ db, auth, throttle: new LoginThrottle(throttle) });
   const serveStatic: StaticHandler = createStaticHandler(webDistPath ?? null);
 
-  /** First boot has nothing to serve — pull instead of returning an empty board. */
-  async function ensureSeeded(): Promise<void> {
-    if (countTickets(db) === 0) await pulls.run();
+  /** Starts a pull without holding the request. The runner records its own failure. */
+  function kickPull(): void {
+    void pulls.run().catch(() => undefined);
+  }
+
+  /** First boot has nothing to serve, so start a pull and return the board as it stands. */
+  function ensureSeeded(): void {
+    if (countTickets(db) === 0) kickPull();
   }
 
   return async function handle(request: Request, server: ClientAddress = null): Promise<Response> {
@@ -144,17 +149,22 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
       }
 
       if (pathname === '/api/pull' && request.method === 'POST') {
-        return json(await pulls.run());
+        kickPull();
+        return json(toPullSummary(readLastPull(db)), 202);
+      }
+
+      if (pathname === '/api/pull/status' && request.method === 'GET') {
+        return json(toPullSummary(readLastPull(db)));
       }
 
       if (pathname === '/api/tickets' && request.method === 'GET') {
-        if (url.searchParams.get('refresh') === '1') await pulls.run();
-        else await ensureSeeded();
+        if (url.searchParams.get('refresh') === '1') kickPull();
+        else ensureSeeded();
         return json(boardFromDb(db));
       }
 
       if (pathname === '/api/report/weekly' && request.method === 'GET') {
-        await ensureSeeded();
+        ensureSeeded();
         const weeks = Number(url.searchParams.get('weeks'));
         return json(aggregateWeeklyReport(readTickets(db), { weeks, now: new Date(), year }));
       }

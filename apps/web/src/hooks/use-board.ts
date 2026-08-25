@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiRequestError, fetchBoard, pullFromHelpDesk } from '@/lib/api';
-import type { Board, PullResult } from '@/types';
+import { followPull } from '@/lib/pull-poll';
+import type { Board, PullSummary } from '@/types';
 
 function messageFor(cause: unknown): string {
   if (cause instanceof ApiRequestError) return cause.message;
@@ -24,13 +25,20 @@ export function useBoard() {
     setLoading(true);
     setError(null);
     try {
-      setBoard(await fetchBoard());
+      const nextBoard = await fetchBoard();
+      setBoard(nextBoard);
+      if (nextBoard.lastPull?.status === 'running') {
+        setPulling(true);
+        await followPull();
+        setBoard(await fetchBoard());
+      }
     } catch (cause) {
       setError(messageFor(cause));
       // Nothing stored yet and nothing fetchable — show the error, not an empty board.
       setBoard(null);
     } finally {
       setLoading(false);
+      setPulling(false);
     }
   }, []);
 
@@ -38,14 +46,15 @@ export function useBoard() {
     void load();
   }, [load]);
 
-  /** Re-pulls from HelpDesk, then re-reads the board the pull just wrote. */
-  const pull = useCallback(async (): Promise<PullResult> => {
+  /** Starts a pull, follows it to a stop, then re-reads the board it wrote. */
+  const pull = useCallback(async (): Promise<PullSummary | null> => {
     setPulling(true);
     try {
-      const result = await pullFromHelpDesk();
+      await pullFromHelpDesk();
+      const settled = await followPull();
       setBoard(await fetchBoard());
       setError(null);
-      return result;
+      return settled;
     } catch (cause) {
       // Re-read anyway: the pull failed, but the API records the failed attempt
       // and the stored board is still worth showing.
