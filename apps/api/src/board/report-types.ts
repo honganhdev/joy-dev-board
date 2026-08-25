@@ -37,7 +37,7 @@ export type WeekSummary = {
    */
   categories: Array<{ category: string; label: string; done: number; outstanding: number }>;
   /** Same rule; an absent or unknown priority is a row keyed `(no priority)`, pinned last. */
-  priorities: Array<{ priority: string; done: number; outstanding: number }>;
+  priorities: Array<{ priority: string; label: string; done: number; outstanding: number }>;
 };
 
 export type GhostAudit = {

@@ -89,6 +89,73 @@ export type StatusHistoryEntry = {
   ticketUpdatedAt: string | null;
 };
 
+/**
+ * Wire shape of `GET /api/report/weekly`.
+ *
+ * Source of truth is `apps/api/src/board/report-types.ts`. Every label, caption
+ * and rule here is a string the server rendered: the report view formats no
+ * dates, cases no names and derives no counts.
+ */
+export type WeekSummary = {
+  /** ISO week key, e.g. `2026-W34`. */
+  key: string;
+  /** `Mon 17 Aug – Sun 23 Aug 2026`. */
+  label: string;
+  /** `17 Aug` — the column tick. */
+  shortLabel: string;
+  created: number;
+  done: number;
+  /** Includes `closedWithoutDoneAt`. */
+  outstanding: number;
+  /** `outstanding` with the ghosts taken out; stacks with `closedWithoutDoneAt`. */
+  outstandingWithDoneDate: number;
+  /** The ghost residue *inside* `outstanding`, drawn as its own segment. */
+  closedWithoutDoneAt: number;
+  doneByStatus: Array<{ status: string; label: string; count: number }>;
+  /** Any number of rows, any names — both come from the classifier at runtime. */
+  categories: Array<{ category: string; label: string; done: number; outstanding: number }>;
+  priorities: Array<{ priority: string; label: string; done: number; outstanding: number }>;
+};
+
+export type GhostAudit = {
+  count: number;
+  closedTotal: number;
+  shareOfClosed: number;
+  shareOfOutstandingLatestWeek: number;
+  /** Already worded, or `null` when there are none. */
+  caveat: string | null;
+};
+
+export type RangeMeta = {
+  /** Already clamped to what the mirror can answer. */
+  presets: Array<{ weeks: number; label: string; available: boolean }>;
+  /** What the server actually used — may differ from what was requested. */
+  selectedWeeks: number;
+  coverageNote: string;
+};
+
+export type TimeToFirstDone = {
+  sampleSize: number;
+  unmeasurable: number;
+  medianDays: number | null;
+  buckets: Array<{ label: string; count: number }>;
+  caption: string;
+};
+
+export type WeeklyReport = {
+  /** Oldest first. Drives every panel. */
+  weeks: WeekSummary[];
+  range: RangeMeta;
+  /** Range-scoped, not week-scoped. */
+  timeToFirstDone: TimeToFirstDone;
+  openRightNow: number;
+  ghosts: GhostAudit;
+  excluded: { deleted: number; unparseableDate: number };
+  doneRule: string;
+  outstandingCaption: string;
+  pulledAt: string;
+};
+
 export type TicketStore = {
   domain?: string | null;
   shopName?: string | null;

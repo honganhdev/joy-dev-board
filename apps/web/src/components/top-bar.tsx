@@ -2,7 +2,12 @@ import { AlertTriangle, LogOut, RefreshCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+export type BoardView = 'board' | 'report';
+
 type TopBarProps = {
+  /** Which of the two surfaces is on screen. */
+  view: BoardView;
+  onViewChange: (view: BoardView) => void;
   query: string;
   onQueryChange: (query: string) => void;
   onPull: () => void;
@@ -15,7 +20,14 @@ type TopBarProps = {
   onSignOut: () => void;
 };
 
+const VIEWS: Array<{ value: BoardView; label: string }> = [
+  { value: 'board', label: 'Board' },
+  { value: 'report', label: 'Report' },
+];
+
 export function TopBar({
+  view,
+  onViewChange,
   query,
   onQueryChange,
   onPull,
@@ -37,16 +49,44 @@ export function TopBar({
         </div>
       </div>
 
-      <div className="relative mx-auto w-full max-w-xl">
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Paste ticket URL, ID, Slack or Crisp…"
-          aria-label="Search tickets"
-          className="h-9 bg-stone-50 pl-9"
-        />
+      <div
+        role="tablist"
+        aria-label="View"
+        className="flex shrink-0 items-center gap-0.5 rounded-md border border-stone-200 bg-stone-50 p-0.5"
+      >
+        {VIEWS.map((entry) => (
+          <button
+            key={entry.value}
+            type="button"
+            role="tab"
+            aria-selected={view === entry.value}
+            onClick={() => onViewChange(entry.value)}
+            className={
+              view === entry.value
+                ? 'rounded-[5px] bg-white px-3 py-1 text-[12px] font-semibold text-stone-900 shadow-none'
+                : 'rounded-[5px] px-3 py-1 text-[12px] text-muted-foreground hover:text-stone-900'
+            }
+          >
+            {entry.label}
+          </button>
+        ))}
       </div>
+
+      {/* The search filters board cards, so it is meaningless on the report. */}
+      {view === 'board' ? (
+        <div className="relative mx-auto w-full max-w-xl">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Paste ticket URL, ID, Slack or Crisp…"
+            aria-label="Search tickets"
+            className="h-9 bg-stone-50 pl-9"
+          />
+        </div>
+      ) : (
+        <div className="mx-auto" />
+      )}
 
       {warning && (
         <div

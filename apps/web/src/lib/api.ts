@@ -1,4 +1,4 @@
-import type { Board, PullResult, StatusHistoryEntry, TicketDetail } from '@/types';
+import type { Board, PullResult, StatusHistoryEntry, TicketDetail, WeeklyReport } from '@/types';
 
 /**
  * Errors carry the message the API produced so the UI can show what actually
@@ -54,6 +54,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function fetchBoard(): Promise<Board> {
   return request<Board>('/api/tickets');
+}
+
+/** The whole report in one response — the server picks no week, the client picks no range. */
+export function fetchWeeklyReport(weeks: number): Promise<WeeklyReport> {
+  return request<WeeklyReport>(`/api/report/weekly?weeks=${weeks}`);
 }
 
 /** Re-pulls from HelpDesk into the API's database. Returns what changed. */

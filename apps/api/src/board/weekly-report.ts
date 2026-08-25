@@ -75,6 +75,12 @@ function statusLabel(status: string): string {
   return sentenceCase(COLUMN_LABELS.get(status) ?? status) || status;
 }
 
+/** `high` → `High`. The absent-priority key is named rather than printed with its brackets. */
+function priorityLabel(priority: string): string {
+  if (priority === NO_PRIORITY) return 'No priority';
+  return sentenceCase(priority) || priority;
+}
+
 function isPresent(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
@@ -208,8 +214,9 @@ function ghostAudit(counted: Counted[], latest: WeekSummary | undefined): GhostA
     caveat:
       count === 0
         ? null
-        : `${count} finished tickets carry no done date in HelpDesk. They are counted as ` +
-          'outstanding and shown separately; nothing is estimated for them.',
+        : `${count} finished ${count === 1 ? 'ticket carries' : 'tickets carry'} no done date in ` +
+          'HelpDesk. They are counted as outstanding and shown separately; nothing is estimated ' +
+          'for them.',
   };
 }
 
@@ -317,7 +324,7 @@ export function aggregateWeeklyReport(
         .map(([category, pair]) => ({ category, label: category, ...pair })),
       priorities: [...priorities.entries()]
         .sort(byWeightThenKey(NO_PRIORITY))
-        .map(([priority, pair]) => ({ priority, ...pair })),
+        .map(([priority, pair]) => ({ priority, label: priorityLabel(priority), ...pair })),
     };
   });
 

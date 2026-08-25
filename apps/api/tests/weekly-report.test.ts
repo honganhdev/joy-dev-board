@@ -165,6 +165,12 @@ describe('cohorts', () => {
     expect(withGhosts.ghosts.shareOfOutstandingLatestWeek).toBe(0.667);
     expect(withGhosts.ghosts.caveat).toContain('2 finished tickets carry no done date');
 
+    // One ghost reads as a sentence, not as `1 finished tickets carry`.
+    const single = report([
+      ticket({ ticketId: 'g1', ticketStatus: 'closed', createdAt: '2026-08-01T00:00:00+07:00', doneAt: null }),
+    ]);
+    expect(single.ghosts.caveat).toContain('1 finished ticket carries no done date');
+
     const clean = report([ticket({ createdAt: '2026-08-01T00:00:00+07:00', doneAt: null })]);
     expect(clean.ghosts.count).toBe(0);
     expect(clean.ghosts.shareOfClosed).toBe(0);
@@ -235,7 +241,20 @@ describe('unknown values', () => {
     ]);
 
     const week = weekByKey(result, '2026-W34');
-    expect(week.priorities).toEqual([{ priority: '(no priority)', done: 0, outstanding: 1 }]);
+    expect(week.priorities).toEqual([
+      { priority: '(no priority)', label: 'No priority', done: 0, outstanding: 1 },
+    ]);
+  });
+
+  test('labels a priority in sentence case', () => {
+    const result = report([
+      ticket({ createdAt: '2026-08-18T09:00:00+07:00', priority: 'high', doneAt: null }),
+    ]);
+
+    const week = weekByKey(result, '2026-W34');
+    expect(week.priorities).toEqual([
+      { priority: 'high', label: 'High', done: 0, outstanding: 1 },
+    ]);
   });
 
   test('renders a status label in sentence case, known column or not', () => {
