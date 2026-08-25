@@ -102,9 +102,10 @@ bun run build        # production build of the web app
 Everything else under `/api/` returns `401` without a valid session. In the container the API also
 serves the built web app on the same port, with a client-side-routing fallback to `index.html`.
 
-Reads never touch HelpDesk. A failed pull surfaces as a `502` with a real message, and the board keeps
-serving what is stored — `lastPull` carries the failure so the UI can say the data is stale instead of
-going blank.
+Reads never touch HelpDesk. A failed pull is reported by `GET /api/pull/status` as a `200` summary
+with `status: "error"` and a real message — the `POST` answered `202` long before it failed — and the
+board keeps serving what is stored: `lastPull` carries the failure so the UI can say the data is stale
+instead of going blank.
 
 The tag directory is the one thing still read live from HelpDesk and cached in memory for
 `CACHE_TTL_MS × 12`. It is a lookup table rather than part of the ticket mirror, so it has no table.
@@ -208,14 +209,14 @@ produces a backup that only fails when it is needed.
 The target is a single VPS running one container, which is why SQLite is enough. Two things to get
 right there:
 
-After this deploy, ask anyone with an open board tab to reload so it picks up the new pull response.
-
 - **`/app/data` must be a mounted volume.** Running in Docker without one loses the database — and
   with it every status history row ever recorded — on each rebuild. That history cannot be re-pulled:
   HelpDesk does not expose past states. `deploy/compose.yaml` mounts the `board-data` named volume;
   do not remove it, and do not `docker compose down -v`.
 - **One writer.** WAL allows concurrent readers, but the design assumes a single API process owns the
   file. Do not run two instances against the same database.
+
+After this deploy, ask anyone with an open board tab to reload so it picks up the new pull response.
 
 ## Container
 

@@ -234,3 +234,48 @@ describe('followPull failure handling', () => {
     expect(calls.length).toBeGreaterThan(1);
   });
 });
+
+describe('followPull request deadline', () => {
+  /** A connection that establishes and then never answers — a stalled proxy. */
+  function hangs() {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = ((input: URL | string, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () =>
+          reject(new DOMException('The operation was aborted.', 'AbortError'))
+        );
+      });
+    }) as unknown as typeof fetch;
+    return calls;
+  }
+
+  test('a hung request cannot park the loop past its cap', async () => {
+    hangs();
+    const startedAt = performance.now();
+
+    expect(await followPull({ intervalMs: 1, timeoutMs: 40 })).toBeNull();
+    expect(performance.now() - startedAt).toBeLessThan(1000);
+  });
+
+  test('three hung requests in a row propagate like any other failure', async () => {
+    const calls = hangs();
+
+    await expect(followPull({ intervalMs: 1, requestTimeoutMs: 10 })).rejects.toThrow(
+      'took too long'
+    );
+    expect(calls).toHaveLength(3);
+  });
+
+  test('every status request carries a deadline of its own, cap or no cap', async () => {
+    const calls = stub(
+      { status: 200, body: summary('running') },
+      { status: 200, body: summary('ok') }
+    );
+
+    await followPull({ intervalMs: 1 });
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call.init?.signal).toBeInstanceOf(AbortSignal);
+  });
+});

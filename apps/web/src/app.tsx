@@ -12,6 +12,7 @@ import { useBoard } from '@/hooks/use-board';
 import { useTicketDetail } from '@/hooks/use-ticket-detail';
 import { formatAge } from '@/lib/format';
 import { filterBoard } from '@/lib/search';
+import type { PullSummary } from '@/types';
 
 /** Collapsed categories, keyed by column. Lives as long as the page does. */
 type CollapsedState = Record<string, ReadonlySet<string>>;
@@ -24,14 +25,34 @@ const EMPTY_COLLAPSED: ReadonlySet<string> = new Set();
  * screen, not a board that 401s its way to an error state.
  */
 function BoardApp({ username, onSignOut }: { username: string | null; onSignOut: () => void }) {
-  const { board, loading, pulling, error, reload, pull } = useBoard();
   const detail = useTicketDetail();
   const [view, setView] = useState<BoardView>('board');
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<CollapsedState>({});
-  // Bumped by a finished pull. The board re-reads itself inside `pull()`; the
-  // report is mounted elsewhere and needs telling that its numbers just aged.
+  // Bumped by a finished pull. The board re-reads itself; the report is mounted
+  // elsewhere and needs telling that its numbers just aged.
   const [pullToken, setPullToken] = useState(0);
+
+  // How a finished pull is reported, whoever started it: the button, or a page
+  // load that found one already running.
+  const reportPull = useCallback((settled: PullSummary | null) => {
+    if (settled?.status === 'ok') {
+      setPullToken((token) => token + 1);
+      if (settled.inserted !== null && settled.statusChanges !== null) {
+        toast.success(
+          `Pulled ${settled.ticketCount} tickets · ${settled.inserted} new · ${settled.statusChanges} status ${settled.statusChanges === 1 ? 'change' : 'changes'}.`
+        );
+      } else {
+        toast.success(`Pulled ${settled.ticketCount} tickets.`);
+      }
+    } else if (settled?.status === 'running') {
+      toast.message('Pull still running — reload to check.');
+    } else {
+      toast.error(settled?.error ?? 'Pull failed.');
+    }
+  }, []);
+
+  const { board, loading, pulling, error, reload, pull } = useBoard(reportPull);
 
   const filtered = useMemo(() => (board ? filterBoard(board, query) : null), [board, query]);
 
@@ -46,25 +67,11 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
 
   const handlePull = useCallback(async () => {
     try {
-      const summary = await pull();
-      if (summary?.status === 'ok') {
-        setPullToken((token) => token + 1);
-        if (summary.inserted !== null && summary.statusChanges !== null) {
-          toast.success(
-            `Pulled ${summary.ticketCount} tickets · ${summary.inserted} new · ${summary.statusChanges} status ${summary.statusChanges === 1 ? 'change' : 'changes'}.`
-          );
-        } else {
-          toast.success(`Pulled ${summary.ticketCount} tickets.`);
-        }
-      } else if (summary?.status === 'running') {
-        toast.message('Pull still running — reload to check.');
-      } else {
-        toast.error(summary?.error ?? 'Pull failed.');
-      }
+      reportPull(await pull());
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'Pull failed.');
     }
-  }, [pull]);
+  }, [pull, reportPull]);
 
   const boardSubtitle = board
     ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${formatAge(board.pulledAt)}`

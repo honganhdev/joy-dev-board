@@ -32,6 +32,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // of these calls — worth being explicit about.
     response = await fetch(path, { credentials: 'same-origin', ...init });
   } catch {
+    // A caller that set its own deadline gets told the request ran out of time.
+    // Everyone else gets the one thing that is usually true: nothing answered.
+    if (init?.signal?.aborted) throw new ApiRequestError('The board API took too long to answer.');
     throw new ApiRequestError('Cannot reach the board API. Is `bun run dev:api` running?');
   }
 
@@ -66,9 +69,16 @@ export function pullFromHelpDesk(): Promise<PullSummary | null> {
   return request<PullSummary | null>('/api/pull', { method: 'POST' });
 }
 
-/** The API's last pull attempt, however it ended. */
-export function fetchPullStatus(): Promise<PullSummary | null> {
-  return request<PullSummary | null>('/api/pull/status');
+/**
+ * The API's last pull attempt, however it ended. `timeoutMs` bounds the single
+ * request, so a connection that establishes and then stalls fails instead of
+ * hanging the caller that is polling on it.
+ */
+export function fetchPullStatus(timeoutMs?: number): Promise<PullSummary | null> {
+  return request<PullSummary | null>(
+    '/api/pull/status',
+    timeoutMs === undefined ? undefined : { signal: AbortSignal.timeout(timeoutMs) }
+  );
 }
 
 export function fetchTicketDetail(ticketId: string): Promise<TicketDetail> {
