@@ -38,6 +38,7 @@ function board(tickets: BoardTicket[]): Board {
       { status: 'doing', label: 'DOING', count: 0, groups: [] },
     ],
     otherStatuses: [],
+    lastPull: null,
   };
 }
 

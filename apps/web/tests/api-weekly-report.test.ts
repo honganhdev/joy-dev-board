@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ApiRequestError, fetchWeeklyReport, setUnauthorizedHandler } from '../src/lib/api';
+import type { WeeklyReport } from '../src/types';
 
 const realFetch = globalThis.fetch;
 
@@ -34,10 +35,12 @@ describe('fetchWeeklyReport', () => {
   });
 
   test('returns the body untouched, deriving nothing from it', async () => {
+    // Deliberately not a whole report: the point is that this hands back the body
+    // it was given rather than assembling anything from it.
     const payload = { weeks: [{ key: '2026-W34', created: 3 }], openRightNow: 7 };
     stub(200, payload);
 
-    expect(await fetchWeeklyReport(12)).toEqual(payload);
+    expect(await fetchWeeklyReport(12)).toEqual(payload as unknown as WeeklyReport);
   });
 });
 
