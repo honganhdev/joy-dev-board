@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { classify, normalize } from '../src/board/classify';
-import { CATEGORIES } from '../src/board/categories';
+import { CATEGORIES, CATEGORY_KEYWORDS, FALLBACK_CATEGORY } from '../src/board/categories';
 import { loadFixtureTickets } from './fixtures';
 
 describe('normalize', () => {
@@ -14,13 +14,13 @@ describe('normalize', () => {
 describe('classify', () => {
   test('classifies real fixture subjects', () => {
     const cases: Array<[string, string]> = [
-      ['[bug] Điểm thưởng không được cộng cho đơn draft order đã thanh toán', 'POINTS / ACTIVITY'],
-      ['Ẩn nút widget trên trang giỏ hàng và cart drawer', 'WIDGET / UNIFIED'],
+      ['[bug] Điểm thưởng không được cộng cho đơn draft order đã thanh toán', 'POINTS'],
+      ['Ẩn nút widget trên trang giỏ hàng và cart drawer', 'COUPON / CHECKOUT'],
       ['[request] Export coupons list', 'ANALYTICS'],
-      ['Customize widget', 'WIDGET / UNIFIED'],
-      ['[customize] add point calculator: all product page templates', 'POINTS / ACTIVITY'],
-      ['Point balance label not updated', 'POINTS / ACTIVITY'],
-      ['Sync points & programs + assign Bronze tier to existing members before launch', 'INTEGRATIONS'],
+      ['Customize widget', 'WIDGET'],
+      ['[customize] add point calculator: all product page templates', 'POINTS'],
+      ['Point balance label not updated', 'POINTS'],
+      ['Sync points & programs + assign Bronze tier to existing members before launch', 'ONBOARDING'],
     ];
 
     for (const [subject, expected] of cases) {
@@ -29,7 +29,7 @@ describe('classify', () => {
   });
 
   test('matches Vietnamese written without diacritics', () => {
-    expect(classify({ subject: 'khach hang mat diem thuong' })).toBe('POINTS / ACTIVITY');
+    expect(classify({ subject: 'khach hang mat diem thuong' })).toBe('POINTS');
   });
 
   test('is case-insensitive', () => {
@@ -45,7 +45,7 @@ describe('classify', () => {
 
   test('falls back to the description only when the subject matches nothing', () => {
     expect(classify({ subject: 'zzz nothing here', description: 'the widget will not open' })).toBe(
-      'WIDGET / UNIFIED'
+      'WIDGET'
     );
     // Subject wins over a description that would match a different category.
     expect(classify({ subject: 'referral code broken', description: 'the widget will not open' })).toBe(
@@ -68,5 +68,18 @@ describe('classify', () => {
       expect(CATEGORIES).toContain(first);
       expect(classify(ticket)).toBe(first);
     }
+  });
+});
+
+describe('category table integrity', () => {
+  test('CATEGORY_KEYWORDS mirrors CATEGORIES in membership and order, minus the catch-all', () => {
+    // Two independent arrays with different jobs: CATEGORIES is the board's group
+    // display order, CATEGORY_KEYWORDS is match precedence. Nothing in the type
+    // system keeps them in step, so reordering one alone silently splits the two.
+    const keyworded = CATEGORY_KEYWORDS.map((entry) => entry.category);
+    const expected = CATEGORIES.filter((category) => category !== FALLBACK_CATEGORY);
+
+    expect(keyworded).toEqual([...expected]);
+    expect(new Set(keyworded).size).toBe(keyworded.length);
   });
 });

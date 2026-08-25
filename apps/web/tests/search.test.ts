@@ -10,7 +10,7 @@ function ticket(overrides: Partial<BoardTicket> = {}): BoardTicket {
   return {
     ticketId: 'JOY-260823-ZJaFcq',
     subject: 'Ẩn nút widget trên trang giỏ hàng',
-    category: 'WIDGET / UNIFIED',
+    category: 'WIDGET',
     shopName: 'The Sample Shop',
     domain: 'sample-shop.myshopify.com',
     memberNames: ['Agent A'],
@@ -33,7 +33,7 @@ function board(tickets: BoardTicket[]): Board {
         status: 'done',
         label: 'DONE',
         count: tickets.length,
-        groups: [{ category: 'WIDGET / UNIFIED', count: tickets.length, tickets }],
+        groups: [{ category: 'WIDGET', count: tickets.length, tickets }],
       },
       { status: 'doing', label: 'DOING', count: 0, groups: [] },
     ],

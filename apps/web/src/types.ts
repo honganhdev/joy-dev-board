@@ -6,14 +6,21 @@
  */
 
 export type Category =
+  | 'DFY SETUP'
+  | 'ONBOARDING'
+  | 'BILLING / PLAN'
   | 'REFERRAL'
-  | 'TRANSLATION / EMAIL'
+  | 'TRANSLATION'
+  | 'EMAIL / NOTIFY'
   | 'ANALYTICS'
   | 'INTEGRATIONS'
-  | 'WIDGET / UNIFIED'
-  | 'COUPON / CART'
-  | 'POINTS / ACTIVITY'
-  | 'PROGRAM ADMIN'
+  | 'VIP TIERS'
+  | 'EARNING RULES'
+  | 'REDEEM / REWARDS'
+  | 'POINTS'
+  | 'COUPON / CHECKOUT'
+  | 'LOYALTY PAGE'
+  | 'WIDGET'
   | 'CUSTOMIZATION'
   | 'OTHER';
 
