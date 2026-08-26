@@ -129,6 +129,9 @@ const BUCKETS = [
   { label: 'over 30 days', maxDays: Infinity },
 ];
 
+/** How many of the oldest open tickets the backlog panel lists. Named on screen. */
+const OLDEST_ROWS = 5;
+
 /** Inclusive upper bounds for the all-open backlog age rows. */
 const AGE_BUCKETS = [
   { label: '< 7 days', maxDays: 6 },
@@ -495,6 +498,17 @@ function openBacklog(open: HelpDeskTicket[], nowMs: number): WeeklyReport['openB
   }
 
   const total = open.length;
+  const oldest = dated
+    .sort((a, b) => a.createdMs - b.createdMs)
+    .slice(0, OLDEST_ROWS)
+    .map(({ ticket, ageDays }) => ({
+      ticketId: ticket.ticketId,
+      subject: ticket.subject?.trim() || '(no subject)',
+      merchant: merchantName(ticket),
+      ageDays,
+      ageLabel: ageDays === 1 ? '1 day' : `${ageDays} days`,
+    }));
+
   return {
     total,
     agingHeadline:
@@ -506,17 +520,26 @@ function openBacklog(open: HelpDeskTicket[], nowMs: number): WeeklyReport['openB
     buckets: bucketCounts,
     noCreatedDate,
     noCreatedDateLabel: 'No readable created date',
-    oldest: dated
-      .sort((a, b) => a.createdMs - b.createdMs)
-      .slice(0, 5)
-      .map(({ ticket, ageDays }) => ({
-        ticketId: ticket.ticketId,
-        subject: ticket.subject?.trim() || '(no subject)',
-        merchant: merchantName(ticket),
-        ageDays,
-        ageLabel: ageDays === 1 ? '1 day' : `${ageDays} days`,
-      })),
+    oldest,
+    oldestCaption: oldestCaption(dated.length),
   };
+}
+
+/**
+ * Names the cap on the oldest list. The panel prints a fixed number of rows, so
+ * without this a reader has no way to tell a capped list from the whole tail.
+ */
+function oldestCaption(dated: number): string {
+  if (dated === 0) {
+    return 'No open ticket has a readable created date, so none is listed here.';
+  }
+  if (dated === 1) {
+    return 'The 1 open ticket with a readable created date is listed below.';
+  }
+  if (dated <= OLDEST_ROWS) {
+    return `All ${dated} open tickets with a readable created date are listed below, oldest first.`;
+  }
+  return `The ${OLDEST_ROWS} oldest of ${dated} open tickets with a readable created date, oldest first.`;
 }
 
 /**

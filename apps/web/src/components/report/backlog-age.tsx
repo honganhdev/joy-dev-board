@@ -28,8 +28,11 @@ export function BacklogAge({ data }: { data: OpenBacklog }) {
         )}
       </ul>
 
+      {/* The oldest list is capped, so the caption naming the cap is not optional. */}
+      <p className="mt-4 text-[10px] leading-snug text-muted-foreground">{data.oldestCaption}</p>
+
       {data.oldest.length > 0 && (
-        <ul className="mt-4 space-y-2 border-t border-stone-200 pt-3">
+        <ul className="mt-2 space-y-2 border-t border-stone-200 pt-3">
           {data.oldest.map((ticket) => (
             <li key={ticket.ticketId} className="flex min-w-0 items-baseline gap-3 text-[12px]">
               <span className="min-w-0 flex-1 truncate font-medium" title={ticket.subject}>

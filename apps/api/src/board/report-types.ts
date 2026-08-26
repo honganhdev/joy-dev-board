@@ -163,6 +163,8 @@ export type WeeklyReport = {
       ageDays: number;
       ageLabel: string;
     }>;
+    /** Names the cap on `oldest`, and the empty and shorter-than-five cases. */
+    oldestCaption: string;
   };
   /** Server-worded heading for the absolute all-open section. */
   openSectionTitle: string;

@@ -178,6 +178,8 @@ export type WeeklyReport = {
       ageDays: number;
       ageLabel: string;
     }>;
+    /** Names the cap on `oldest`; rendered verbatim. */
+    oldestCaption: string;
   };
   openSectionTitle: string;
   openByPlan: {

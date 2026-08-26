@@ -1519,6 +1519,43 @@ describe('the all-open panels at their edges', () => {
     expect(result.oldest.map((row) => row.ageDays)).toEqual([100, 99, 98, 97, 96]);
   });
 
+  test('names the five-oldest cap, and what it holds when there are fewer', () => {
+    const seven = report(
+      Array.from({ length: 7 }, (_, index) =>
+        ticket({
+          ticketId: `age-${index}`,
+          createdAt: new Date(NOW.getTime() - (100 - index) * 86400000).toISOString(),
+        })
+      )
+    ).openBacklog;
+    expect(seven.oldest).toHaveLength(5);
+    expect(seven.oldestCaption).toBe(
+      'The 5 oldest of 7 open tickets with a readable created date, oldest first.'
+    );
+
+    const two = report(
+      [10, 20].map((days) =>
+        ticket({
+          ticketId: `age-${days}`,
+          createdAt: new Date(NOW.getTime() - days * 86400000).toISOString(),
+        })
+      )
+    ).openBacklog;
+    expect(two.oldestCaption).toBe(
+      'All 2 open tickets with a readable created date are listed below, oldest first.'
+    );
+
+    expect(report([ticket({ ticketId: 'one' })]).openBacklog.oldestCaption).toBe(
+      'The 1 open ticket with a readable created date is listed below.'
+    );
+    expect(report([]).openBacklog.oldestCaption).toBe(
+      'No open ticket has a readable created date, so none is listed here.'
+    );
+    expect(report([ticket({ ticketId: 'undated', createdAt: null })]).openBacklog.oldestCaption).toBe(
+      'No open ticket has a readable created date, so none is listed here.'
+    );
+  });
+
   test('labels the absent plan row without inventing a plan name', () => {
     const result = report([
       ticket({ ticketId: 'null-plan', appPlan: null }),
