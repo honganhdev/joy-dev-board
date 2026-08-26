@@ -14,8 +14,8 @@ services:
     container_name: joy-dev-board
     restart: unless-stopped
 
-    # AUTH_USERNAME, AUTH_PASSWORD_HASH, API_KEY_HELPDESK, COOKIE_SECURE=true,
-    # TRUST_PROXY=true. See .env.example and the README.
+    # AUTH_USERNAME, AUTH_PASSWORD_HASH, API_KEY_HELPDESK, WEBHOOK_SECRET,
+    # COOKIE_SECURE=true, TRUST_PROXY=true. See .env.example and the README.
     env_file:
       - ../.env
 

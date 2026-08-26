@@ -164,6 +164,22 @@ async function fetchWindow(config: Config, window: DateWindow): Promise<HelpDesk
   return tickets;
 }
 
+/** Fetches every ticket created on the UTC day containing `createdAt`. */
+export async function fetchTicketsCreatedOn(
+  config: Config,
+  createdAt: string
+): Promise<HelpDeskTicket[]> {
+  const instant = new Date(createdAt);
+  if (Number.isNaN(instant.getTime())) {
+    throw new HelpDeskError('Webhook ticket has no usable createdAt timestamp');
+  }
+  const start = Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate());
+  return fetchWindow(config, {
+    startDate: new Date(start).toISOString(),
+    endDate: new Date(start + DAY_MS - 1).toISOString(),
+  });
+}
+
 /** Tag directory, used to turn a ticket's opaque `tagIds` into names. */
 export async function fetchTags(config: Config): Promise<HelpDeskTag[]> {
   const body = await get<TagsResponse>(config, new URL(`${config.baseUrl}/tags`));

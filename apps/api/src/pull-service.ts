@@ -10,7 +10,11 @@ import type { Db } from './db/client';
 import { failPull, finishPull, startPull, syncPull, type SyncResult } from './db/sync';
 import type { HelpDeskTicket } from './helpdesk/types';
 
-export type PullRunner = { run: () => Promise<SyncResult> };
+export type PullRunner = {
+  run: () => Promise<SyncResult>;
+  /** Orders webhook work after the existing single-flight pull without changing either write. */
+  whenIdle: () => Promise<void>;
+};
 export type TicketFetcher = (config: Config) => Promise<HelpDeskTicket[]>;
 
 export function createPullRunner(db: Db, config: Config, fetchTickets: TicketFetcher): PullRunner {
@@ -40,6 +44,14 @@ export function createPullRunner(db: Db, config: Config, fetchTickets: TicketFet
         inFlight = null;
       });
       return inFlight;
+    },
+    whenIdle() {
+      // Ordering avoids a stale pull overwriting a newer webhook observation;
+      // an updatedAt predicate on only the webhook write cannot prevent that.
+      return (inFlight ?? Promise.resolve()).then(
+        () => undefined,
+        () => undefined
+      );
     },
   };
 }

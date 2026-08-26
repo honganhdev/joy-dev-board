@@ -74,6 +74,7 @@ test(
         PATH: process.env.PATH ?? '',
         HOME: process.env.HOME ?? '',
         API_KEY_HELPDESK: 'test-key',
+        WEBHOOK_SECRET: 'test-webhook-secret',
         HELPDESK_BASE_URL: helpdesk.url,
         AUTH_USERNAME: 'boarduser',
         AUTH_PASSWORD_HASH: await Bun.password.hash('unused', { algorithm: 'argon2id' }),

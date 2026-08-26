@@ -6,7 +6,7 @@ import { join } from 'node:path';
  * and the login handler.
  */
 
-export type Config = {
+export type Config<WithWebhookSecret extends boolean = false> = {
   apiKey: string;
   baseUrl: string;
   port: number;
@@ -20,7 +20,7 @@ export type Config = {
   auth: AuthConfig;
   /** Built web assets to serve alongside `/api/*`. `null` when there are none. */
   webDistPath: string | null;
-};
+} & (WithWebhookSecret extends true ? { webhookSecret: string } : {});
 
 export type AuthConfig = {
   /** The single account that may sign in. There is no user-management UI. */
@@ -79,11 +79,18 @@ export function decodePasswordHash(raw: string): string {
 }
 
 /** Throws with an actionable message when required env is missing. */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config<true> {
   const apiKey = env.API_KEY_HELPDESK?.trim();
   if (!apiKey) {
     throw new Error(
       'API_KEY_HELPDESK is not set. Add it to the repo-root .env (gitignored) before starting the API.'
+    );
+  }
+
+  const webhookSecret = env.WEBHOOK_SECRET?.trim();
+  if (!webhookSecret) {
+    throw new Error(
+      'WEBHOOK_SECRET is not set. Copy the value shown once in Avada admin → Webhooks into the repo-root .env before starting the API.'
     );
   }
 
@@ -102,6 +109,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   return {
     apiKey,
+    webhookSecret,
     baseUrl: env.HELPDESK_BASE_URL?.trim() || 'https://helpdesk.avada.net/api/external',
     port: Number(env.PORT ?? 8787),
     cacheTtlMs: Number(env.CACHE_TTL_MS ?? 5 * 60 * 1000),

@@ -89,7 +89,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
   }, [pull, reportPull]);
 
   const boardSubtitle = board
-    ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${formatAge(board.pulledAt)}`
+    ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${formatAge(board.pulledAt)} · webhook ${formatAge(board.webhookAt)}`
     : 'HelpDesk tickets for JOY Loyalty · read-only';
 
   const subtitle =

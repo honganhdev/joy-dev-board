@@ -62,6 +62,7 @@ function harness(fetchTickets: TicketFetcher): {
   const db = openDatabase(':memory:').db;
   const pulls = createPullRunner(db, config, fetchTickets);
   const handle = createRouter({
+    webhookSecret: 'test-webhook-secret', webhooks: { process: async () => {} },
     db,
     pulls,
     tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
@@ -343,6 +344,7 @@ describe('board column preference routes', () => {
     const opened = openDatabase(':memory:');
     const pulls = createPullRunner(opened.db, config, async () => [ticket('JOY-default')]);
     const handle = createRouter({
+      webhookSecret: 'test-webhook-secret', webhooks: { process: async () => {} },
       db: opened.db,
       pulls,
       tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,

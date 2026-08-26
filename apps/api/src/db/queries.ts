@@ -2,7 +2,7 @@
  * Read path. Everything the API serves comes from here — HelpDesk is only ever
  * touched by a pull, never by a page load.
  */
-import { asc, count, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Db } from './client';
 import { pulls, tickets, ticketStatusHistory } from './schema';
 import type { PullRow } from './schema';
@@ -58,18 +58,38 @@ export function readStatusHistory(db: Db, ticketId: string): StatusHistoryEntry[
     .all();
 }
 
-/** Most recent pull attempt, successful or not — this is what staleness is read from. */
+const fullPull = or(isNull(pulls.source), eq(pulls.source, 'pull'));
+
+/** Most recent full pull attempt, successful or not — this is what staleness is read from. */
 export function readLastPull(db: Db): PullRow | null {
-  const [row] = db.select().from(pulls).orderBy(desc(pulls.id)).limit(1).all();
+  const [row] = db
+    .select()
+    .from(pulls)
+    .where(fullPull)
+    .orderBy(desc(pulls.id))
+    .limit(1)
+    .all();
   return row ?? null;
 }
 
-/** Most recent pull that actually committed. `null` before the first one. */
+/** Most recent full pull that actually committed. `null` before the first one. */
 export function readLastSuccessfulPull(db: Db): PullRow | null {
   const [row] = db
     .select()
     .from(pulls)
-    .where(eq(pulls.status, 'ok'))
+    .where(and(fullPull, eq(pulls.status, 'ok')))
+    .orderBy(desc(pulls.id))
+    .limit(1)
+    .all();
+  return row ?? null;
+}
+
+/** Most recent webhook delivery that actually committed. */
+export function readLastSuccessfulWebhook(db: Db): PullRow | null {
+  const [row] = db
+    .select()
+    .from(pulls)
+    .where(and(eq(pulls.source, 'webhook'), eq(pulls.status, 'ok')))
     .orderBy(desc(pulls.id))
     .limit(1)
     .all();

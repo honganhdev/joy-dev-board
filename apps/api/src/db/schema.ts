@@ -9,7 +9,7 @@
  * Column names match the TypeScript property names one-to-one, so a row reads
  * the same in SQL and in code.
  */
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** One row per ticket, upserted on every pull. */
 export const tickets = sqliteTable(
@@ -46,10 +46,10 @@ export const tickets = sqliteTable(
  * One row per *observed* status change.
  *
  * HelpDesk only ever returns a ticket's current state, so a change is only
- * known to have happened somewhere between two pulls. `observedAt` is when the
- * pull noticed it — not when it happened. A column called `changedAt` would be
- * read as fact later and would be a lie. `ticketUpdatedAt` is HelpDesk's own
- * `updatedAt`, the closest thing to a real change time.
+ * known to have happened somewhere between two observations. `observedAt` is
+ * when this board noticed it — not when it happened. A column called
+ * `changedAt` would be read as fact later and would be a lie. `ticketUpdatedAt`
+ * is HelpDesk's own `updatedAt`, the closest thing to a real change time.
  */
 export const ticketStatusHistory = sqliteTable(
   'ticket_status_history',
@@ -80,16 +80,24 @@ export const ticketStatusHistory = sqliteTable(
  * still leaves an honest record rather than a phantom success, written by the
  * only actor that can tell the difference.
  */
-export const pulls = sqliteTable('pulls', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  startedAt: text('startedAt').notNull(),
-  finishedAt: text('finishedAt'),
-  ticketCount: integer('ticketCount'),
-  inserted: integer('inserted'),
-  statusChanges: integer('statusChanges'),
-  status: text('status', { enum: ['ok', 'error', 'running'] }).notNull(),
-  error: text('error'),
-});
+export const pulls = sqliteTable(
+  'pulls',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    startedAt: text('startedAt').notNull(),
+    finishedAt: text('finishedAt'),
+    ticketCount: integer('ticketCount'),
+    inserted: integer('inserted'),
+    statusChanges: integer('statusChanges'),
+    status: text('status', { enum: ['ok', 'error', 'running'] }).notNull(),
+    error: text('error'),
+    /** NULL means a full pull written before this source marker existed. */
+    source: text('source', { enum: ['pull', 'webhook'] }),
+    /** The sender's delivery id; NULL for full pulls. */
+    deliveryId: text('deliveryId'),
+  },
+  (table) => [uniqueIndex('pulls_deliveryId_idx').on(table.deliveryId)]
+);
 
 export type PullRow = typeof pulls.$inferSelect;
 export type TicketStatusHistoryRow = typeof ticketStatusHistory.$inferSelect;

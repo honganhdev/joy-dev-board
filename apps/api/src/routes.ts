@@ -6,6 +6,7 @@ import { aggregateWeeklyReport } from './board/weekly-report';
 import type { TtlCache } from './cache';
 import type { AuthConfig } from './config';
 import type { Db } from './db/client';
+import { reserveDelivery } from './db/sync';
 import {
   InvalidBoardColumnsError,
   BoardColumnVersionConflictError,
@@ -16,6 +17,7 @@ import {
   countTickets,
   readLastPull,
   readLastSuccessfulPull,
+  readLastSuccessfulWebhook,
   readStatusHistory,
   readTicket,
   readTickets,
@@ -26,6 +28,11 @@ import type { HelpDeskTag } from './helpdesk/types';
 import { CORS_HEADERS, json } from './http';
 import type { PullRunner } from './pull-service';
 import { createStaticHandler, type StaticHandler } from './static';
+import { createWebhookHandler } from './webhook-handler';
+import type { WebhookProcessor } from './webhook-service';
+
+// Bounds drift from deletions, bulk closes and silent updates that emit no webhook.
+const STALE_PULL_MS = 30 * 60 * 1000;
 
 /**
  * Turns a failure into an error the UI can show. HelpDesk problems become 502
@@ -89,6 +96,7 @@ function boardFromDb(db: Db): BoardResponse {
     // preference it is looking at, so a save can quote it back.
     columnVersion: preference.version,
     lastPull: toPullSummary(lastPull),
+    webhookAt: readLastSuccessfulWebhook(db)?.finishedAt ?? null,
   };
 }
 
@@ -97,6 +105,8 @@ export type RouterDeps = {
   pulls: PullRunner;
   tags: TtlCache<HelpDeskTag[]>;
   auth: AuthConfig;
+  webhookSecret: string;
+  webhooks: WebhookProcessor;
   /**
    * The calendar year the pull covers. The weekly report names it in its
    * coverage note, which would lie if it were read from the clock instead of
@@ -113,22 +123,40 @@ export type RouterDeps = {
  * Routes every request. Reads come from SQLite so the board survives a HelpDesk
  * outage; only an explicit pull talks upstream, and every upstream call is a GET.
  *
- * Everything under `/api/` needs a session except the login endpoint and
- * `/api/health`, which the container healthcheck has to reach unauthenticated —
- * so health answers with counts and pull status only, never ticket content.
+ * Everything under `/api/` needs a session except the auth handlers, health,
+ * and the signed webhook. Health answers with counts and pull status only,
+ * never ticket content; the webhook returns fixed acknowledgements only.
  */
-export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttle }: RouterDeps) {
+export function createRouter({
+  db,
+  pulls,
+  tags,
+  auth,
+  webhookSecret,
+  webhooks,
+  year,
+  webDistPath,
+  throttle,
+}: RouterDeps) {
   const authHandlers = createAuthHandlers({ db, auth, throttle: new LoginThrottle(throttle) });
   const serveStatic: StaticHandler = createStaticHandler(webDistPath ?? null);
+  const handleWebhook = createWebhookHandler({
+    secret: webhookSecret,
+    reserveDelivery: (deliveryId) => reserveDelivery(db, deliveryId),
+    webhooks,
+  });
 
   /** Starts a pull without holding the request. The runner records its own failure. */
   function kickPull(): void {
     void pulls.run().catch(() => undefined);
   }
 
-  /** First boot has nothing to serve, so start a pull and return the board as it stands. */
+  /** Reconcile an empty or stale mirror without holding the board response. */
   function ensureSeeded(): void {
-    if (countTickets(db) === 0) kickPull();
+    const finishedAt = readLastSuccessfulPull(db)?.finishedAt;
+    const finishedMs = finishedAt ? Date.parse(finishedAt) : Number.NaN;
+    const stale = !Number.isFinite(finishedMs) || Date.now() - finishedMs > STALE_PULL_MS;
+    if (countTickets(db) === 0 || stale) kickPull();
   }
 
   return async function handle(request: Request, server: ClientAddress = null): Promise<Response> {
@@ -140,7 +168,7 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
     }
 
     try {
-      // --- Unauthenticated surface: exactly these three paths and nothing else.
+      // --- Unauthenticated surface: health, auth handlers, and the signed webhook.
       if (pathname === '/api/health') {
         return json({ ok: true, tickets: countTickets(db), lastPull: toPullSummary(readLastPull(db)) });
       }
@@ -155,6 +183,10 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
 
       if (pathname === '/api/auth/me' && request.method === 'GET') {
         return authHandlers.me(request);
+      }
+
+      if (pathname === '/api/webhooks/avada-ticket' && request.method === 'POST') {
+        return handleWebhook(request);
       }
 
       // --- Everything else under /api needs a session.

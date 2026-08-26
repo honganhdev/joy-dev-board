@@ -3,9 +3,10 @@ import { bootstrap } from './bootstrap';
 import { loadConfig } from './config';
 import { openDatabase } from './db/client';
 import { countTickets } from './db/queries';
-import { fetchTags, fetchTicketsForYear } from './helpdesk/client';
+import { fetchTags, fetchTicketsCreatedOn, fetchTicketsForYear } from './helpdesk/client';
 import { createPullRunner } from './pull-service';
 import { createRouter } from './routes';
+import { createWebhookProcessor } from './webhook-service';
 
 // Fail loudly and early: missing credentials are a startup error, not a 500
 // later — and a board with no login must never come up at all.
@@ -22,6 +23,7 @@ const { db } = openDatabase(config.databasePath);
 // anything can start a new one, or this would kill the live row.
 bootstrap(db);
 const pulls = createPullRunner(db, config, fetchTicketsForYear);
+const webhooks = createWebhookProcessor(db, config, pulls, fetchTicketsCreatedOn);
 
 // The tag directory is the one thing still read live from HelpDesk: it is a
 // lookup table, not part of the ticket mirror, so it is cached in memory rather
@@ -33,12 +35,15 @@ const handle = createRouter({
   pulls,
   tags,
   auth: config.auth,
+  webhookSecret: config.webhookSecret,
+  webhooks,
   year: config.year,
   webDistPath: config.webDistPath,
 });
 
 const server = Bun.serve({
   port: config.port,
+  maxRequestBodySize: 128 * 1024,
   // Nothing holds a connection for a pull any more. The longest legitimate
   // handler left is a cold tag fetch, whose own abort fires at 30s.
   idleTimeout: 45,

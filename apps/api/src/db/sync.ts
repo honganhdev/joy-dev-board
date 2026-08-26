@@ -60,9 +60,45 @@ function toRow(incoming: HelpDeskTicket, observedAt: string) {
 
 /** Opens a pull as `running`; the next boot sweeps it if this process dies. */
 export function startPull(db: Db, startedAt = new Date().toISOString()): number {
-  const [row] = db.insert(pulls).values({ startedAt, status: 'running' }).returning({ id: pulls.id }).all();
+  const [row] = db
+    .insert(pulls)
+    .values({ startedAt, status: 'running', source: 'pull' })
+    .returning({ id: pulls.id })
+    .all();
   if (!row) throw new Error('Could not open a pull row');
   return row.id;
+}
+
+/**
+ * Atomically reserves one durable row per delivery. A successful reservation
+ * makes processing at-most-once: settled successes stay permanently deduped.
+ * Failed or boot-swept work may be re-reserved so the sender's retry can repair
+ * an interrupted update.
+ */
+export function reserveDelivery(
+  db: Db,
+  deliveryId: string,
+  startedAt = new Date().toISOString()
+): number | null {
+  const [row] = db
+    .insert(pulls)
+    .values({ startedAt, status: 'running', source: 'webhook', deliveryId })
+    .onConflictDoUpdate({
+      target: pulls.deliveryId,
+      set: {
+        startedAt,
+        finishedAt: null,
+        ticketCount: null,
+        inserted: null,
+        statusChanges: null,
+        status: 'running',
+        error: null,
+      },
+      where: eq(pulls.status, 'error'),
+    })
+    .returning({ id: pulls.id })
+    .all();
+  return row?.id ?? null;
 }
 
 export function finishPull(db: Db, pullId: number, result: SyncResult): void {

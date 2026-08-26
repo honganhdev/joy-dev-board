@@ -7,8 +7,9 @@ classifies each into a category, and opens a full detail drawer per ticket. The 
 SQLite, so it keeps working when HelpDesk does not. Nothing is ever written back to HelpDesk — every
 upstream call is a `GET`.
 
-It shows merchant emails, shop domains, internal Crisp links and member names, so it sits behind a
-login. Every route under `/api/` needs a session except `/api/health`.
+It shows merchant emails, shop domains, internal Crisp links and member names, so ticket data sits
+behind a login. Health and the HMAC-guarded Avada webhook deliberately bypass the session gate; the
+auth routes manage that session.
 
 ## Layout
 
@@ -25,7 +26,7 @@ Requires [Bun](https://bun.sh) (built with 1.3.14).
 
 ```bash
 bun install
-cp .env.example .env               # then fill in API_KEY_HELPDESK and AUTH_USERNAME
+cp .env.example .env               # then fill in the HelpDesk key, webhook secret and login
 bun run auth:hash                  # paste the AUTH_PASSWORD_HASH line it prints into .env
 echo 'COOKIE_SECURE=false' >> .env # local dev is http, and a Secure cookie is never sent over http
 ```
@@ -94,7 +95,8 @@ bun run build        # production build of the web app
 | `GET /api/report/weekly` | Weekly issue report from SQLite: one entry per week in range with created, done, outstanding and their category, priority and status breakdowns, plus every label and caption the page renders. `?weeks=` picks 4, 12, 26 or 52 and is clamped to what the mirror covers. |
 | `POST /api/pull` | Starts a HelpDesk pull and returns `202` with the current pull summary; the client follows it on `GET /api/pull/status`. |
 | `GET /api/pull/status` | The last pull attempt: `startedAt`, `finishedAt`, `ticketCount`, `inserted`, `statusChanges`, `status` (`running` / `ok` / `error`), `error`. |
-| `GET /api/health` | Liveness, stored ticket count, last pull attempt. **The only unauthenticated data route** — counts and pull status only, no ticket content, because the container healthcheck has to reach it. |
+| `GET /api/health` | Liveness, stored ticket count, last pull attempt. Unauthenticated, but returns no ticket content. |
+| `POST /api/webhooks/avada-ticket` | Accepts Avada ticket deliveries guarded by the raw-body HMAC and timestamp freshness. Returns only a fixed acknowledgement; it serves no board data. |
 | `POST /api/auth/login` | `{username, password}` → sets the session cookie, returns `{username}`. |
 | `POST /api/auth/logout` | Deletes the session row and clears the cookie. |
 | `GET /api/auth/me` | `{username}`, or `401` when there is no session. |
@@ -116,6 +118,7 @@ A failing tag directory degrades a detail view to raw tag ids; it never fails th
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `API_KEY_HELPDESK` | *(required)* | HelpDesk `X-API-Key`. The API exits at startup if it is missing. |
+| `WEBHOOK_SECRET` | *(required)* | Avada webhook signing secret. The API exits at startup if it is missing. |
 | `PORT` | `8787` | API port. |
 | `CACHE_TTL_MS` | `300000` | How long the HelpDesk tag directory stays cached in memory. |
 | `DATABASE_PATH` | `<repo>/data/board.db` | SQLite file. A relative value resolves against the working directory. |
@@ -174,8 +177,8 @@ Four tables:
 - **`tickets`** — one row per ticket, upserted on every pull. Flat columns for what the board queries
   on, plus the untouched HelpDesk payload in `raw`, so no upstream field is ever lost.
 - **`ticket_status_history`** — one row per *observed* status change. HelpDesk only returns a ticket's
-  current state, so all that is knowable is that a change happened somewhere between two pulls:
-  `observedAt` is when a pull noticed it, and `ticketUpdatedAt` is HelpDesk's own `updatedAt`. An
+  current state, so all that is knowable is that a change happened somewhere between observations:
+  `observedAt` is when this board noticed it, and `ticketUpdatedAt` is HelpDesk's own `updatedAt`. An
   unchanged ticket writes nothing, so a pull every five minutes does not append a row per ticket.
 - **`pulls`** — one row per pull attempt, so the history has a known observation window. A row is
   written as `running` when the pull starts and flipped to `ok` only once the sync commits. Any row
@@ -209,6 +212,11 @@ produces a backup that only fails when it is needed.
 The target is a single VPS running one container, which is why SQLite is enough. Two things to get
 right there:
 
+Before the first webhook deploy, run `bun run db:backup` and put `WEBHOOK_SECRET` in the VPS `.env`
+**before** restarting the container. The API requires it at startup, so deploying the code first
+leaves the board in a restart loop until the environment is corrected. Create the webhook in Avada
+admin with destination `/api/webhooks/avada-ticket` only after the code is live.
+
 - **`/app/data` must be a mounted volume.** Running in Docker without one loses the database — and
   with it every status history row ever recorded — on each rebuild. That history cannot be re-pulled:
   HelpDesk does not expose past states. `deploy/compose.yaml` mounts the `board-data` named volume;
@@ -234,9 +242,9 @@ docker compose -f deploy/compose.yaml logs -f
   Caddy bypassed there is no TLS, so `Secure` would stop the login working at all.
 - Caddy on the VPS terminates TLS for `issue.anhth.cc` and proxies to `127.0.0.1:4184`.
 - `env_file: ../.env`. On the VPS that file needs `API_KEY_HELPDESK`, `AUTH_USERNAME`,
-  `AUTH_PASSWORD_HASH` and `TRUST_PROXY=true`. Leave `COOKIE_SECURE` unset — it defaults to on, which
-  is what you want behind TLS.
-- Healthcheck hits `/api/health` every 30s, the one route that answers without a session.
+  `AUTH_PASSWORD_HASH`, `WEBHOOK_SECRET` and `TRUST_PROXY=true`. Leave `COOKIE_SECURE` unset — it
+  defaults to on, which is what you want behind TLS.
+- Healthcheck hits `/api/health` every 30s; it is unauthenticated and returns no ticket content.
 - Migrations run at startup, so a fresh container on an empty volume comes up clean.
 - The build context excludes `.env`, `data/` and the test fixture — none of them can reach a layer.
 - Runs as the unprivileged `bun` user. `/app/data` is created owned by `bun` so a fresh **named**

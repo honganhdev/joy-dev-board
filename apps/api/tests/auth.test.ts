@@ -37,9 +37,10 @@ function harness(options: { auth?: Partial<AuthConfig>; maxFailures?: number } =
   const handle = createRouter({
     db,
     // A pull would talk to HelpDesk; every test here stops at the 401 before it.
-    pulls: { run: async () => ({ pulled: 0, inserted: 0, statusChanges: 0 }) },
+    pulls: { run: async () => ({ pulled: 0, inserted: 0, statusChanges: 0 }), whenIdle: async () => {} },
     tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
     auth: authConfig(options.auth),
+    webhookSecret: 'test-webhook-secret', webhooks: { process: async () => {} },
     year: 2026,
     throttle: { maxFailures: options.maxFailures ?? 5 },
   });

@@ -35,7 +35,7 @@ function Summary({ timeline }: StatusTimelineProps) {
     return (
       <p className="text-[13px]">
         In {status} for{' '}
-        <span className="font-medium">{formatDuration(timeline.observedForMs)}</span> — a pull saw it
+        <span className="font-medium">{formatDuration(timeline.observedForMs)}</span> — this board saw it
         move on {formatFull(timeline.observedSince)}.
       </p>
     );
@@ -52,7 +52,7 @@ function Summary({ timeline }: StatusTimelineProps) {
 
   return (
     <p className="text-[13px]">
-      In {status}. No pull has recorded a status change for this ticket yet.
+      In {status}. This board has not recorded a status change for this ticket yet.
     </p>
   );
 }
@@ -60,7 +60,7 @@ function Summary({ timeline }: StatusTimelineProps) {
 /**
  * A ticket's chronology, oldest first, keeping HelpDesk's exact timestamps and
  * this board's observations visually apart — a solid marker is a fact, a hollow
- * one is only when a pull happened to look.
+ * one is only when this board happened to look.
  */
 export function StatusTimeline({ timeline }: StatusTimelineProps) {
   const hasObservations = timeline.events.some((event) => event.source === 'board');
@@ -101,8 +101,8 @@ export function StatusTimeline({ timeline }: StatusTimelineProps) {
 
       {hasObservations && (
         <p className="text-[11px] text-muted-foreground">
-          Rows marked <span className="font-medium">observed</span> are stamped when a pull noticed,
-          not when HelpDesk made the change. Rows marked{' '}
+          Rows marked <span className="font-medium">observed</span> are stamped when this board noticed
+          (a pull or a webhook), not when HelpDesk made the change. Rows marked{' '}
           <span className="font-medium">HelpDesk</span> are exact.
         </p>
       )}

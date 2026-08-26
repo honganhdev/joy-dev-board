@@ -88,4 +88,5 @@ export type BoardResponse = Board & {
   /** Version of the stored column preference this board was assembled from. */
   columnVersion: number;
   lastPull: PullSummary | null;
+  webhookAt: string | null;
 };

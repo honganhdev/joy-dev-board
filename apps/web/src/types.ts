@@ -75,11 +75,12 @@ export type Board = {
   columnVersion: number;
   /** May be a later failed attempt — that is how stale data is spotted. */
   lastPull: PullSummary | null;
+  webhookAt?: string | null;
 };
 
 /**
- * One observed status change. `observedAt` is when a pull noticed it, not when
- * it happened — HelpDesk does not report change times.
+ * One observed status change. `observedAt` is when this board noticed it, not
+ * when it happened — HelpDesk does not report change times.
  */
 export type StatusHistoryEntry = {
   fromStatus: string | null;
