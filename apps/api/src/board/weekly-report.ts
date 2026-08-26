@@ -38,6 +38,7 @@ const PRESET_GRACE_WEEKS = 4;
 
 const NO_PRIORITY = '(no priority)';
 const NO_STATUS = '(no status)';
+const NO_MERCHANT = '(no merchant)';
 
 /**
  * `tsStatus` is not a closed enum, so naming the done statuses here could only
@@ -121,6 +122,28 @@ const BUCKETS = [
   { label: '15–30 days', maxDays: 30 },
   { label: 'over 30 days', maxDays: Infinity },
 ];
+
+/** Inclusive upper bounds for the all-open backlog age rows. */
+const AGE_BUCKETS = [
+  { label: '< 7 days', maxDays: 6 },
+  { label: '7–30 days', maxDays: 30 },
+  { label: '30–90 days', maxDays: 90 },
+  { label: 'over 90 days', maxDays: Infinity },
+];
+
+/**
+ * New identity rule for the stakeholder panel: merchant identity is the first
+ * non-blank display string, not a stable upstream key. Mixed naming can split
+ * one merchant across rows and therefore understate concentration.
+ */
+function merchantName(ticket: HelpDeskTicket): string {
+  return (
+    ticket.store?.[0]?.shopName?.trim() ||
+    ticket.store?.[0]?.domain?.trim() ||
+    ticket.storeDomains?.[0]?.trim() ||
+    NO_MERCHANT
+  );
+}
 
 const COLUMN_LABELS = new Map<string, string>(
   BOARD_COLUMNS.map((column) => [column.status as string, column.label as string])
@@ -440,6 +463,51 @@ function ghostAudit(counted: Counted[]): GhostAudit {
   };
 }
 
+function openBacklog(open: HelpDeskTicket[], nowMs: number): WeeklyReport['openBacklog'] {
+  const bucketCounts = AGE_BUCKETS.map((bucket) => ({ label: bucket.label, count: 0 }));
+  const dated: Array<{ ticket: HelpDeskTicket; createdMs: number; ageDays: number }> = [];
+  let noCreatedDate = 0;
+  let olderThan30 = 0;
+
+  for (const ticket of open) {
+    const createdMs = timestamp(ticket.createdAt);
+    if (createdMs === null || Number.isNaN(createdMs)) {
+      noCreatedDate += 1;
+      continue;
+    }
+
+    const ageDays = wholeDaysBetween(createdMs, nowMs);
+    if (ageDays > 30) olderThan30 += 1;
+    const bucket = bucketCounts[AGE_BUCKETS.findIndex((candidate) => ageDays <= candidate.maxDays)];
+    if (bucket) bucket.count += 1;
+    dated.push({ ticket, createdMs, ageDays });
+  }
+
+  const total = open.length;
+  return {
+    total,
+    agingHeadline:
+      total === 0
+        ? null
+        : total === 1
+          ? `${Math.round((olderThan30 / total) * 100)}% of the 1 open ticket is older than 30 days.`
+          : `${Math.round((olderThan30 / total) * 100)}% of open tickets are older than 30 days.`,
+    buckets: bucketCounts,
+    noCreatedDate,
+    noCreatedDateLabel: 'No readable created date',
+    oldest: dated
+      .sort((a, b) => a.createdMs - b.createdMs)
+      .slice(0, 5)
+      .map(({ ticket, ageDays }) => ({
+        ticketId: ticket.ticketId,
+        subject: ticket.subject?.trim() || '(no subject)',
+        merchant: merchantName(ticket),
+        ageDays,
+        ageLabel: ageDays === 1 ? '1 day' : `${ageDays} days`,
+      })),
+  };
+}
+
 /**
  * Builds the whole report.
  *
@@ -453,6 +521,7 @@ export function aggregateWeeklyReport(
   options: { weeks: number; now: Date; year: number }
 ): WeeklyReport {
   const nowMs = options.now.getTime();
+  const open = tickets.filter((ticket) => ticket.ticketStatus === 'open');
   const excluded = { deleted: 0, unparseableDate: 0, undated: 0 };
   const counted: Counted[] = [];
 
@@ -584,9 +653,10 @@ export function aggregateWeeklyReport(
       emptyWeeksNote: emptyWeeksNote(weeks),
     },
     timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
+    openBacklog: openBacklog(open, nowMs),
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.
-    openRightNow: tickets.filter((ticket) => ticket.ticketStatus === 'open').length,
+    openRightNow: open.length,
     ghosts: ghostAudit(counted),
     excluded,
     excludedNote: excludedNote(excluded),

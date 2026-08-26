@@ -136,6 +136,27 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. See its own caption. */
   timeToFirstDone: TimeToFirstDone;
+  /** Every open ticket right now over the whole mirror, independent of the selected range. */
+  openBacklog: {
+    /** Equals `openRightNow`; both are derived from the same array. */
+    total: number;
+    /** Server-worded age headline, or `null` when there are no open tickets. */
+    agingHeadline: string | null;
+    /** All four age buckets, including zeroes. */
+    buckets: Array<{ label: string; count: number }>;
+    /** Open tickets with no readable created date, never silently dropped. */
+    noCreatedDate: number;
+    /** Label rendered beside `noCreatedDate`. */
+    noCreatedDateLabel: string;
+    /** The five oldest readable tickets, oldest first. */
+    oldest: Array<{
+      ticketId: string;
+      subject: string;
+      merchant: string;
+      ageDays: number;
+      ageLabel: string;
+    }>;
+  };
   /**
    * `ticketStatus === 'open'` right now, across the whole mirror. Not week-scoped
    * and not derivable from any week — see each week's `outstandingCaption`.

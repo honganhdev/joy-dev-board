@@ -485,6 +485,78 @@ describe('resolution speed per week', () => {
   });
 });
 
+describe('the open backlog', () => {
+  test('keeps every structural row in an empty report', () => {
+    const result = report([]).openBacklog;
+    expect(result.total).toBe(0);
+    expect(result.agingHeadline).toBeNull();
+    expect(result.buckets).toEqual([
+      { label: '< 7 days', count: 0 },
+      { label: '7–30 days', count: 0 },
+      { label: '30–90 days', count: 0 },
+      { label: 'over 90 days', count: 0 },
+    ]);
+    expect(result.oldest).toEqual([]);
+    expect(result.noCreatedDate).toBe(0);
+  });
+
+  test('words and buckets a single old ticket', () => {
+    const result = report([
+      ticket({ ticketId: 'old', createdAt: new Date(NOW.getTime() - 200 * 86400000).toISOString() }),
+    ]).openBacklog;
+    expect(result.total).toBe(1);
+    expect(result.buckets.map((bucket) => bucket.count)).toEqual([0, 0, 0, 1]);
+    expect(result.oldest).toHaveLength(1);
+    expect(result.oldest[0]).toMatchObject({ ageDays: 200, ageLabel: '200 days' });
+    expect(result.agingHeadline).toContain('1 open ticket is older');
+  });
+
+  test('uses inclusive upper bounds for the four age buckets', () => {
+    const result = report(
+      [6, 7, 30, 90].map((days) =>
+        ticket({
+          ticketId: `age-${days}`,
+          createdAt: new Date(NOW.getTime() - days * 86400000).toISOString(),
+        })
+      )
+    ).openBacklog;
+    expect(result.buckets.map((bucket) => bucket.count)).toEqual([1, 2, 1, 0]);
+  });
+
+  test('names absent and unreadable created dates without putting them in a bucket', () => {
+    const result = report([
+      ticket({ ticketId: 'absent', createdAt: null }),
+      ticket({ ticketId: 'unreadable', createdAt: 'not a date' }),
+    ]).openBacklog;
+    expect(result.noCreatedDate).toBe(2);
+    expect(result.buckets.every((bucket) => bucket.count === 0)).toBe(true);
+    expect(result.oldest).toEqual([]);
+  });
+
+  test('uses the panel merchant fallback chain and trims blank values', () => {
+    const result = report([
+      ticket({ ticketId: 'shop', createdAt: '2026-01-01T00:00:00Z', store: [{ shopName: ' Shop ' }] }),
+      ticket({ ticketId: 'domain', createdAt: '2026-01-02T00:00:00Z', store: [{ shopName: '  ', domain: ' domain.test ' }] }),
+      ticket({ ticketId: 'store-domain', createdAt: '2026-01-03T00:00:00Z', storeDomains: [' fallback.test '] }),
+      ticket({ ticketId: 'absent', createdAt: '2026-01-04T00:00:00Z' }),
+    ]).openBacklog;
+    expect(result.oldest.map((row) => row.merchant)).toEqual([
+      'Shop',
+      'domain.test',
+      'fallback.test',
+      '(no merchant)',
+    ]);
+  });
+
+  test('keeps a closed ghost out of the all-open backlog', () => {
+    const result = report([
+      ticket({ ticketId: 'ghost', ticketStatus: 'closed', createdAt: '2026-01-01T00:00:00Z', doneAt: null }),
+    ]);
+    expect(result.ghosts.count).toBe(1);
+    expect(result.openBacklog.total).toBe(0);
+  });
+});
+
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -775,6 +847,20 @@ describe('the panels agree with each other', () => {
         movement: week.outstanding - (previous?.outstanding ?? 0),
       }).toEqual({ key: week.key, movement: week.created - week.done });
     }
+  });
+
+  test('accounts for every open ticket in the age panel and the live tile', () => {
+    const result = report([
+      ticket({ ticketId: 'young', createdAt: '2026-08-24T09:00:00+07:00' }),
+      ticket({ ticketId: 'old', createdAt: '2026-03-01T09:00:00+07:00' }),
+      ticket({ ticketId: 'undated', createdAt: null, doneAt: '2026-08-20T09:00:00+07:00' }),
+      ticket({ ticketId: 'unreadable', createdAt: 'not a date' }),
+      ticket({ ticketId: 'deleted', createdAt: '2026-05-01T09:00:00+07:00', deletedAt: '2026-06-01T09:00:00+07:00' }),
+      ticket({ ticketId: 'closed', ticketStatus: 'closed', createdAt: '2026-04-01T09:00:00+07:00', doneAt: '2026-04-03T09:00:00+07:00' }),
+    ]);
+    const summed = result.openBacklog.buckets.reduce((total, bucket) => total + bucket.count, 0);
+    expect(summed + result.openBacklog.noCreatedDate).toBe(result.openRightNow);
+    expect(result.openBacklog.total).toBe(result.openRightNow);
   });
 });
 

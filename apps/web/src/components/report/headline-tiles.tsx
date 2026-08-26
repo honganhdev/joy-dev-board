@@ -4,6 +4,7 @@ import type { WeekSummary } from '@/types';
 type HeadlineTilesProps = {
   week: WeekSummary;
   openRightNow: number;
+  agingHeadline: string | null;
 };
 
 function Tile({ label, children }: { label: string; children: ReactNode }) {
@@ -34,7 +35,7 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  * end` would name a Sunday that has not happened; the server words that week
  * differently and this prints whichever wording it was sent.
  */
-export function HeadlineTiles({ week, openRightNow }: HeadlineTilesProps) {
+export function HeadlineTiles({ week, openRightNow, agingHeadline }: HeadlineTilesProps) {
   const doneMax = Math.max(1, week.done);
 
   return (
@@ -80,6 +81,9 @@ export function HeadlineTiles({ week, openRightNow }: HeadlineTilesProps) {
         <p className="mt-2 text-[11px] text-muted-foreground">
           open right now: <span className="tabular-nums">{openRightNow}</span>
         </p>
+        {agingHeadline && (
+          <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{agingHeadline}</p>
+        )}
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{week.outstandingCaption}</p>
       </Tile>
     </div>

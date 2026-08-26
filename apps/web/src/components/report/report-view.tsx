@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { BacklogColumns } from './backlog-columns';
+import { BacklogAge } from './backlog-age';
 import { DurationHistogram } from './duration-histogram';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
@@ -121,7 +122,11 @@ export function ReportView({ pullToken }: { pullToken: number }) {
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.doneRule}</p>
       </section>
 
-      <HeadlineTiles week={focused} openRightNow={report.openRightNow} />
+      <HeadlineTiles
+        week={focused}
+        openRightNow={report.openRightNow}
+        agingHeadline={report.openBacklog.agingHeadline}
+      />
 
       <div className="px-1">
         <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
@@ -157,6 +162,8 @@ export function ReportView({ pullToken }: { pullToken: number }) {
       </div>
 
       <DurationHistogram data={report.timeToFirstDone} />
+
+      <BacklogAge data={report.openBacklog} />
 
       {/*
         What reached no week, named so nothing vanishes silently — in the

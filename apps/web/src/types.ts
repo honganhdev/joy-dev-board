@@ -163,6 +163,20 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;
+  openBacklog: {
+    total: number;
+    agingHeadline: string | null;
+    buckets: Array<{ label: string; count: number }>;
+    noCreatedDate: number;
+    noCreatedDateLabel: string;
+    oldest: Array<{
+      ticketId: string;
+      subject: string;
+      merchant: string;
+      ageDays: number;
+      ageLabel: string;
+    }>;
+  };
   openRightNow: number;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */
