@@ -26,12 +26,15 @@ function ticket(overrides: Partial<HelpDeskTicket>): HelpDeskTicket {
 }
 
 /**
- * The words the page may never print, matched as whole words. A substring match
- * cannot tell server wording from the customer text this payload carries: the
- * standing taxonomy label `TRANSLATION` holds `sla`, and a merchant called
- * `Slate` holds it too.
+ * The words the page may never print, matched as whole words and in the
+ * inflections ordinary prose reaches for: a caption saying `breaches` or
+ * `deadlines` makes exactly the claim a caption saying `breach` makes. A
+ * substring match cannot tell server wording from the customer text this
+ * payload carries: the standing taxonomy label `TRANSLATION` holds `sla`, and a
+ * merchant called `Slate` holds it too — so every alternative keeps its leading
+ * word boundary.
  */
-const FORBIDDEN_LANGUAGE = /\b(SLA|overdue|breach|deadline)\b/i;
+const FORBIDDEN_LANGUAGE = /\b(SLAs?|overdue|breach(?:es|ed|ing)?|deadlines?)\b/i;
 
 function report(tickets: HelpDeskTicket[], weeks = 12): WeeklyReport {
   return aggregateWeeklyReport(tickets, { weeks, now: NOW, year: YEAR });
@@ -1361,17 +1364,10 @@ describe('the strings the page prints', () => {
       year: YEAR,
     });
 
-    function strings(value: unknown): string[] {
-      if (typeof value === 'string') return [value];
-      if (Array.isArray(value)) return value.flatMap(strings);
-      if (value !== null && typeof value === 'object') {
-        return Object.values(value).flatMap(strings);
-      }
-      return [];
-    }
-
     for (const payload of [report([]), populated, fixture]) {
-      expect(strings(payload).filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual([]);
+      expect(
+        serverWordedStrings(payload).filter((value) => FORBIDDEN_LANGUAGE.test(value))
+      ).toEqual([]);
     }
   });
 
@@ -1399,6 +1395,109 @@ describe('the strings the page prints', () => {
         (value) => FORBIDDEN_LANGUAGE.test(value)
       )
     ).toHaveLength(4);
+  });
+
+  test('lets a merchant write a banned word into a subject or a store name', () => {
+    // The payload relays two fields verbatim: the subject of each of the five
+    // oldest open tickets, and the merchant names on the concentration rows.
+    // The five oldest are exactly the tickets most likely to have been chased
+    // with the word `overdue`, and nothing stops a store calling itself
+    // `Breach Co`. Neither is this codebase making a performance claim.
+    const result = report([
+      ticket({
+        ticketId: 'chased',
+        subject: 'this ticket is overdue',
+        createdAt: '2026-03-04T09:00:00+07:00',
+        store: [{ shopName: 'Breach Co' }],
+      }),
+    ]);
+
+    // The banned words really did reach the payload, in all four relayed fields.
+    expect(result.openBacklog.oldest[0]?.subject).toBe('this ticket is overdue');
+    expect(result.openBacklog.oldest[0]?.merchant).toBe('Breach Co');
+    expect(result.openByMerchant.rows[0]?.label).toBe('Breach Co');
+    expect(result.openByMerchant.rows[0]?.key).toBe('breach co');
+    expect(payloadStrings(result).filter((value) => FORBIDDEN_LANGUAGE.test(value))).toHaveLength(
+      4
+    );
+
+    // And the guard walks past all four, because it wrote none of them.
+    expect(serverWordedStrings(result).filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual(
+      []
+    );
+  });
+
+  test('still catches a banned word in server wording, wherever it sits', () => {
+    // The exclusion is a hole cut in the walk, so it has to be exactly the shape
+    // of the four relayed fields: server wording one key away from each of them,
+    // at every depth the payload has, is still caught.
+    const payload = report([
+      ticket({
+        ticketId: 'open',
+        createdAt: '2026-08-18T09:00:00+07:00',
+        store: [{ shopName: 'Hegen' }],
+      }),
+    ]);
+    const planted: WeeklyReport = {
+      ...payload,
+      doneRule: 'Done means the SLAs were met',
+      weeklySpeed: { ...payload.weeklySpeed, caption: 'Two breaches this week' },
+      openByMerchant: {
+        ...payload.openByMerchant,
+        concentrationNote: 'The busiest merchant missed three deadlines',
+      },
+      openBacklog: {
+        ...payload.openBacklog,
+        oldestCaption: 'The five oldest, most overdue first',
+        buckets: payload.openBacklog.buckets.map((bucket, index) =>
+          index === 0 ? { ...bucket, label: `${bucket.label}, breached` } : bucket
+        ),
+      },
+    };
+
+    expect(
+      serverWordedStrings(planted)
+        .filter((value) => FORBIDDEN_LANGUAGE.test(value))
+        .sort()
+    ).toEqual(
+      [
+        'Done means the SLAs were met',
+        'Two breaches this week',
+        'The busiest merchant missed three deadlines',
+        'The five oldest, most overdue first',
+        `${payload.openBacklog.buckets[0]?.label}, breached`,
+      ].sort()
+    );
+
+    // The inflections plain prose reaches for, still read as whole words.
+    expect(
+      ['SLAs', 'deadlines', 'breaches', 'breached', 'breaching'].filter((value) =>
+        FORBIDDEN_LANGUAGE.test(value)
+      )
+    ).toHaveLength(5);
+    expect(
+      ['TRANSLATION', 'Slate', 'Slates', 'breachable'].filter((value) =>
+        FORBIDDEN_LANGUAGE.test(value)
+      )
+    ).toEqual([]);
+  });
+
+  test('excludes only paths the payload actually carries', () => {
+    // An excluded path that no longer resolves is a hole the guard holds open
+    // over a field that has since been renamed or moved — silently, and forever.
+    const paths = payloadEntries(
+      report([
+        ticket({
+          ticketId: 'one',
+          createdAt: '2026-03-04T09:00:00+07:00',
+          store: [{ shopName: 'Hegen' }],
+        }),
+      ])
+    ).map(([path]) => path);
+
+    for (const excluded of CUSTOMER_TEXT_PATHS) {
+      expect(paths).toContain(excluded);
+    }
   });
 
   test('names the running week in the backlog heading instead of promising a week end', () => {
@@ -1530,14 +1629,49 @@ function weeklyHistoryEndingAt(weeks: number, now: Date): HelpDeskTicket[] {
   });
 }
 
-/** Every string anywhere in a payload, so a guard can walk it structurally. */
-function payloadStrings(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value)) return value.flatMap(payloadStrings);
+/**
+ * The payload paths holding text a merchant wrote, which this codebase relays
+ * verbatim and does not word: ticket subjects and merchant names. A merchant who
+ * chases a ticket with the word `overdue` in its subject, or a store named
+ * `Breach Co`, must not turn the performance-language guard red — that failure
+ * names no cause, looks like a fixture problem, and its obvious repair under
+ * time pressure is to weaken the guard the whole rule rests on.
+ *
+ * Excluded by path rather than by value: skipping any string that happens to
+ * equal a subject would also excuse a server caption that happened to match one.
+ */
+const CUSTOMER_TEXT_PATHS = new Set([
+  'openBacklog.oldest[].subject',
+  'openBacklog.oldest[].merchant',
+  'openByMerchant.rows[].key',
+  'openByMerchant.rows[].label',
+]);
+
+/**
+ * Every string in a payload paired with the path it sits at. Array indices
+ * collapse to `[]`, so one path names every row of a list.
+ */
+function payloadEntries(value: unknown, path = ''): Array<[string, string]> {
+  if (typeof value === 'string') return [[path, value]];
+  if (Array.isArray(value)) return value.flatMap((item) => payloadEntries(item, `${path}[]`));
   if (value !== null && typeof value === 'object') {
-    return Object.values(value).flatMap(payloadStrings);
+    return Object.entries(value).flatMap(([key, item]) =>
+      payloadEntries(item, path ? `${path}.${key}` : key)
+    );
   }
   return [];
+}
+
+/** Every string in a payload that this codebase words, rather than relays. */
+function serverWordedStrings(value: unknown): string[] {
+  return payloadEntries(value)
+    .filter(([path]) => !CUSTOMER_TEXT_PATHS.has(path))
+    .map(([, text]) => text);
+}
+
+/** Every string anywhere in a payload, so a guard can walk it structurally. */
+function payloadStrings(value: unknown): string[] {
+  return payloadEntries(value).map(([, text]) => text);
 }
 
 describe('the unreliable upstream fields', () => {
