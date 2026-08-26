@@ -1283,6 +1283,17 @@ describe('the strings the page prints', () => {
     expect(result.backlogTitle).toBe('Backlog at each week end, and so far this week');
   });
 
+  test('lets each all-open panel carry its own scope rather than the divider', () => {
+    // The divider no longer claims the range does not reach this section, so a
+    // panel below it that is all-open has to say so in its own words.
+    const result = report([
+      ticket({ ticketId: 'free', appPlan: 'free', store: [{ shopName: 'Hegen' }] }),
+    ]);
+
+    expect(result.openByPlan.freeNote).toContain('right now');
+    expect(result.openByMerchant.concentrationNote).toContain('right now');
+  });
+
   test('names the all-open scope, its count and the mirror reach-back date', () => {
     const empty = report([]);
     expect(empty.openSectionTitle).toContain('0 tickets');
@@ -1294,7 +1305,10 @@ describe('the strings the page prints', () => {
     expect(single.openSectionTitle).toContain('1 ticket');
     expect(single.openSectionTitle).not.toContain('1 tickets');
     expect(single.openSectionTitle).toContain('4 Mar 2026');
-    expect(single.openSectionTitle).toContain('Not affected by the week or range above');
+    // The divider heads a section holding a range-scoped speed column, so it
+    // claims nothing about the range; each panel below carries its own scope.
+    expect(single.openSectionTitle).not.toContain('Not affected by');
+    expect(single.openSectionTitle).not.toContain('range');
   });
 
   test('words the exclusion footnote, and does not call an undated open ticket uncounted', () => {

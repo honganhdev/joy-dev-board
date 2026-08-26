@@ -514,13 +514,19 @@ function openBacklog(open: HelpDeskTicket[], nowMs: number): WeeklyReport['openB
   };
 }
 
+/**
+ * The divider names the section's subject and nothing else. It deliberately
+ * makes no claim about the week or the range: the feature panel below it is
+ * range-scoped on its speed column, so a blanket claim here would contradict
+ * that panel's own caption. Each panel carries its own scope.
+ */
 function openSectionTitle(total: number, horizon: Horizon, year: number): string {
   const count = total === 1 ? '1 ticket' : `${total} tickets`;
   const reach =
     horizon.startsAtMs === null
       ? `The mirror covers tickets created since 1 Jan ${year}.`
       : `The mirror reaches back to ${dayLabel(horizon.startsAtMs)}.`;
-  return `All open tickets right now — ${count}. Not affected by the week or range above. ${reach}`;
+  return `All open tickets right now — ${count}. ${reach}`;
 }
 
 function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
@@ -542,7 +548,7 @@ function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
   return {
     rows,
     freeNote: free
-      ? `Free accounts hold ${free.count} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'}.`
+      ? `Free accounts hold ${free.count} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'} right now.`
       : null,
   };
 }
@@ -568,11 +574,11 @@ function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] 
 
   let concentrationNote: string;
   if (busiest.length === 0) {
-    concentrationNote = 'No named merchant holds an open ticket.';
+    concentrationNote = 'No named merchant holds an open ticket right now.';
   } else if (busiest.length === 1) {
-    concentrationNote = `The busiest merchant holds ${busiestCount} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'} (${percentage}%).`;
+    concentrationNote = `The busiest merchant holds ${busiestCount} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'} right now (${percentage}%).`;
   } else {
-    concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${open.length} open tickets (${percentage}%).`;
+    concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${open.length} open tickets right now (${percentage}%).`;
   }
 
   return {
