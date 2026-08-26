@@ -2,6 +2,15 @@ import { COLUMN_GEOMETRY, barHeight } from './column-geometry';
 import { Legend, Panel } from './panel';
 import type { WeekSummary } from '@/types';
 
+/**
+ * The bar column: the plot, plus the value label sitting above the taller bar.
+ * The label is `text-[11px]` under the document's 1.5 line-height, so it takes
+ * 16.5px, and `mb-1` adds 4 — budget 21, not the 18 the font size suggests. Too
+ * small and the column shrinks its only shrinkable child, so the tallest bar in
+ * the panel is the one that draws short.
+ */
+const BAR_COLUMN_HEIGHT = COLUMN_GEOMETRY.plotHeight + 21;
+
 const DAY_SLOT_STYLE = {
   flex: '1 1 0',
   minWidth: 48,
@@ -51,7 +60,7 @@ export function DayColumns({ week }: { week: WeekSummary }) {
               {measured ? (
                 <span
                   className="flex items-end justify-center"
-                  style={{ gap: 6, height: COLUMN_GEOMETRY.plotHeight + 18, width: '100%' }}
+                  style={{ gap: 6, height: BAR_COLUMN_HEIGHT, width: '100%' }}
                 >
                   <span
                     className="flex flex-col items-center justify-end"
@@ -77,7 +86,7 @@ export function DayColumns({ week }: { week: WeekSummary }) {
               ) : (
                 <span
                   className="flex items-end justify-center text-[15px] font-semibold text-muted-foreground"
-                  style={{ height: COLUMN_GEOMETRY.plotHeight + 18 }}
+                  style={{ height: BAR_COLUMN_HEIGHT }}
                 >
                   —
                 </span>

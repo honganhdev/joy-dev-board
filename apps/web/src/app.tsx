@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BoardColumn } from '@/components/board/board-column';
 import { ColumnSettings } from '@/components/board/column-settings';
@@ -109,6 +109,10 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         }
       : null;
 
+  // The report scrolls in here, so focusing a week from its trend chart has to
+  // scroll this element: the panels that change sit above it, off-screen.
+  const reportScroll = useRef<HTMLDivElement>(null);
+
   const searching = query.trim().length > 0;
   const hasExtraColumns = Boolean(filtered?.extraColumns.length);
 
@@ -142,8 +146,8 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
             needs a scroll container of its own or everything below the first
             panels is unreachable at any window size. */}
         {view === 'report' ? (
-          <div className="h-full overflow-y-auto">
-            <ReportView pullToken={pullToken} />
+          <div ref={reportScroll} className="h-full overflow-y-auto">
+            <ReportView pullToken={pullToken} scrollRef={reportScroll} />
           </div>
         ) : (
           <>

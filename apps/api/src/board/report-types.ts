@@ -89,7 +89,7 @@ export type WeekSummary = {
     created: number | null;
     done: number | null;
   }>;
-  /** The finished week's busiest and most-cleared days, or `null` when there is nothing final to name. */
+  /** The finished week's shape in words, or `null` when there is nothing final to describe. */
   daysHighlight: string | null;
   /** Future-day and day-to-date wording for the running week; `null` for a finished week. */
   daysNote: string | null;

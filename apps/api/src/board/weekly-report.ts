@@ -62,7 +62,7 @@ const DONE_RULE =
 const TIME_ZONE_NOTE =
   'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
 
-const TREND_SECTION_TITLE = 'The weeks before this one, for context.';
+const TREND_SECTION_TITLE = 'Every week in the range, for context.';
 
 const OUTSTANDING_CAPTION =
   'Outstanding at week end is historical, counted from the mirror; open right now is ' +
@@ -142,6 +142,121 @@ function emptyWeeksNote(weeks: WeekSummary[]): string | null {
 function listWeekdays(names: string[]): string {
   if (names.length <= 1) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+}
+
+/**
+ * The shapes a cohort's week can be described as having, in the two forms the
+ * sentence needs: one cohort on its own, and both cohorts sharing a shape.
+ */
+type DayShape = 'even' | 'early' | 'midweek' | 'late' | 'weekend';
+
+const SHAPE_PHRASES: Record<DayShape, { one: string; both: string }> = {
+  even: {
+    one: 'was spread evenly across the working week',
+    both: 'were both spread evenly across the working week',
+  },
+  early: { one: 'ran heaviest early in the week', both: 'both ran heaviest early in the week' },
+  midweek: { one: 'ran heaviest midweek', both: 'both ran heaviest midweek' },
+  late: {
+    one: 'ran heaviest at the end of the week',
+    both: 'both ran heaviest at the end of the week',
+  },
+  weekend: { one: 'happened only at the weekend', both: 'both happened only at the weekend' },
+};
+
+const WEEKEND_TAIL = ' and fell away at the weekend';
+
+/**
+ * Where one cohort's week sat. A weekday bucket holds about a dozen tickets, so
+ * naming the single largest day renames it week to week on a one-ticket margin:
+ * over 26 weeks of this board it lands on Wednesday, Thursday and Tuesday
+ * almost equally often, off a corpus-wide spread of 425 / 412 / 415. The parts
+ * of the working week are compared per day, because Friday alone against two
+ * days of Monday and Tuesday is not a comparison, and one is named only when it
+ * is half again the next.
+ */
+function workingWeekShape(counts: number[]): DayShape {
+  const at = (day: number) => counts[day] ?? 0;
+  if (at(0) + at(1) + at(2) + at(3) + at(4) === 0) return 'weekend';
+
+  const parts = [
+    { shape: 'early' as const, perDay: (at(0) + at(1)) / 2 },
+    { shape: 'midweek' as const, perDay: (at(2) + at(3)) / 2 },
+    { shape: 'late' as const, perDay: at(4) },
+  ].sort((left, right) => right.perDay - left.perDay);
+
+  const leader = parts[0];
+  const runnerUp = parts[1];
+  if (leader === undefined || runnerUp === undefined) return 'even';
+  return leader.perDay >= runnerUp.perDay * 1.5 ? leader.shape : 'even';
+}
+
+/**
+ * The one split on this panel that is a threefold effect rather than a
+ * one-ticket margin: about a dozen tickets land on a weekday against three or
+ * four on a weekend day. Per day, and only when the weekday rate is at least
+ * double, so a week that merely dipped is not described as collapsing.
+ */
+function fallsAwayAtWeekend(counts: number[]): boolean {
+  const at = (day: number) => counts[day] ?? 0;
+  const weekdayPerDay = (at(0) + at(1) + at(2) + at(3) + at(4)) / 5;
+  const weekendPerDay = (at(5) + at(6)) / 2;
+  return weekdayPerDay > 0 && weekdayPerDay >= weekendPerDay * 2;
+}
+
+/**
+ * The finished week's shape in one or two sentences — never a single winning
+ * day. Each cohort is described only when it has something to describe: a week
+ * that cleared nothing gets no clause about clearing, which is exactly what
+ * naming the largest done column got wrong, since an empty column still has
+ * one. When both cohorts say the same thing they say it once.
+ */
+function describeDays(
+  days: Array<{ created: number | null; done: number | null }>,
+  created: number,
+  done: number
+): string | null {
+  const describe = (subject: string, counts: number[]) => ({
+    subject,
+    shape: workingWeekShape(counts),
+    quiet: fallsAwayAtWeekend(counts),
+  });
+  const creation =
+    created === 0 ? null : describe('creation', days.map((day) => day.created ?? 0));
+  const clearing = done === 0 ? null : describe('clearing', days.map((day) => day.done ?? 0));
+
+  if (
+    creation !== null &&
+    clearing !== null &&
+    creation.shape === clearing.shape &&
+    creation.quiet === clearing.quiet
+  ) {
+    const both = `creation and clearing ${SHAPE_PHRASES[creation.shape].both}`;
+    return sentence(creation.quiet ? `${both}${WEEKEND_TAIL}` : both);
+  }
+
+  const cohorts = [creation, clearing].filter((cohort) => cohort !== null);
+  if (cohorts.length === 0) return null;
+
+  // With one cohort left to describe, or both falling away together, the
+  // weekend belongs in the same breath; two separate collapses do not fit in
+  // one clause without saying it twice.
+  const shared = cohorts.every((cohort) => cohort.quiet);
+  const clauses = cohorts
+    .map(
+      (cohort) =>
+        `${cohort.subject} ${SHAPE_PHRASES[cohort.shape].one}${!shared && cohort.quiet ? WEEKEND_TAIL : ''}`
+    )
+    .join('; ');
+  if (!shared) return sentence(clauses);
+  return sentence(
+    cohorts.length === 1 ? `${clauses}${WEEKEND_TAIL}` : `${clauses}. Both fell away at the weekend`
+  );
+}
+
+/** Capitalises the opening word and closes the sentence. */
+function sentence(body: string): string {
+  return `${body.charAt(0).toUpperCase()}${body.slice(1)}.`;
 }
 
 /** Upper bound in whole days, and the label the histogram prints. */
@@ -899,20 +1014,7 @@ export function aggregateWeeklyReport(
         done: future ? null : doneCount,
       };
     });
-    const daysHighlight = (() => {
-      if (inProgress || (created === 0 && done === 0)) return null;
-
-      const busiestCount = Math.max(...days.map((day) => day.created ?? 0));
-      const mostClearedCount = Math.max(...days.map((day) => day.done ?? 0));
-      const busiestIndex = days.findIndex((day) => day.created === busiestCount);
-      const mostClearedIndex = days.findIndex((day) => day.done === mostClearedCount);
-      const busiest = weekdayName(startMs + busiestIndex * DAY_MS);
-      const mostCleared = weekdayName(startMs + mostClearedIndex * DAY_MS);
-
-      return busiest === mostCleared
-        ? `${busiest} was the busiest day and the most-cleared day.`
-        : `${busiest} was the busiest day and ${mostCleared} was the most-cleared day.`;
-    })();
+    const daysHighlight = inProgress ? null : describeDays(days, created, done);
     const daysNote = (() => {
       if (!inProgress) return null;
 

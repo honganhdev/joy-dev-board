@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type RefObject } from 'react';
 import { BacklogColumns } from './backlog-columns';
 import { BacklogAge } from './backlog-age';
 import { DayColumns } from './day-columns';
@@ -64,9 +64,28 @@ function ReportError({ message, onRetry }: { message: string; onRetry: () => voi
  * honour, and a report left at its pre-pull figures under a header saying
  * "pulled just now" is worse than one that says it is loading.
  */
-export function ReportView({ pullToken }: { pullToken: number }) {
+export function ReportView({
+  pullToken,
+  scrollRef,
+}: {
+  pullToken: number;
+  scrollRef: RefObject<HTMLDivElement | null>;
+}) {
   const { report, loading, error, setWeeks, reload } = useWeeklyReport(pullToken);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+
+  /**
+   * The trend chart sits below everything it changes. Clicking a week there
+   * rewrites the subject card, the tiles and the day panel, all of which are
+   * several screens up: without this the only visible effect is the highlight
+   * moving under the cursor, and the click reads as broken. The subject card's
+   * own arrows already sit above those panels and need none of this.
+   */
+  const focusWeekFromTrend = (key: string) => {
+    setFocusedKey(key);
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scrollRef.current?.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+  };
 
   const weeks = report?.weeks ?? [];
 
@@ -140,7 +159,7 @@ export function ReportView({ pullToken }: { pullToken: number }) {
         <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
       </div>
 
-      <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={setFocusedKey} />
+      <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={focusWeekFromTrend} />
 
       <BacklogColumns
         weeks={weeks}

@@ -1993,13 +1993,10 @@ describe('the day breakdown inside a week', () => {
   test('reports a real zero on a day of a finished week that received nothing', () => {
     const week = weekByKey(report([created('one', TUE_18)]), '2026-W34');
 
-    // A finished day that received nothing is measured, not missing. Asserting
-    // `not.toBeNull` as well means a regression to `null` cannot pass on the
-    // loose equality of `toBe(0)`.
+    // A finished day that received nothing is measured, not missing: `toBe` is
+    // `Object.is`, so a regression to `null` fails these two on its own.
     expect(week.days[4]?.created).toBe(0);
     expect(week.days[4]?.done).toBe(0);
-    expect(week.days[4]?.created).not.toBeNull();
-    expect(week.days[4]?.done).not.toBeNull();
     expect(week.daysNote).toBeNull();
   });
 
@@ -2048,7 +2045,6 @@ describe('the day breakdown inside a week', () => {
       'Thursday, Saturday and Sunday have not happened yet, so they have no figures. ' +
         'Wednesday is still running, so its figures are day-to-date.'
     );
-    expect(running.daysNote).not.toContain('Friday');
   });
 
   test('words the note in the singular when one day is left', () => {
@@ -2067,9 +2063,9 @@ describe('the day breakdown inside a week', () => {
     );
   });
 
-  test('names the busiest and the most-cleared day of a finished week', () => {
-    // Hardcoded rather than built from the label helpers: an expectation
-    // computed by the code under test proves nothing about the weekday ordering.
+  test('describes the shape of both cohorts in a finished week', () => {
+    // Hardcoded rather than built by calling the wording helpers: an expectation
+    // computed by the code under test agrees with whatever that code does.
     const week = weekByKey(
       report([
         created('c1', TUE_18),
@@ -2083,11 +2079,41 @@ describe('the day breakdown inside a week', () => {
     );
 
     expect(week.daysHighlight).toBe(
-      'Tuesday was the busiest day and Thursday was the most-cleared day.'
+      'Creation ran heaviest early in the week; clearing ran heaviest midweek. ' +
+        'Both fell away at the weekend.'
     );
   });
 
-  test('gives the earliest day the tie, Monday first', () => {
+  test('says a shape both cohorts share once, not twice', () => {
+    // The common live week: neither cohort favours a part of the working week
+    // and both thin out at the weekend. Saying that twice in one sentence is
+    // what the semicolon form would do.
+    const week = weekByKey(
+      report([
+        created('c1', MON_17),
+        created('c2', TUE_18),
+        created('c3', WED_19),
+        created('c4', THU_20),
+        created('c5', FRI_21),
+        cleared('d1', MON_17),
+        cleared('d2', TUE_18),
+        cleared('d3', WED_19),
+        cleared('d4', THU_20),
+        cleared('d5', FRI_21),
+      ]),
+      '2026-W34'
+    );
+
+    expect(week.daysHighlight).toBe(
+      'Creation and clearing were both spread evenly across the working week and fell away at ' +
+        'the weekend.'
+    );
+  });
+
+  test('calls an evenly spread cohort even rather than crowning a day', () => {
+    // Creation is level across Tuesday and Thursday. Naming either of them the
+    // busiest day is a coin toss decided by a single ticket, which is what this
+    // wording exists to stop.
     const week = weekByKey(
       report([
         created('c1', TUE_18),
@@ -2101,7 +2127,30 @@ describe('the day breakdown inside a week', () => {
     );
 
     expect(week.daysHighlight).toBe(
-      'Tuesday was the busiest day and Wednesday was the most-cleared day.'
+      'Creation was spread evenly across the working week; clearing ran heaviest at the end ' +
+        'of the week. Both fell away at the weekend.'
+    );
+  });
+
+  test('says nothing about clearing in a finished week that cleared nothing', () => {
+    // The defect this wording replaces: an empty done column still has a
+    // largest day, so the page crowned Monday the most-cleared day of a week
+    // that cleared no ticket at all.
+    const week = weekByKey(report([created('one', TUE_18)]), '2026-W34');
+
+    expect(week.done).toBe(0);
+    expect(week.daysHighlight).toBe(
+      'Creation ran heaviest early in the week and fell away at the weekend.'
+    );
+  });
+
+  test('says nothing about creation in a finished week that created nothing', () => {
+    // The same defect the other way round.
+    const week = weekByKey(report([cleared('d1', THU_20)]), '2026-W34');
+
+    expect(week.created).toBe(0);
+    expect(week.daysHighlight).toBe(
+      'Clearing ran heaviest midweek and fell away at the weekend.'
     );
   });
 
@@ -2140,6 +2189,18 @@ describe('the day breakdown inside a week', () => {
       'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to ' +
         'the following Monday 00:00, and a day is midnight to midnight in that same zone.'
     );
-    expect(result.trendSectionTitle).toBe('The weeks before this one, for context.');
+    expect(result.trendSectionTitle).toBe('Every week in the range, for context.');
+  });
+
+  test('scopes the trend heading to what the charts under it are handed', () => {
+    // Those charts receive the whole `weeks` array — the focused week and the
+    // week still running included — so the heading cannot scope them to the
+    // weeks before the focused one. It names a range, never an ordering, and
+    // this fails structurally if an ordering claim comes back.
+    const result = report([], 4);
+
+    expect(result.weeks).toHaveLength(4);
+    expect(result.weeks.at(-1)?.inProgress).toBe(true);
+    expect(result.trendSectionTitle).not.toMatch(/before|earlier|previous|preceding/i);
   });
 });
