@@ -275,6 +275,13 @@ describe('accounting identities', () => {
     }
     expect(result.weeks.reduce((total, week) => total + week.done, 0)).toBe(2);
   });
+
+  test('the seven day rows sum to the week they split', () => {
+    for (const week of result.weeks) {
+      expect(week.days.reduce((total, day) => total + (day.created ?? 0), 0)).toBe(week.created);
+      expect(week.days.reduce((total, day) => total + (day.done ?? 0), 0)).toBe(week.done);
+    }
+  });
 });
 
 describe('unknown values', () => {
@@ -1898,5 +1905,241 @@ describe('a feature label that reads like forbidden language', () => {
 
     expect(values).toContain('TRANSLATION');
     expect(values.filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual([]);
+  });
+});
+
+describe('the day breakdown inside a week', () => {
+  /**
+   * Every fixture here is hand-built. `loadFixtureTickets()` is deliberately not
+   * used: it is gitignored real customer data, so a single forward-dated ticket
+   * in it would decide the null assertions below from a file that is not in git.
+   */
+  const MON_17 = '2026-08-17T09:00:00+07:00';
+  const TUE_18 = '2026-08-18T09:00:00+07:00';
+  const WED_19 = '2026-08-19T09:00:00+07:00';
+  const THU_20 = '2026-08-20T09:00:00+07:00';
+  const FRI_21 = '2026-08-21T09:00:00+07:00';
+  // A week before the one being asserted, so a `doneAt` fixture adds no `created`
+  // to the week under test.
+  const PRIOR_WEEK = '2026-08-10T09:00:00+07:00';
+
+  function created(id: string, at: string): HelpDeskTicket {
+    return ticket({ ticketId: id, createdAt: at, doneAt: null });
+  }
+
+  function cleared(id: string, at: string): HelpDeskTicket {
+    return ticket({ ticketId: id, createdAt: PRIOR_WEEK, doneAt: at, tsStatus: 'done' });
+  }
+
+  test('names the seven days Monday first, in Vietnam time', () => {
+    // The one assertion that pins weekday ordering. `localParts` uses 0 = Monday
+    // while every JS date API uses 0 = Sunday, so a weekday array written in the
+    // conventional order shifts every tick and every weekday word on the page by
+    // one day while leaving the counts, the sums and the null rule correct. The
+    // array is a literal on purpose: mapping the label helper over the same days
+    // is self-referential and passes either way.
+    expect(weekByKey(report([]), '2026-W34').days.map((day) => day.label)).toEqual([
+      'Mon 17 Aug',
+      'Tue 18 Aug',
+      'Wed 19 Aug',
+      'Thu 20 Aug',
+      'Fri 21 Aug',
+      'Sat 22 Aug',
+      'Sun 23 Aug',
+    ]);
+  });
+
+  test('gives every week seven day rows with labels unique inside the week', () => {
+    // The label is the React key for the day panel's slots.
+    for (const week of report([], 26).weeks) {
+      expect(week.days).toHaveLength(7);
+      expect(new Set(week.days.map((day) => day.label)).size).toBe(7);
+    }
+  });
+
+  test('splits two adjacent minutes across a midnight inside the week', () => {
+    // Tue 23:59 and Wed 00:00 in +07:00 — the same decision the week boundary
+    // makes, one level down.
+    const week = weekByKey(
+      report([
+        ticket({ ticketId: 'tuesday', createdAt: PRIOR_WEEK, doneAt: '2026-08-18T16:59:00Z' }),
+        ticket({ ticketId: 'wednesday', createdAt: PRIOR_WEEK, doneAt: '2026-08-18T17:00:00Z' }),
+      ]),
+      '2026-W34'
+    );
+
+    expect(week.days[1]?.done).toBe(1);
+    expect(week.days[2]?.done).toBe(1);
+  });
+
+  test('puts the first instant of the week in Monday, not in the week before', () => {
+    // Mon 17 Aug 00:00 +07:00.
+    const result = report([created('first', '2026-08-16T17:00:00Z')]);
+
+    expect(weekByKey(result, '2026-W34').days[0]?.created).toBe(1);
+    expect(weekByKey(result, '2026-W33').days[6]?.created).toBe(0);
+  });
+
+  test('puts the last instant of the week in Sunday, and the next one in the next Monday', () => {
+    const result = report([
+      created('last', '2026-08-23T16:59:59Z'),
+      created('next', '2026-08-23T17:00:00Z'),
+    ]);
+
+    expect(weekByKey(result, '2026-W34').days[6]?.created).toBe(1);
+    expect(weekByKey(result, '2026-W35').days[0]?.created).toBe(1);
+  });
+
+  test('reports a real zero on a day of a finished week that received nothing', () => {
+    const week = weekByKey(report([created('one', TUE_18)]), '2026-W34');
+
+    // A finished day that received nothing is measured, not missing. Asserting
+    // `not.toBeNull` as well means a regression to `null` cannot pass on the
+    // loose equality of `toBe(0)`.
+    expect(week.days[4]?.created).toBe(0);
+    expect(week.days[4]?.done).toBe(0);
+    expect(week.days[4]?.created).not.toBeNull();
+    expect(week.days[4]?.done).not.toBeNull();
+    expect(week.daysNote).toBeNull();
+  });
+
+  test('nulls the days of the running week that have not started', () => {
+    const result = report([]);
+
+    const running = weekByKey(result, '2026-W35');
+    // NOW is Wed 26 Aug 10:00 +07:00, so Mon–Wed have started and Thu–Sun have not.
+    for (const index of [0, 1, 2]) {
+      expect(running.days[index]?.created).toBe(0);
+      expect(running.days[index]?.done).toBe(0);
+    }
+    for (const index of [3, 4, 5, 6]) {
+      expect(running.days[index]?.created).toBeNull();
+      expect(running.days[index]?.done).toBeNull();
+    }
+    expect(running.daysNote).not.toBeNull();
+
+    const finished = weekByKey(result, '2026-W34');
+    for (const day of finished.days) {
+      expect(day.created).not.toBeNull();
+      expect(day.done).not.toBeNull();
+    }
+    expect(finished.daysNote).toBeNull();
+  });
+
+  test('still reports numbers on a future day that received a ticket', () => {
+    // The guarded null rule: a day is only blank when it has not started AND
+    // received nothing. A forward-dated ticket has to be counted, or the seven
+    // rows stop summing to the week.
+    const running = weekByKey(report([created('forward', '2026-08-28T09:00:00+07:00')]), '2026-W35');
+
+    expect(running.days[4]?.created).toBe(1);
+    expect(running.days[4]?.done).toBe(0);
+    expect(running.days.reduce((total, day) => total + (day.created ?? 0), 0)).toBe(running.created);
+    expect(running.days.reduce((total, day) => total + (day.done ?? 0), 0)).toBe(running.done);
+  });
+
+  test('names the nulled days of the running week as a set, not as a range', () => {
+    // Friday holds a forward-dated ticket, so the days without figures are
+    // Thursday, Saturday and Sunday — not a contiguous run. A range sentence
+    // would name Friday as having no figures directly above Friday's own figure.
+    const running = weekByKey(report([created('forward', '2026-08-28T09:00:00+07:00')]), '2026-W35');
+
+    expect(running.daysNote).toBe(
+      'Thursday, Saturday and Sunday have not happened yet, so they have no figures. ' +
+        'Wednesday is still running, so its figures are day-to-date.'
+    );
+    expect(running.daysNote).not.toContain('Friday');
+  });
+
+  test('words the note in the singular when one day is left', () => {
+    const running = weekByKey(
+      report([
+        created('thu', '2026-08-27T09:00:00+07:00'),
+        created('fri', '2026-08-28T09:00:00+07:00'),
+        created('sat', '2026-08-29T09:00:00+07:00'),
+      ]),
+      '2026-W35'
+    );
+
+    expect(running.daysNote).toBe(
+      'Sunday has not happened yet, so it has no figures. ' +
+        'Wednesday is still running, so its figures are day-to-date.'
+    );
+  });
+
+  test('names the busiest and the most-cleared day of a finished week', () => {
+    // Hardcoded rather than built from the label helpers: an expectation
+    // computed by the code under test proves nothing about the weekday ordering.
+    const week = weekByKey(
+      report([
+        created('c1', TUE_18),
+        created('c2', TUE_18),
+        created('c3', WED_19),
+        cleared('d1', THU_20),
+        cleared('d2', THU_20),
+        cleared('d3', MON_17),
+      ]),
+      '2026-W34'
+    );
+
+    expect(week.daysHighlight).toBe(
+      'Tuesday was the busiest day and Thursday was the most-cleared day.'
+    );
+  });
+
+  test('gives the earliest day the tie, Monday first', () => {
+    const week = weekByKey(
+      report([
+        created('c1', TUE_18),
+        created('c2', TUE_18),
+        created('c3', THU_20),
+        created('c4', THU_20),
+        cleared('d1', WED_19),
+        cleared('d2', FRI_21),
+      ]),
+      '2026-W34'
+    );
+
+    expect(week.daysHighlight).toBe(
+      'Tuesday was the busiest day and Wednesday was the most-cleared day.'
+    );
+  });
+
+  test('holds no highlight for the running week, even when it has tickets', () => {
+    // On a Monday the running week would otherwise crown Monday busiest and
+    // most-cleared out of a single part-elapsed day. The week here carries a
+    // ticket on purpose: a running week with nothing in either cohort is
+    // suppressed by the empty-week rule and proves nothing about `inProgress`.
+    const running = weekByKey(
+      report([
+        ticket({
+          ticketId: 'monday',
+          createdAt: '2026-08-24T09:00:00+07:00',
+          doneAt: '2026-08-25T09:00:00+07:00',
+          tsStatus: 'done',
+        }),
+      ]),
+      '2026-W35'
+    );
+
+    expect(running.created).toBe(1);
+    expect(running.done).toBe(1);
+    expect(running.daysHighlight).toBeNull();
+  });
+
+  test('holds no highlight for a week with nothing in either cohort', () => {
+    expect(weekByKey(report([created('one', TUE_18)]), '2026-W33').daysHighlight).toBeNull();
+  });
+
+  test('states the timezone and the trend heading in the approved words', () => {
+    // A reworded timezone statement is a silent correctness change: the whole
+    // day breakdown means something else if the frame it is read in moves.
+    const result = report([]);
+
+    expect(result.timeZoneNote).toBe(
+      'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to ' +
+        'the following Monday 00:00, and a day is midnight to midnight in that same zone.'
+    );
+    expect(result.trendSectionTitle).toBe('The weeks before this one, for context.');
   });
 });
