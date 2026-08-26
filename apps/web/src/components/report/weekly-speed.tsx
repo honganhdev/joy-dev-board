@@ -26,6 +26,11 @@ export function WeeklySpeed({ weeks, caption, emptyWeeksNote }: WeeklySpeedProps
             <span className="text-[15px] font-semibold tabular-nums">
               {week.medianDaysToDone ?? '—'}
             </span>
+            {/* The sample the figure stands on, so a one-ticket week cannot read
+                as the same kind of measurement as a forty-ticket one. */}
+            <span className="mt-0.5 w-full truncate text-center text-[10px] tabular-nums text-muted-foreground">
+              {week.doneSampleLabel}
+            </span>
             <span className="mt-1 w-full truncate text-center text-[10px] tabular-nums text-muted-foreground">
               {week.shortLabel}
             </span>

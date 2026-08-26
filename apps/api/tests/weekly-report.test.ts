@@ -493,6 +493,42 @@ describe('resolution speed per week', () => {
   });
 });
 
+describe('the weekly speed sample', () => {
+  test('words the sample every week stands on, including none and one', () => {
+    const result = report([
+      ticket({
+        ticketId: 'one',
+        ticketStatus: 'closed',
+        createdAt: '2026-08-17T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]);
+
+    expect(weekByKey(result, '2026-W34').doneSampleLabel).toBe('1 ticket');
+    expect(weekByKey(result, '2026-W33').doneSampleLabel).toBe('0 tickets');
+  });
+
+  test('keeps the sample label agreeing with the sample it names', () => {
+    const doneAt = '2026-08-18T09:00:00+07:00';
+    const result = weekByKey(
+      report(
+        [1, 2].map((days) =>
+          ticket({
+            ticketId: `done-${days}`,
+            ticketStatus: 'closed',
+            createdAt: new Date(Date.parse(doneAt) - days * 86400000).toISOString(),
+            doneAt,
+          })
+        )
+      ),
+      '2026-W34'
+    );
+
+    expect(result.doneSample).toBe(2);
+    expect(result.doneSampleLabel).toBe('2 tickets');
+  });
+});
+
 describe('the open backlog', () => {
   test('keeps every structural row in an empty report', () => {
     const result = report([]).openBacklog;

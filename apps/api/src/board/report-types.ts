@@ -42,6 +42,13 @@ export type WeekSummary = {
   medianDaysToDone: number | null;
   /** How many tickets the weekly median is measured over. */
   doneSample: number;
+  /**
+   * `doneSample` in words, rendered verbatim under the figure. A median over one
+   * ticket and a median over forty read identically as a bare number, and the
+   * weeks with the smallest samples are exactly the ones whose figure swings
+   * hardest — so the sample travels with the figure.
+   */
+  doneSampleLabel: string;
   /** Includes `closedWithoutDoneAt`. */
   outstanding: number;
   /**

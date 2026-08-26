@@ -109,6 +109,8 @@ export type WeekSummary = {
   done: number;
   medianDaysToDone: number | null;
   doneSample: number;
+  /** `doneSample` in words, rendered verbatim under the weekly figure. */
+  doneSampleLabel: string;
   /** Includes `closedWithoutDoneAt`. */
   outstanding: number;
   /** `outstanding` with the ghosts taken out; stacks with `closedWithoutDoneAt`. */

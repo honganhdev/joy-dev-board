@@ -107,6 +107,11 @@ function weeklySpeedCaption(weeks: WeekSummary[]): string {
   return `${scope} Measurable weekly medians range from ${minimum} to ${maximum} days.`;
 }
 
+/** The sample the weekly median stands on, printed beneath it. */
+function doneSampleLabel(sample: number): string {
+  return sample === 1 ? '1 ticket' : `${sample} tickets`;
+}
+
 function emptyWeeksNote(weeks: WeekSummary[]): string | null {
   const empty = weeks.filter((week) => week.doneSample === 0).length;
   if (empty === 0) return null;
@@ -783,6 +788,7 @@ export function aggregateWeeklyReport(
       done,
       medianDaysToDone: median(daysToDone.sort((a, b) => a - b)),
       doneSample: daysToDone.length,
+      doneSampleLabel: doneSampleLabel(daysToDone.length),
       outstanding,
       outstandingWithDoneDate: outstanding - closedWithoutDoneAt,
       closedWithoutDoneAt,
