@@ -178,6 +178,16 @@ export type WeeklyReport = {
     }>;
   };
   openSectionTitle: string;
+  openByPlan: {
+    rows: Array<{ key: string; label: string; count: number }>;
+    freeNote: string | null;
+  };
+  openByMerchant: {
+    rows: Array<{ key: string; label: string; count: number }>;
+    concentrationNote: string;
+    tailNote: string | null;
+    tailCount: number;
+  };
   openRightNow: number;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */

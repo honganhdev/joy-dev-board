@@ -39,6 +39,7 @@ const PRESET_GRACE_WEEKS = 4;
 const NO_PRIORITY = '(no priority)';
 const NO_STATUS = '(no status)';
 const NO_MERCHANT = '(no merchant)';
+const NO_PLAN = '(no plan)';
 
 /**
  * `tsStatus` is not a closed enum, so naming the done statuses here could only
@@ -170,6 +171,11 @@ function statusLabel(status: string): string {
 function priorityLabel(priority: string): string {
   if (priority === NO_PRIORITY) return 'No priority';
   return sentenceCase(priority) || priority;
+}
+
+function planLabel(plan: string): string {
+  if (plan === NO_PLAN) return 'No plan';
+  return sentenceCase(plan) || plan;
 }
 
 function isPresent(value: unknown): value is string {
@@ -517,6 +523,69 @@ function openSectionTitle(total: number, horizon: Horizon, year: number): string
   return `All open tickets right now — ${count}. Not affected by the week or range above. ${reach}`;
 }
 
+function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
+  const counts = new Map<string, number>();
+  for (const ticket of open) {
+    const key = isPresent(ticket.appPlan) ? ticket.appPlan.trim() : NO_PLAN;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const rows = [...counts.entries()]
+    .sort((a, b) => {
+      if (a[0] === NO_PLAN) return 1;
+      if (b[0] === NO_PLAN) return -1;
+      return b[1] - a[1] || a[0].localeCompare(b[0]);
+    })
+    .map(([key, count]) => ({ key, label: planLabel(key), count }));
+  const free = rows.find((row) => row.key === 'free');
+
+  return {
+    rows,
+    freeNote: free
+      ? `Free accounts hold ${free.count} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'}.`
+      : null,
+  };
+}
+
+function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] {
+  const counts = new Map<string, number>();
+  for (const ticket of open) {
+    const key = merchantName(ticket);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const noMerchant = counts.get(NO_MERCHANT) ?? 0;
+  const named = [...counts.entries()]
+    .filter(([key]) => key !== NO_MERCHANT)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const busiest = named.slice(0, 5);
+  const tail = named.slice(5);
+  const busiestCount = busiest.reduce((total, [, count]) => total + count, 0);
+  const tailCount = tail.reduce((total, [, count]) => total + count, 0);
+  const percentage = open.length === 0 ? 0 : Math.round((busiestCount / open.length) * 100);
+  const rows = busiest.map(([key, count]) => ({ key, label: key, count }));
+  if (noMerchant > 0) rows.push({ key: NO_MERCHANT, label: NO_MERCHANT, count: noMerchant });
+
+  let concentrationNote: string;
+  if (busiest.length === 0) {
+    concentrationNote = 'No named merchant holds an open ticket.';
+  } else if (busiest.length === 1) {
+    concentrationNote = `The busiest merchant holds ${busiestCount} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'} (${percentage}%).`;
+  } else {
+    concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${open.length} open tickets (${percentage}%).`;
+  }
+
+  return {
+    rows,
+    concentrationNote,
+    tailNote:
+      tail.length === 0
+        ? null
+        : `The rest are spread across ${tail.length} ${tail.length === 1 ? 'merchant' : 'merchants'}.`,
+    tailCount,
+  };
+}
+
 /**
  * Builds the whole report.
  *
@@ -665,6 +734,8 @@ export function aggregateWeeklyReport(
     timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
     openBacklog: openBacklog(open, nowMs),
     openSectionTitle: openSectionTitle(open.length, horizon, options.year),
+    openByPlan: openByPlan(open),
+    openByMerchant: openByMerchant(open),
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.
     openRightNow: open.length,

@@ -159,6 +159,20 @@ export type WeeklyReport = {
   };
   /** Server-worded heading for the absolute all-open section. */
   openSectionTitle: string;
+  /** Open tickets by every service-plan value present; absent values are a named row. */
+  openByPlan: {
+    rows: Array<{ key: string; label: string; count: number }>;
+    /** Names the literal `free` row, or `null` when it is absent. */
+    freeNote: string | null;
+  };
+  /** The five busiest named merchants plus a separate absent-value row. */
+  openByMerchant: {
+    rows: Array<{ key: string; label: string; count: number }>;
+    concentrationNote: string;
+    tailNote: string | null;
+    /** Tickets held by named merchants outside the five displayed rows. */
+    tailCount: number;
+  };
   /**
    * `ticketStatus === 'open'` right now, across the whole mirror. Not week-scoped
    * and not derivable from any week — see each week's `outstandingCaption`.

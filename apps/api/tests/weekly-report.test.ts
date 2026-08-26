@@ -557,6 +557,77 @@ describe('the open backlog', () => {
   });
 });
 
+describe('open tickets by plan', () => {
+  test('is empty without open tickets', () => {
+    expect(report([]).openByPlan).toEqual({ rows: [], freeNote: null });
+  });
+
+  test('names a single free row with singular grammar', () => {
+    const result = report([ticket({ appPlan: 'free' })]).openByPlan;
+    expect(result.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
+    expect(result.freeNote).toContain('1 of 1 open ticket');
+  });
+
+  test('pins the absent plan last even when it is the largest row', () => {
+    const result = report([
+      ticket({ ticketId: 'paid', appPlan: 'advanced_2026' }),
+      ticket({ ticketId: 'none-1', appPlan: null }),
+      ticket({ ticketId: 'none-2', appPlan: '  ' }),
+    ]).openByPlan;
+    expect(result.rows.map((row) => row.key)).toEqual(['advanced_2026', '(no plan)']);
+    expect(result.rows[0]?.label).toBe('Advanced 2026');
+  });
+
+  test('does not infer a free group when the literal free value is absent', () => {
+    expect(report([ticket({ appPlan: 'trial' })]).openByPlan.freeNote).toBeNull();
+  });
+});
+
+describe('open tickets by merchant', () => {
+  test('words the empty case and keeps no tail', () => {
+    const result = report([]).openByMerchant;
+    expect(result.rows).toEqual([]);
+    expect(result.concentrationNote.length).toBeGreaterThan(0);
+    expect(result.tailNote).toBeNull();
+    expect(result.tailCount).toBe(0);
+  });
+
+  test('words a single named merchant and no tail', () => {
+    const result = report([ticket({ store: [{ shopName: 'Only Shop' }] })]).openByMerchant;
+    expect(result.rows).toEqual([{ key: 'Only Shop', label: 'Only Shop', count: 1 }]);
+    expect(result.concentrationNote).toContain('The busiest merchant holds 1 of 1 open ticket');
+    expect(result.tailNote).toBeNull();
+  });
+
+  test('appends the absent row after the five ranked merchants', () => {
+    const merchants = ['A', 'B', 'C', 'D', 'E', 'F'].map((shopName) =>
+      ticket({ ticketId: shopName, store: [{ shopName }] })
+    );
+    const absent = [1, 2, 3].map((number) => ticket({ ticketId: `absent-${number}` }));
+    const result = report([...merchants, ...absent]).openByMerchant;
+    expect(result.rows.map((row) => row.key)).toEqual(['A', 'B', 'C', 'D', 'E', '(no merchant)']);
+    expect(result.rows.at(-1)?.count).toBe(3);
+    expect(result.concentrationNote).toContain('5 busiest merchants');
+    expect(result.tailNote).toContain('1 merchant');
+    expect(result.tailCount).toBe(1);
+  });
+
+  test('uses the trimmed merchant fallback chain at panel level', () => {
+    const result = report([
+      ticket({ ticketId: 'shop', store: [{ shopName: ' Shop ' }] }),
+      ticket({ ticketId: 'domain', store: [{ shopName: ' ', domain: ' domain.test ' }] }),
+      ticket({ ticketId: 'fallback', storeDomains: [' fallback.test '] }),
+      ticket({ ticketId: 'absent' }),
+    ]).openByMerchant;
+    expect(result.rows.map((row) => row.key)).toEqual([
+      'domain.test',
+      'fallback.test',
+      'Shop',
+      '(no merchant)',
+    ]);
+  });
+});
+
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -861,6 +932,26 @@ describe('the panels agree with each other', () => {
     const summed = result.openBacklog.buckets.reduce((total, bucket) => total + bucket.count, 0);
     expect(summed + result.openBacklog.noCreatedDate).toBe(result.openRightNow);
     expect(result.openBacklog.total).toBe(result.openRightNow);
+  });
+
+  test('accounts for every open ticket in the plan and merchant rows', () => {
+    const result = report([
+      ticket({ ticketId: 'a', appPlan: 'free', store: [{ shopName: 'A' }] }),
+      ticket({ ticketId: 'b', appPlan: null, store: [{ shopName: 'B' }] }),
+      ticket({ ticketId: 'c', appPlan: 'pro', store: [{ shopName: 'C' }] }),
+      ticket({ ticketId: 'd', appPlan: 'pro', store: [{ shopName: 'D' }] }),
+      ticket({ ticketId: 'e', appPlan: 'pro', store: [{ shopName: 'E' }] }),
+      ticket({ ticketId: 'f', appPlan: 'pro', store: [{ shopName: 'F' }] }),
+      ticket({ ticketId: 'absent', appPlan: 'free' }),
+    ]);
+    expect(result.openByPlan.rows.reduce((total, row) => total + row.count, 0)).toBe(
+      result.openBacklog.total
+    );
+    const noMerchant = result.openByMerchant.rows.find((row) => row.key === '(no merchant)')?.count ?? 0;
+    const topFive = result.openByMerchant.rows
+      .filter((row) => row.key !== '(no merchant)')
+      .reduce((total, row) => total + row.count, 0);
+    expect(topFive + result.openByMerchant.tailCount + noMerchant).toBe(result.openBacklog.total);
   });
 });
 

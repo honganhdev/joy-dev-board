@@ -5,6 +5,7 @@ import { BacklogAge } from './backlog-age';
 import { DurationHistogram } from './duration-histogram';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
+import { OpenBreakdown } from './open-breakdown';
 import { RangePicker } from './range-picker';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
@@ -151,6 +152,19 @@ export function ReportView({ pullToken }: { pullToken: number }) {
       <SectionDivider title={report.openSectionTitle} />
 
       <BacklogAge data={report.openBacklog} />
+
+      <div className="flex gap-3">
+        <OpenBreakdown
+          title="By service plan"
+          rows={report.openByPlan.rows}
+          notes={[report.openByPlan.freeNote]}
+        />
+        <OpenBreakdown
+          title="By merchant"
+          rows={report.openByMerchant.rows}
+          notes={[report.openByMerchant.concentrationNote, report.openByMerchant.tailNote]}
+        />
+      </div>
 
       {/*
         What reached no week, named so nothing vanishes silently — in the
