@@ -31,13 +31,15 @@ export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) 
   reportSettled.current = onPullSettled;
 
   /** Best effort: a re-read that fails leaves the board already on screen. */
-  const refreshBoard = useCallback(
-    () =>
-      fetchBoard()
-        .then(setBoard)
-        .catch(() => undefined),
-    []
-  );
+  const refreshBoard = useCallback(async (): Promise<Board | null> => {
+    try {
+      const nextBoard = await fetchBoard();
+      setBoard(nextBoard);
+      return nextBoard;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,5 +103,5 @@ export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) 
     }
   }, []);
 
-  return { board, loading, pulling, error, reload: load, pull };
+  return { board, loading, pulling, error, reload: load, refreshBoard, pull };
 }

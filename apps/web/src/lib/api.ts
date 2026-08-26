@@ -59,6 +59,18 @@ export function fetchBoard(): Promise<Board> {
   return request<Board>('/api/tickets');
 }
 
+export function fetchBoardColumnPreferences(): Promise<{ statuses: string[] }> {
+  return request<{ statuses: string[] }>('/api/preferences/board-columns');
+}
+
+export function updateBoardColumns(statuses: string[]): Promise<{ statuses: string[] }> {
+  return request<{ statuses: string[] }>('/api/preferences/board-columns', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ statuses }),
+  });
+}
+
 /** The whole report in one response — the server picks no week, the client picks no range. */
 export function fetchWeeklyReport(weeks: number): Promise<WeeklyReport> {
   return request<WeeklyReport>(`/api/report/weekly?weeks=${weeks}`);

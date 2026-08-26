@@ -22,12 +22,12 @@ function ticket(overrides: Partial<BoardTicket> = {}): BoardTicket {
   };
 }
 
-function board(tickets: BoardTicket[]): Board {
+function board(tickets: BoardTicket[], extraTickets: BoardTicket[] = []): Board {
   return {
     pulledAt: '2026-08-24T04:00:00.000Z',
-    totalTickets: tickets.length,
-    openTickets: tickets.length,
-    boardTickets: tickets.length,
+    totalTickets: tickets.length + extraTickets.length,
+    openTickets: tickets.length + extraTickets.length,
+    boardTickets: tickets.length + extraTickets.length,
     columns: [
       {
         status: 'done',
@@ -37,6 +37,17 @@ function board(tickets: BoardTicket[]): Board {
       },
       { status: 'doing', label: 'DOING', count: 0, groups: [] },
     ],
+    extraColumns:
+      extraTickets.length > 0
+        ? [
+            {
+              status: 'pending',
+              label: 'Pending',
+              count: extraTickets.length,
+              groups: [{ category: 'WIDGET', count: extraTickets.length, tickets: extraTickets }],
+            },
+          ]
+        : [],
     otherStatuses: [],
     lastPull: null,
   };
@@ -121,6 +132,21 @@ describe('filterBoard', () => {
     expect(result.columns[0]?.count).toBe(1);
     expect(result.columns[0]?.groups[0]?.count).toBe(1);
     expect(result.columns[0]?.groups[0]?.tickets[0]?.ticketId).toBe('JOY-260101-other');
+  });
+
+  test('finds a match that exists only in an extra column', () => {
+    const result = filterBoard(
+      board(
+        [ticket({ ticketId: 'JOY-default', subject: 'Unrelated issue' })],
+        [ticket({ ticketId: 'JOY-extra', subject: 'Referral code broken' })]
+      ),
+      'referral'
+    );
+
+    expect(result.boardTickets).toBe(1);
+    expect(result.columns[0]?.count).toBe(0);
+    expect(result.extraColumns[0]?.count).toBe(1);
+    expect(result.extraColumns[0]?.groups[0]?.tickets[0]?.ticketId).toBe('JOY-extra');
   });
 
   test('drops emptied groups but keeps all five columns', () => {

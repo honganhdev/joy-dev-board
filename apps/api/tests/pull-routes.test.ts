@@ -79,6 +79,14 @@ function post(path: string, body?: unknown, headers: Record<string, string> = {}
   });
 }
 
+function put(path: string, body: unknown, headers: Record<string, string> = {}): Request {
+  return new Request(`http://localhost${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
 function get(path: string, headers: Record<string, string> = {}): Request {
   return new Request(`http://localhost${path}`, { headers });
 }
@@ -210,6 +218,97 @@ describe('pull routes', () => {
     const run = pulls.run();
     gate.resolve([]);
     await run;
+  });
+});
+
+describe('board column preference routes', () => {
+  test('both preference verbs require a session', async () => {
+    const { handle } = harness(async () => []);
+    expect((await handle(get('/api/preferences/board-columns'))).status).toBe(401);
+    expect((await handle(put('/api/preferences/board-columns', { statuses: [] }))).status).toBe(
+      401
+    );
+  });
+
+  test('rejects a non-array and more than 20 entries', async () => {
+    const { handle } = harness(async () => []);
+    const cookie = await login(handle);
+
+    expect(
+      (await handle(put('/api/preferences/board-columns', { statuses: 'pending' }, { cookie })))
+        .status
+    ).toBe(400);
+    expect(
+      (
+        await handle(
+          put(
+            '/api/preferences/board-columns',
+            { statuses: Array.from({ length: 21 }, (_, index) => `status_${index}`) },
+            { cookie }
+          )
+        )
+      ).status
+    ).toBe(400);
+  });
+
+  test('PUT replaces the stored set and GET reads it back', async () => {
+    const { handle } = harness(async () => []);
+    const cookie = await login(handle);
+
+    const written = await handle(
+      put('/api/preferences/board-columns', { statuses: ['pending'] }, { cookie })
+    );
+    expect(written.status).toBe(200);
+    expect(await written.json()).toEqual({ statuses: ['pending'] });
+
+    const read = await handle(get('/api/preferences/board-columns', { cookie }));
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual({ statuses: ['pending'] });
+  });
+
+  test('the stored set drives GET /api/tickets without a request parameter', async () => {
+    const { handle, pulls } = harness(async () => [
+      { ...ticket('JOY-extra'), tsStatus: 'done_for_you' },
+    ]);
+    const cookie = await login(handle);
+    await pulls.run();
+
+    await handle(
+      put('/api/preferences/board-columns', { statuses: ['done_for_you'] }, { cookie })
+    );
+    const response = await handle(get('/api/tickets', { cookie }));
+    const board = (await response.json()) as {
+      columns: unknown[];
+      extraColumns: Array<{ status: string; count: number; groups: unknown[] }>;
+      otherStatuses: Array<{ status: string; count: number }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(board.columns).toHaveLength(5);
+    expect(board.extraColumns).toHaveLength(1);
+    expect(board.extraColumns[0]).toMatchObject({ status: 'done_for_you', count: 1 });
+    expect(board.otherStatuses.map((entry) => entry.status)).not.toContain('done_for_you');
+  });
+
+  test('a missing preference table still serves the default five-column board', async () => {
+    const opened = openDatabase(':memory:');
+    const pulls = createPullRunner(opened.db, config, async () => [ticket('JOY-default')]);
+    const handle = createRouter({
+      db: opened.db,
+      pulls,
+      tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
+      auth: authConfig(),
+      year: config.year,
+    });
+    const cookie = await login(handle);
+    await pulls.run();
+    opened.sqlite.exec('DROP TABLE board_column_settings');
+
+    const response = await handle(get('/api/tickets', { cookie }));
+    const board = (await response.json()) as { columns: unknown[]; extraColumns: unknown[] };
+    expect(response.status).toBe(200);
+    expect(board.columns).toHaveLength(5);
+    expect(board.extraColumns).toEqual([]);
   });
 });
 

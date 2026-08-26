@@ -7,6 +7,11 @@ import type { TtlCache } from './cache';
 import type { AuthConfig } from './config';
 import type { Db } from './db/client';
 import {
+  InvalidBoardColumnsError,
+  readEnabledColumns,
+  writeEnabledColumns,
+} from './db/preferences';
+import {
   countTickets,
   readLastPull,
   readLastSuccessfulPull,
@@ -75,7 +80,10 @@ function boardFromDb(db: Db): BoardResponse {
   // only reachable if the pulls table was truncated by hand.
   const pulledAt = lastSuccessful?.finishedAt ?? lastPull?.startedAt ?? new Date(0).toISOString();
 
-  return { ...assembleBoard(readTickets(db), pulledAt), lastPull: toPullSummary(lastPull) };
+  return {
+    ...assembleBoard(readTickets(db), pulledAt, { enabled: readEnabledColumns(db) }),
+    lastPull: toPullSummary(lastPull),
+  };
 }
 
 export type RouterDeps = {
@@ -155,6 +163,22 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
 
       if (pathname === '/api/pull/status' && request.method === 'GET') {
         return json(toPullSummary(readLastPull(db)));
+      }
+
+      if (pathname === '/api/preferences/board-columns' && request.method === 'GET') {
+        return json({ statuses: readEnabledColumns(db) });
+      }
+
+      if (pathname === '/api/preferences/board-columns' && request.method === 'PUT') {
+        const body = (await request.json().catch(() => null)) as { statuses?: unknown } | null;
+        try {
+          return json({ statuses: writeEnabledColumns(db, body?.statuses) });
+        } catch (cause) {
+          if (cause instanceof InvalidBoardColumnsError) {
+            return json({ error: 'invalid_request', message: cause.message }, 400);
+          }
+          throw cause;
+        }
       }
 
       if (pathname === '/api/tickets' && request.method === 'GET') {

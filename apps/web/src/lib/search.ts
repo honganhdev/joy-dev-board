@@ -1,4 +1,4 @@
-import type { Board, BoardTicket } from '@/types';
+import type { Board, BoardColumn, BoardTicket } from '@/types';
 
 /** Lowercase + strip Vietnamese diacritics, so `diem` finds `Điểm`. */
 function normalize(text: string): string {
@@ -77,7 +77,7 @@ export function filterBoard(board: Board, query: string): Board {
   const needle = searchNeedle(query);
   if (!needle) return board;
 
-  const columns = board.columns.map((column) => {
+  const filterColumns = (source: BoardColumn[]) => source.map((column) => {
     const groups = column.groups
       .map((group) => {
         const tickets = group.tickets.filter((ticket) => ticketMatches(ticket, needle));
@@ -91,10 +91,13 @@ export function filterBoard(board: Board, query: string): Board {
       count: groups.reduce((sum, group) => sum + group.count, 0),
     };
   });
+  const columns = filterColumns(board.columns);
+  const extraColumns = filterColumns(board.extraColumns);
 
   return {
     ...board,
     columns,
-    boardTickets: columns.reduce((sum, column) => sum + column.count, 0),
+    extraColumns,
+    boardTickets: [...columns, ...extraColumns].reduce((sum, column) => sum + column.count, 0),
   };
 }

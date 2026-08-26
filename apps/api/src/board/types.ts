@@ -39,6 +39,13 @@ export type BoardColumn = {
   groups: BoardGroup[];
 };
 
+export type ExtraBoardColumn = {
+  status: string;
+  label: string;
+  count: number;
+  groups: BoardGroup[];
+};
+
 export type Board = {
   /** When the underlying HelpDesk pull happened. */
   pulledAt: string;
@@ -46,9 +53,10 @@ export type Board = {
   totalTickets: number;
   /** `ticketStatus === "open"` subset. */
   openTickets: number;
-  /** Cards actually on the board (open AND in one of the five statuses). */
+  /** Open cards actually rendered in a default or enabled extra column. */
   boardTickets: number;
   columns: BoardColumn[];
+  extraColumns: ExtraBoardColumn[];
   /**
    * Open tickets whose `tsStatus` has no column, counted per status so an
    * unknown or unmapped status is visible rather than silently dropped.

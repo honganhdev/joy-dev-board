@@ -34,6 +34,11 @@ describe('assembleBoard', () => {
       'DEV DONE',
       'DONE',
     ]);
+    expect(board.extraColumns).toEqual([]);
+  });
+
+  test('an explicitly empty enabled set preserves the default board response', () => {
+    expect(assembleBoard(fixture, PULLED_AT, { enabled: [] })).toEqual(board);
   });
 
   test('column counts equal the number of grouped tickets', () => {
@@ -89,6 +94,64 @@ describe('assembleBoard', () => {
     });
     expect(result.otherStatuses).toContainEqual({ status: '(no status)', count: 1 });
     expect(result.openTickets).toBe(fixture.length + 2);
+
+    const enabled = assembleBoard(withUnknown, PULLED_AT, {
+      enabled: ['brand_new_status_from_helpdesk', '(no status)'],
+    });
+    expect(enabled.extraColumns.map(({ status, label, count }) => ({ status, label, count }))).toEqual([
+      { status: '(no status)', label: 'No status', count: 1 },
+      {
+        status: 'brand_new_status_from_helpdesk',
+        label: 'Brand new status from helpdesk',
+        count: 1,
+      },
+    ]);
+    expect(enabled.otherStatuses).not.toContainEqual({
+      status: 'brand_new_status_from_helpdesk',
+      count: 1,
+    });
+  });
+
+  test('keeps an enabled status that has no tickets as an empty column', () => {
+    // This is also the stored-status-no-longer-exists case: both are the same
+    // path because columns are built from the enabled set, not ticket buckets.
+    const result = assembleBoard([], PULLED_AT, { enabled: ['retired_status'] });
+    expect(result.extraColumns).toEqual([
+      { status: 'retired_status', label: 'Retired status', count: 0, groups: [] },
+    ]);
+  });
+
+  test('renders every enabled extra after the defaults in alphabetical status order', () => {
+    const source = [
+      ticket({ ticketId: 'JOY-default', tsStatus: 'doing' }),
+      ticket({ ticketId: 'JOY-zeta', tsStatus: 'zeta_status' }),
+      ticket({ ticketId: 'JOY-alpha', tsStatus: 'alpha_status' }),
+    ];
+    const result = assembleBoard(source, PULLED_AT, {
+      enabled: ['zeta_status', 'alpha_status'],
+    });
+
+    expect(result.columns).toHaveLength(5);
+    expect(result.extraColumns.map((column) => column.status)).toEqual([
+      'alpha_status',
+      'zeta_status',
+    ]);
+    expect(result.otherStatuses).toEqual([]);
+    expect(result.boardTickets).toBe(result.openTickets);
+  });
+
+  test('leaves every extra off when none are enabled', () => {
+    const source = [
+      ticket({ ticketId: 'JOY-default', tsStatus: 'doing' }),
+      ticket({ ticketId: 'JOY-extra', tsStatus: 'pending' }),
+    ];
+    const result = assembleBoard(source, PULLED_AT, { enabled: [] });
+
+    expect(result.extraColumns).toEqual([]);
+    expect(result.otherStatuses).toEqual([{ status: 'pending', count: 1 }]);
+    expect(result.boardTickets + result.otherStatuses.reduce((sum, item) => sum + item.count, 0)).toBe(
+      result.openTickets
+    );
   });
 
   test('excludes closed tickets from the board', () => {

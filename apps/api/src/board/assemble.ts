@@ -1,6 +1,15 @@
 import { classify } from './classify';
 import { CATEGORIES, type Category } from './categories';
-import { BOARD_COLUMNS, type Board, type BoardColumn, type BoardStatus, type BoardTicket, type TicketDetail } from './types';
+import { extraColumnLabel } from './extra-columns';
+import {
+  BOARD_COLUMNS,
+  type Board,
+  type BoardColumn,
+  type BoardStatus,
+  type BoardTicket,
+  type ExtraBoardColumn,
+  type TicketDetail,
+} from './types';
 import type { HelpDeskTicket } from '../helpdesk/types';
 
 const COLUMN_STATUSES = new Set<string>(BOARD_COLUMNS.map((column) => column.status));
@@ -53,15 +62,21 @@ function groupByCategory(tickets: BoardTicket[]) {
  * Builds the board payload from a raw HelpDesk pull.
  *
  * Only `ticketStatus === "open"` tickets are considered. Of those, a ticket
- * whose `tsStatus` has no column is not dropped silently — it is counted in
- * `otherStatuses`, which is how an unrecognised status becomes visible instead
- * of a crash or a missing card.
+ * whose `tsStatus` has no enabled column is not dropped silently — it is
+ * counted in `otherStatuses`, which is how an unrecognised status becomes
+ * visible instead of a crash or a missing card.
  */
-export function assembleBoard(tickets: HelpDeskTicket[], pulledAt: string): Board {
+export function assembleBoard(
+  tickets: HelpDeskTicket[],
+  pulledAt: string,
+  options: { enabled: readonly string[] } = { enabled: [] }
+): Board {
   const open = tickets.filter(isOpen);
 
   const perStatus = new Map<BoardStatus, BoardTicket[]>();
   const otherCounts = new Map<string, number>();
+  const enabled = new Set(options.enabled);
+  const extraPerStatus = new Map<string, BoardTicket[]>();
 
   for (const ticket of open) {
     const status = ticket.tsStatus ?? '';
@@ -73,6 +88,11 @@ export function assembleBoard(tickets: HelpDeskTicket[], pulledAt: string): Boar
     } else {
       const key = status || '(no status)';
       otherCounts.set(key, (otherCounts.get(key) ?? 0) + 1);
+      if (enabled.has(key)) {
+        const bucket = extraPerStatus.get(key);
+        if (bucket) bucket.push(toBoardTicket(ticket));
+        else extraPerStatus.set(key, [toBoardTicket(ticket)]);
+      }
     }
   }
 
@@ -81,13 +101,27 @@ export function assembleBoard(tickets: HelpDeskTicket[], pulledAt: string): Boar
     return { status, label, count: tickets.length, groups: groupByCategory(tickets) };
   });
 
+  const extraColumns: ExtraBoardColumn[] = [...enabled]
+    .sort((a, b) => a.localeCompare(b))
+    .map((status) => {
+      const tickets = extraPerStatus.get(status) ?? [];
+      return {
+        status,
+        label: extraColumnLabel(status),
+        count: tickets.length,
+        groups: groupByCategory(tickets),
+      };
+    });
+
   return {
     pulledAt,
     totalTickets: tickets.length,
     openTickets: open.length,
-    boardTickets: columns.reduce((sum, column) => sum + column.count, 0),
+    boardTickets: [...columns, ...extraColumns].reduce((sum, column) => sum + column.count, 0),
     columns,
+    extraColumns,
     otherStatuses: [...otherCounts.entries()]
+      .filter(([status]) => !enabled.has(status))
       .map(([status, count]) => ({ status, count }))
       .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status)),
   };

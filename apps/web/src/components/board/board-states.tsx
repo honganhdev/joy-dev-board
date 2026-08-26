@@ -2,22 +2,22 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const COLUMN_LABELS = ['DEV FIXING', 'DOING', 'WAITING CUSTOMER', 'DEV DONE', 'DONE'];
-
-/** Five column shells with card-shaped skeletons while the first pull runs. */
+/** Five unlabeled shells while the server resolves the shared column setting. */
 export function BoardSkeleton() {
   return (
-    <div className="flex h-full min-h-0 gap-4">
-      {COLUMN_LABELS.map((label, columnIndex) => (
+    <div
+      className="flex h-full min-h-0 gap-4"
+      aria-busy="true"
+      aria-label="Loading the board"
+    >
+      {Array.from({ length: 5 }).map((_, columnIndex) => (
         <section
-          key={label}
+          key={columnIndex}
           className="flex min-h-0 flex-1 flex-col rounded-lg border border-stone-200 bg-white"
-          aria-label={`${label} loading`}
+          aria-hidden="true"
         >
           <header className="flex items-center gap-2 px-4 py-3">
-            <span className="flex-1 text-[11px] font-bold tracking-wider text-stone-400 uppercase">
-              {label}
-            </span>
+            <Skeleton className="h-4 flex-1" />
             <Skeleton className="h-4 w-6 rounded-full" />
           </header>
           <div className="space-y-3 px-3 pb-3">

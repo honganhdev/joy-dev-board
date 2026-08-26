@@ -69,6 +69,7 @@ export type Board = {
   openTickets: number;
   boardTickets: number;
   columns: BoardColumn[];
+  extraColumns: BoardColumn[];
   otherStatuses: Array<{ status: string; count: number }>;
   /** May be a later failed attempt — that is how stale data is spotted. */
   lastPull: PullSummary | null;

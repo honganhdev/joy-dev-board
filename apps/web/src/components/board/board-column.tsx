@@ -1,4 +1,5 @@
 import { CategoryGroup } from './category-group';
+import { cn } from '@/lib/utils';
 import type { BoardColumn as BoardColumnData } from '@/types';
 
 type BoardColumnProps = {
@@ -9,6 +10,8 @@ type BoardColumnProps = {
   onOpenTicket: (ticketId: string) => void;
   /** True when a search is active, so the empty state can say why. */
   filtered: boolean;
+  /** Extra-column boards scroll horizontally and keep every lane usable. */
+  useMinimumWidth: boolean;
 };
 
 /**
@@ -22,11 +25,20 @@ export function BoardColumn({
   onToggleCategory,
   onOpenTicket,
   filtered,
+  useMinimumWidth,
 }: BoardColumnProps) {
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-stone-200 bg-white">
+    <section
+      className={cn(
+        'flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-stone-200 bg-white',
+        useMinimumWidth ? 'min-w-[200px]' : 'min-w-0'
+      )}
+    >
       <header className="flex shrink-0 items-center gap-2 px-4 py-3">
-        <h2 className="flex-1 truncate text-[13px] font-bold tracking-wide text-stone-800 uppercase">
+        <h2
+          className="flex-1 truncate text-[13px] font-bold tracking-wide text-stone-800 uppercase"
+          title={column.label}
+        >
           {column.label}
         </h2>
         <span className="shrink-0 text-[11px] text-stone-400">scroll ↓</span>

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { BoardColumn } from '@/components/board/board-column';
+import { ColumnSettings } from '@/components/board/column-settings';
 import { BoardError, BoardSkeleton } from '@/components/board/board-states';
 import { LoginScreen } from '@/components/login-screen';
 import { ReportView } from '@/components/report/report-view';
@@ -9,13 +10,15 @@ import { TopBar, type BoardView } from '@/components/top-bar';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/hooks/use-auth';
 import { useBoard } from '@/hooks/use-board';
+import { useColumnSettings } from '@/hooks/use-column-settings';
 import { useTicketDetail } from '@/hooks/use-ticket-detail';
 import { formatAge } from '@/lib/format';
 import { filterBoard } from '@/lib/search';
+import { cn } from '@/lib/utils';
 import type { PullSummary } from '@/types';
 
 /** Collapsed categories, keyed by column. Lives as long as the page does. */
-type CollapsedState = Record<string, ReadonlySet<string>>;
+type CollapsedState = Map<string, ReadonlySet<string>>;
 
 const EMPTY_COLLAPSED: ReadonlySet<string> = new Set();
 
@@ -28,7 +31,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
   const detail = useTicketDetail();
   const [view, setView] = useState<BoardView>('board');
   const [query, setQuery] = useState('');
-  const [collapsed, setCollapsed] = useState<CollapsedState>({});
+  const [collapsed, setCollapsed] = useState<CollapsedState>(() => new Map());
   // Bumped by a finished pull. The board re-reads itself; the report is mounted
   // elsewhere and needs telling that its numbers just aged.
   const [pullToken, setPullToken] = useState(0);
@@ -52,16 +55,24 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
     }
   }, []);
 
-  const { board, loading, pulling, error, reload, pull } = useBoard(reportPull);
+  const { board, loading, pulling, error, reload, refreshBoard, pull } = useBoard(reportPull);
+
+  const enabledColumns = useMemo(
+    () => board?.extraColumns.map((column) => column.status) ?? [],
+    [board]
+  );
+  const columnSettings = useColumnSettings({ enabled: enabledColumns, refreshBoard });
 
   const filtered = useMemo(() => (board ? filterBoard(board, query) : null), [board, query]);
 
   const toggleCategory = useCallback((columnStatus: string, category: string, open: boolean) => {
     setCollapsed((current) => {
-      const next = new Set(current[columnStatus] ?? []);
+      const nextCollapsed = new Map(current);
+      const next = new Set(current.get(columnStatus) ?? []);
       if (open) next.delete(category);
       else next.add(category);
-      return { ...current, [columnStatus]: next };
+      nextCollapsed.set(columnStatus, next);
+      return nextCollapsed;
     });
   }, []);
 
@@ -95,6 +106,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
       : null;
 
   const searching = query.trim().length > 0;
+  const hasExtraColumns = Boolean(filtered?.extraColumns.length);
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -103,6 +115,15 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         onViewChange={setView}
         query={query}
         onQueryChange={setQuery}
+        columnSettings={
+          <ColumnSettings
+            board={board}
+            selected={columnSettings.selected}
+            busy={columnSettings.busy}
+            announcement={columnSettings.announcement}
+            onToggle={columnSettings.toggle}
+          />
+        }
         onPull={handlePull}
         pulling={pulling}
         pullLabel={pulling ? 'Pulling…' : undefined}
@@ -135,17 +156,26 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
                     Nothing matches “{query.trim()}”.
                   </p>
                 )}
-                <div className="flex h-full min-h-0 gap-4">
-                  {filtered.columns.map((column) => (
+                <div
+                  className={cn(
+                    'flex h-full min-h-0 gap-4',
+                    hasExtraColumns && 'overflow-x-auto'
+                  )}
+                  tabIndex={hasExtraColumns ? 0 : undefined}
+                  role={hasExtraColumns ? 'group' : undefined}
+                  aria-label={hasExtraColumns ? 'Board columns, horizontally scrollable' : undefined}
+                >
+                  {[...filtered.columns, ...filtered.extraColumns].map((column) => (
                     <BoardColumn
                       key={column.status}
                       column={column}
-                      collapsed={collapsed[column.status] ?? EMPTY_COLLAPSED}
+                      collapsed={collapsed.get(column.status) ?? EMPTY_COLLAPSED}
                       onToggleCategory={(category, open) =>
                         toggleCategory(column.status, category, open)
                       }
                       onOpenTicket={detail.open}
                       filtered={searching}
+                      useMinimumWidth={hasExtraColumns}
                     />
                   ))}
                 </div>
@@ -156,9 +186,10 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
       </main>
 
       {view === 'board' && board && board.otherStatuses.length > 0 && (
-        <footer className="shrink-0 border-t border-stone-200 bg-white px-5 py-2 text-[11px] text-muted-foreground">
+        <footer className="shrink-0 border-t border-stone-200 bg-white px-5 py-2 text-[11px] leading-relaxed break-words text-muted-foreground">
           Not on the board:{' '}
           {board.otherStatuses.map((entry) => `${entry.status} (${entry.count})`).join(' · ')}
+          {' — turn these on in Columns.'}
         </footer>
       )}
 

@@ -1,4 +1,5 @@
 import { AlertTriangle, LogOut, RefreshCw, Search } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -10,6 +11,7 @@ type TopBarProps = {
   onViewChange: (view: BoardView) => void;
   query: string;
   onQueryChange: (query: string) => void;
+  columnSettings: ReactNode;
   onPull: () => void;
   pulling: boolean;
   /** Replaces the Pull button's label while a pull is being followed. */
@@ -32,6 +34,7 @@ export function TopBar({
   onViewChange,
   query,
   onQueryChange,
+  columnSettings,
   onPull,
   pulling,
   pullLabel,
@@ -90,6 +93,8 @@ export function TopBar({
       ) : (
         <div className="mx-auto" />
       )}
+
+      {view === 'board' && columnSettings}
 
       {warning && (
         <div

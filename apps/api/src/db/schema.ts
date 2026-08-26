@@ -120,3 +120,10 @@ export const sessions = sqliteTable(
 );
 
 export type SessionRow = typeof sessions.$inferSelect;
+
+/** One shared set of optional board columns for the single shared login. */
+export const boardColumnSettings = sqliteTable('board_column_settings', {
+  id: integer('id').primaryKey(),
+  statuses: text('statuses').notNull(),
+  updatedAt: text('updatedAt').notNull(),
+});
