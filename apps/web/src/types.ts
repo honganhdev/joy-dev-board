@@ -107,6 +107,8 @@ export type WeekSummary = {
   outstandingCaption: string;
   created: number;
   done: number;
+  medianDaysToDone: number | null;
+  doneSample: number;
   /** Includes `closedWithoutDoneAt`. */
   outstanding: number;
   /** `outstanding` with the ghosts taken out; stacks with `closedWithoutDoneAt`. */
@@ -154,6 +156,10 @@ export type WeeklyReport = {
   range: RangeMeta;
   /** The backlog panel's heading, worded for whether the last column is a finished week. */
   backlogTitle: string;
+  weeklySpeed: {
+    caption: string;
+    emptyWeeksNote: string | null;
+  };
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;
   openRightNow: number;

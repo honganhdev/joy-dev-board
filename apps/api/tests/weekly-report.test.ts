@@ -385,6 +385,78 @@ describe('time to first done', () => {
   });
 });
 
+describe('resolution speed per week', () => {
+  test('keeps empty weeks as empty samples and words the empty range', () => {
+    const result = report([]);
+
+    expect(result.weeks).toHaveLength(12);
+    for (const week of result.weeks) {
+      expect(week.medianDaysToDone).toBeNull();
+      expect(week.doneSample).toBe(0);
+    }
+    expect(result.weeklySpeed.caption.length).toBeGreaterThan(0);
+    expect(result.weeklySpeed.emptyWeeksNote).toContain('12 of the 12 weeks');
+  });
+
+  test('puts a single finish in its done week and nowhere else', () => {
+    const result = report([
+      ticket({ ticketId: 'history-anchor', createdAt: '2026-05-01T09:00:00+07:00', doneAt: null }),
+      ticket({
+        ticketId: 'finished',
+        createdAt: '2026-08-17T09:00:00+07:00',
+        doneAt: '2026-08-19T09:00:00+07:00',
+      }),
+    ]);
+
+    const finished = weekByKey(result, '2026-W34');
+    expect(finished.medianDaysToDone).toBe(2);
+    expect(finished.doneSample).toBe(1);
+    expect(result.weeks.filter((week) => week.key !== '2026-W34').every(
+      (week) => week.medianDaysToDone === null && week.doneSample === 0
+    )).toBe(true);
+    expect(result.weeklySpeed.emptyWeeksNote).toContain('11 of the 12 weeks');
+  });
+
+  test('cohorts speed by done week, never created week', () => {
+    const result = report([
+      ticket({ ticketId: 'history-anchor', createdAt: '2026-05-01T09:00:00+07:00', doneAt: null }),
+      ticket({
+        ticketId: 'finished',
+        createdAt: '2026-07-20T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]);
+
+    expect(weekByKey(result, '2026-W30').doneSample).toBe(0);
+    expect(weekByKey(result, '2026-W30').medianDaysToDone).toBeNull();
+    expect(weekByKey(result, '2026-W34').doneSample).toBe(1);
+    expect(weekByKey(result, '2026-W34').medianDaysToDone).toBe(29);
+  });
+
+  test('averages the middle two ages for an even sample', () => {
+    const doneAt = Date.parse('2026-08-19T09:00:00+07:00');
+    const result = report([
+      ticket({ ticketId: 'one', createdAt: new Date(doneAt - 86400000).toISOString(), doneAt: new Date(doneAt).toISOString() }),
+      ticket({ ticketId: 'four', createdAt: new Date(doneAt - 4 * 86400000).toISOString(), doneAt: new Date(doneAt).toISOString() }),
+    ]);
+
+    expect(weekByKey(result, '2026-W34').medianDaysToDone).toBe(2.5);
+    expect(weekByKey(result, '2026-W34').doneSample).toBe(2);
+  });
+
+  test('leaves tickets with no done date out of every weekly speed sample', () => {
+    const result = report([ticket({ createdAt: '2026-08-18T09:00:00+07:00', doneAt: null })]);
+    expect(result.weeks.every((week) => week.doneSample === 0)).toBe(true);
+  });
+
+  test('clamps a done date before creation to zero', () => {
+    const result = report([
+      ticket({ createdAt: '2026-08-19T09:00:00+07:00', doneAt: '2026-08-18T09:00:00+07:00' }),
+    ]);
+    expect(weekByKey(result, '2026-W34').medianDaysToDone).toBe(0);
+  });
+});
+
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
 /**

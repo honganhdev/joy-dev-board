@@ -91,6 +91,26 @@ const TIME_TO_FIRST_DONE_CAPTION =
   "Measured from a ticket's created date to the first time HelpDesk marked it done, which " +
   'includes Dev Done. This is not time to customer delivery.';
 
+function weeklySpeedCaption(weeks: WeekSummary[]): string {
+  const medians = weeks.flatMap((week) =>
+    week.medianDaysToDone === null ? [] : [week.medianDaysToDone]
+  );
+  const scope =
+    'Tickets finished with no done date are in no week\'s median. Done dates include Dev Done.';
+  if (medians.length === 0) return `${scope} No week shown has a measurable median.`;
+
+  const minimum = Math.min(...medians);
+  const maximum = Math.max(...medians);
+  return `${scope} Measurable weekly medians range from ${minimum} to ${maximum} days.`;
+}
+
+function emptyWeeksNote(weeks: WeekSummary[]): string | null {
+  const empty = weeks.filter((week) => week.doneSample === 0).length;
+  if (empty === 0) return null;
+  if (empty === 1) return `1 of the ${weeks.length} weeks shown finished no measurable ticket, so it has no median.`;
+  return `${empty} of the ${weeks.length} weeks shown finished no measurable ticket, so they have no median.`;
+}
+
 /** Upper bound in whole days, and the label the histogram prints. */
 const BUCKETS = [
   { label: '≤ 1 day', maxDays: 1 },
@@ -484,6 +504,7 @@ export function aggregateWeeklyReport(
     const statuses = new Map<string, number>();
     let created = 0;
     let done = 0;
+    const daysToDone: number[] = [];
     let outstanding = 0;
     let closedWithoutDoneAt = 0;
 
@@ -494,6 +515,7 @@ export function aggregateWeeklyReport(
 
       if (doneMs !== null && doneMs >= startMs && doneMs < endMs) {
         done += 1;
+        if (createdMs !== null) daysToDone.push(wholeDaysBetween(createdMs, doneMs));
         statuses.set(ticket.status, (statuses.get(ticket.status) ?? 0) + 1);
         bump(categories, ticket.category, 'done');
         bump(priorities, ticket.priority, 'done');
@@ -519,6 +541,8 @@ export function aggregateWeeklyReport(
       outstandingCaption: inProgress ? IN_PROGRESS_OUTSTANDING_CAPTION : OUTSTANDING_CAPTION,
       created,
       done,
+      medianDaysToDone: median(daysToDone.sort((a, b) => a - b)),
+      doneSample: daysToDone.length,
       outstanding,
       outstandingWithDoneDate: outstanding - closedWithoutDoneAt,
       closedWithoutDoneAt,
@@ -547,6 +571,10 @@ export function aggregateWeeklyReport(
     backlogTitle: weeks.some((week) => week.key === weekKey(latestWeekStart))
       ? IN_PROGRESS_BACKLOG_TITLE
       : BACKLOG_TITLE,
+    weeklySpeed: {
+      caption: weeklySpeedCaption(weeks),
+      emptyWeeksNote: emptyWeeksNote(weeks),
+    },
     timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.

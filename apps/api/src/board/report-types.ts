@@ -35,6 +35,13 @@ export type WeekSummary = {
   outstandingCaption: string;
   created: number;
   done: number;
+  /**
+   * Whole days from creation to first done, over tickets whose first done date
+   * falls in this week. `null` when the week finished no measurable ticket.
+   */
+  medianDaysToDone: number | null;
+  /** How many tickets the weekly median is measured over. */
+  doneSample: number;
   /** Includes `closedWithoutDoneAt`. */
   outstanding: number;
   /**
@@ -118,6 +125,13 @@ export type WeeklyReport = {
    * heading promising an end-of-week figure over a mid-week column is false.
    */
   backlogTitle: string;
+  /** Range-scoped resolution-speed wording rendered verbatim. */
+  weeklySpeed: {
+    /** What the medians exclude, and the observed band across measurable weeks. */
+    caption: string;
+    /** Names empty weeks, or `null` when every week has a median. */
+    emptyWeeksNote: string | null;
+  };
   /** Range-scoped, not week-scoped. See its own caption. */
   timeToFirstDone: TimeToFirstDone;
   /**

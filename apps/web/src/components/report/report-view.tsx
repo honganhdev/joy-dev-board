@@ -6,6 +6,7 @@ import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
 import { RangePicker } from './range-picker';
 import { WeekColumns } from './week-columns';
+import { WeeklySpeed } from './weekly-speed';
 import { neighbourKeys, resolveFocusedWeek } from './week-focus';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -134,6 +135,12 @@ export function ReportView({ pullToken }: { pullToken: number }) {
         title={report.backlogTitle}
         coverageNote={report.range.coverageNote}
         ghostCaveat={report.ghosts.caveat}
+      />
+
+      <WeeklySpeed
+        weeks={weeks}
+        caption={report.weeklySpeed.caption}
+        emptyWeeksNote={report.weeklySpeed.emptyWeeksNote}
       />
 
       <div className="flex gap-3">
