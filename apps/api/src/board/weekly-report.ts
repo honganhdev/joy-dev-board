@@ -508,6 +508,15 @@ function openBacklog(open: HelpDeskTicket[], nowMs: number): WeeklyReport['openB
   };
 }
 
+function openSectionTitle(total: number, horizon: Horizon, year: number): string {
+  const count = total === 1 ? '1 ticket' : `${total} tickets`;
+  const reach =
+    horizon.startsAtMs === null
+      ? `The mirror covers tickets created since 1 Jan ${year}.`
+      : `The mirror reaches back to ${dayLabel(horizon.startsAtMs)}.`;
+  return `All open tickets right now — ${count}. Not affected by the week or range above. ${reach}`;
+}
+
 /**
  * Builds the whole report.
  *
@@ -562,7 +571,8 @@ export function aggregateWeeklyReport(
 
   // The range is resolved from the counted tickets, not before them: what the
   // mirror can answer for is a property of the mirror.
-  const range = resolveRange(options.weeks, historyHorizon(counted, nowMs, options.year), options.year);
+  const horizon = historyHorizon(counted, nowMs, options.year);
+  const range = resolveRange(options.weeks, horizon, options.year);
 
   const latestWeekStart = weekStartMs(nowMs);
   const weekStarts = Array.from(
@@ -654,6 +664,7 @@ export function aggregateWeeklyReport(
     },
     timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
     openBacklog: openBacklog(open, nowMs),
+    openSectionTitle: openSectionTitle(open.length, horizon, options.year),
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.
     openRightNow: open.length,

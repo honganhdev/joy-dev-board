@@ -177,6 +177,7 @@ export type WeeklyReport = {
       ageLabel: string;
     }>;
   };
+  openSectionTitle: string;
   openRightNow: number;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */

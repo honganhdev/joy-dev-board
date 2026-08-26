@@ -1045,6 +1045,20 @@ describe('the strings the page prints', () => {
     expect(result.backlogTitle).toBe('Backlog at each week end, and so far this week');
   });
 
+  test('names the all-open scope, its count and the mirror reach-back date', () => {
+    const empty = report([]);
+    expect(empty.openSectionTitle).toContain('0 tickets');
+    expect(empty.openSectionTitle).toContain('1 Jan 2026');
+
+    const single = report([
+      ticket({ ticketId: 'one', createdAt: '2026-03-04T09:00:00+07:00' }),
+    ]);
+    expect(single.openSectionTitle).toContain('1 ticket');
+    expect(single.openSectionTitle).not.toContain('1 tickets');
+    expect(single.openSectionTitle).toContain('4 Mar 2026');
+    expect(single.openSectionTitle).toContain('Not affected by the week or range above');
+  });
+
   test('words the exclusion footnote, and does not call an undated open ticket uncounted', () => {
     const result = report([
       ticket({ ticketId: 'gone', deletedAt: '2026-08-01T00:00:00+07:00', ticketStatus: 'closed' }),

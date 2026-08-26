@@ -157,6 +157,8 @@ export type WeeklyReport = {
       ageLabel: string;
     }>;
   };
+  /** Server-worded heading for the absolute all-open section. */
+  openSectionTitle: string;
   /**
    * `ticketStatus === 'open'` right now, across the whole mirror. Not week-scoped
    * and not derivable from any week — see each week's `outstandingCaption`.

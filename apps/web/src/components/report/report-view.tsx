@@ -6,6 +6,7 @@ import { DurationHistogram } from './duration-histogram';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
 import { RangePicker } from './range-picker';
+import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
 import { WeeklySpeed } from './weekly-speed';
 import { neighbourKeys, resolveFocusedWeek } from './week-focus';
@@ -82,15 +83,6 @@ export function ReportView({ pullToken }: { pullToken: number }) {
     markerClass: categoryDotClass(row.category),
   }));
 
-  // Priorities have no colour source and none is invented: every row takes the
-  // neutral marker `PairedBars` falls back to.
-  const priorityRows: PairedRow[] = focused.priorities.map((row) => ({
-    key: row.priority,
-    label: row.label,
-    done: row.done,
-    outstanding: row.outstanding,
-  }));
-
   return (
     <div className="space-y-3 pb-4">
       <section className="rounded-lg border border-stone-200 bg-white p-4">
@@ -148,20 +140,15 @@ export function ReportView({ pullToken }: { pullToken: number }) {
         emptyWeeksNote={report.weeklySpeed.emptyWeeksNote}
       />
 
-      <div className="flex gap-3">
-        <PairedBars
-          title="By category"
-          rows={categoryRows}
-          emptyMessage="No tickets in either cohort."
-        />
-        <PairedBars
-          title="By priority"
-          rows={priorityRows}
-          emptyMessage="No tickets in either cohort."
-        />
-      </div>
-
       <DurationHistogram data={report.timeToFirstDone} />
+
+      <PairedBars
+        title="By category"
+        rows={categoryRows}
+        emptyMessage="No tickets in either cohort."
+      />
+
+      <SectionDivider title={report.openSectionTitle} />
 
       <BacklogAge data={report.openBacklog} />
 
