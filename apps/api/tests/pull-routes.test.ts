@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AuthConfig, Config } from '../src/config';
 import { openDatabase, type Db } from '../src/db/client';
 import { readLastPull } from '../src/db/queries';
-import { pulls as pullRows } from '../src/db/schema';
+import { boardColumnSettings, pulls as pullRows } from '../src/db/schema';
 import { startPull, sweepInterruptedPulls } from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { createPullRunner, type PullRunner, type TicketFetcher } from '../src/pull-service';
@@ -483,5 +483,70 @@ describe('pull routes: rows with no counts recorded', () => {
     expect(body.statusChanges).toBeNull();
     expect(body.ticketCount).toBeNull();
     expect(body.finishedAt).not.toBeNull();
+  });
+});
+
+describe('board columns: a stored row the writer never saw', () => {
+  /** Seeds one open ticket per status and stores `raw` straight into the row. */
+  async function boardWithStoredRow(raw: string) {
+    const { db, pulls, handle } = harness(async () => [
+      { ...ticket('JOY-pending'), tsStatus: 'pending' },
+      { ...ticket('JOY-pending-2'), tsStatus: 'pending' },
+      { ...ticket('JOY-done'), tsStatus: 'done' },
+      { ...ticket('JOY-fixing'), tsStatus: 'dev_fixing' },
+    ]);
+    const cookie = await login(handle);
+    await pulls.run();
+    db.insert(boardColumnSettings)
+      .values({ id: 1, statuses: raw, updatedAt: new Date().toISOString() })
+      .run();
+
+    const response = await handle(get('/api/tickets', { cookie }));
+    const board = (await response.json()) as {
+      openTickets: number;
+      boardTickets: number;
+      columns: Array<{ status: string }>;
+      extraColumns: Array<{ status: string; count: number }>;
+      otherStatuses: Array<{ status: string; count: number }>;
+    };
+    return { status: response.status, board };
+  }
+
+  test('a corrupt value still answers with the five default columns', async () => {
+    const { status, board } = await boardWithStoredRow('not json');
+    expect(status).toBe(200);
+    expect(board.columns).toHaveLength(5);
+    expect(board.extraColumns).toEqual([]);
+  });
+
+  test('a default, a duplicate and a blank entry cannot reach the board', async () => {
+    const { status, board } = await boardWithStoredRow(
+      JSON.stringify(['done', 'pending', 'pending', ''])
+    );
+    expect(status).toBe(200);
+    // One bad entry discards the whole row rather than half-applying it.
+    expect(board.extraColumns).toEqual([]);
+    expect(board.columns).toHaveLength(5);
+  });
+
+  test('a duplicated legal entry keeps one column and the ticket-count invariant', async () => {
+    const { status, board } = await boardWithStoredRow(JSON.stringify(['pending', 'pending']));
+    const keys = [...board.columns, ...board.extraColumns].map((column) => column.status);
+
+    expect(status).toBe(200);
+    expect(board.extraColumns).toHaveLength(1);
+    expect(board.extraColumns[0]).toMatchObject({ status: 'pending', count: 2 });
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(
+      board.boardTickets + board.otherStatuses.reduce((sum, entry) => sum + entry.count, 0)
+    ).toBe(board.openTickets);
+  });
+
+  test('a hostile property name never becomes a column', async () => {
+    for (const hostile of ['__proto__', 'constructor', 'prototype']) {
+      const { status, board } = await boardWithStoredRow(JSON.stringify([hostile]));
+      expect(status).toBe(200);
+      expect(board.extraColumns).toEqual([]);
+    }
   });
 });

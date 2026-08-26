@@ -68,4 +68,37 @@ describe('board column preferences', () => {
     sqlite.exec('DROP TABLE board_column_settings');
     expect(readEnabledColumns(db)).toEqual([]);
   });
+  test('a stored row that a writer would have rejected is still discarded on read', () => {
+    // A row can arrive by hand edit or a restored backup and never pass through
+    // the writer, so the read path has to hold the same line on its own.
+    for (const stored of [
+      JSON.stringify({ statuses: ['pending'] }),
+      JSON.stringify(['pending', 42]),
+      JSON.stringify(['pending', null]),
+      JSON.stringify([['pending']]),
+      JSON.stringify(Array.from({ length: 21 }, (_, index) => `status_${index}`)),
+      JSON.stringify(['x'.repeat(65)]),
+      JSON.stringify(['\u0110i\u1ec3m']),
+      '[',
+    ]) {
+      const { db } = openDatabase(':memory:');
+      db.insert(boardColumnSettings)
+        .values({ id: 1, statuses: stored, updatedAt: new Date().toISOString() })
+        .run();
+      expect(readEnabledColumns(db)).toEqual([]);
+    }
+  });
+
+  test('a wrong column type and a wrong table shape both degrade to no extras', () => {
+    const wrongType = openDatabase(':memory:');
+    wrongType.sqlite.exec(
+      "INSERT INTO board_column_settings (id, statuses, updatedAt) VALUES (1, 12345, 'x')"
+    );
+    expect(readEnabledColumns(wrongType.db)).toEqual([]);
+
+    const wrongShape = openDatabase(':memory:');
+    wrongShape.sqlite.exec('DROP TABLE board_column_settings');
+    wrongShape.sqlite.exec('CREATE TABLE board_column_settings (id integer PRIMARY KEY NOT NULL)');
+    expect(readEnabledColumns(wrongShape.db)).toEqual([]);
+  });
 });
