@@ -39,9 +39,11 @@ export function ColumnSettings({
             Columns · {selected.length}
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-72 p-3">
+        <PopoverContent align="end" className="w-72 p-3" aria-labelledby="extra-columns-heading">
           <div className="border-b border-stone-100 px-1 pb-2.5">
-            <h2 className="text-[13px] font-semibold">Extra columns</h2>
+            <h2 id="extra-columns-heading" className="text-[13px] font-semibold">
+              Extra columns
+            </h2>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               Shared by everyone on this login.
             </p>
@@ -62,6 +64,9 @@ export function ColumnSettings({
                     <Checkbox
                       id={id}
                       checked={selected.includes(option.status)}
+                      // One save at a time: overlapping writes race each other in
+                      // the database and every click costs a full board re-read.
+                      disabled={busy}
                       onCheckedChange={(checked) => onToggle(option.status, checked === true)}
                     />
                     <Label htmlFor={id} className="min-w-0 flex-1 cursor-pointer text-[12px]">
@@ -75,11 +80,14 @@ export function ColumnSettings({
               })
             )}
           </div>
+          {/* Inside the content on purpose: `modal` marks everything outside it
+              `aria-hidden`, and toggling only ever happens with it open, so a
+              region out here would announce into a hidden subtree. */}
+          <span className="sr-only" role="status" aria-live="polite">
+            {announcement}
+          </span>
         </PopoverContent>
       </Popover>
-      <span className="sr-only" role="status" aria-live="polite">
-        {announcement}
-      </span>
     </>
   );
 }

@@ -2,22 +2,34 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/** Five unlabeled shells while the server resolves the shared column setting. */
+const COLUMN_LABELS = ['DEV FIXING', 'DOING', 'WAITING CUSTOMER', 'DEV DONE', 'DONE'];
+
+/**
+ * The five default columns while the server resolves the shared column setting.
+ *
+ * `role="status"` rather than a bare `<div>`: ARIA prohibits `aria-label` on a
+ * generic element, so browsers drop the name and a screen-reader user gets
+ * nothing on a cold load. The five labels are always these five in this order —
+ * extras only ever come after them — so naming them is honest.
+ */
 export function BoardSkeleton() {
   return (
     <div
+      role="status"
       className="flex h-full min-h-0 gap-4"
       aria-busy="true"
       aria-label="Loading the board"
     >
-      {Array.from({ length: 5 }).map((_, columnIndex) => (
+      {COLUMN_LABELS.map((label, columnIndex) => (
         <section
-          key={columnIndex}
+          key={label}
           className="flex min-h-0 flex-1 flex-col rounded-lg border border-stone-200 bg-white"
           aria-hidden="true"
         >
           <header className="flex items-center gap-2 px-4 py-3">
-            <Skeleton className="h-4 flex-1" />
+            <span className="flex-1 text-[11px] font-bold tracking-wider text-stone-400 uppercase">
+              {label}
+            </span>
             <Skeleton className="h-4 w-6 rounded-full" />
           </header>
           <div className="space-y-3 px-3 pb-3">

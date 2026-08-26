@@ -55,13 +55,17 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
     }
   }, []);
 
-  const { board, loading, pulling, error, reload, refreshBoard, pull } = useBoard(reportPull);
+  const { board, loading, pulling, error, reload, applyBoard, pull } = useBoard(reportPull);
 
   const enabledColumns = useMemo(
     () => board?.extraColumns.map((column) => column.status) ?? [],
     [board]
   );
-  const columnSettings = useColumnSettings({ enabled: enabledColumns, refreshBoard });
+  const columnSettings = useColumnSettings({
+    enabled: enabledColumns,
+    version: board?.columnVersion ?? 0,
+    applyBoard,
+  });
 
   const filtered = useMemo(() => (board ? filterBoard(board, query) : null), [board, query]);
 

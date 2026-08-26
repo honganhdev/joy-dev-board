@@ -49,6 +49,7 @@ function board(tickets: BoardTicket[], extraTickets: BoardTicket[] = []): Board 
           ]
         : [],
     otherStatuses: [],
+    columnVersion: 0,
     lastPull: null,
   };
 }

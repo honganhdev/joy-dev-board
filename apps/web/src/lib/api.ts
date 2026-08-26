@@ -7,7 +7,9 @@ import type { Board, PullSummary, StatusHistoryEntry, TicketDetail, WeeklyReport
 export class ApiRequestError extends Error {
   constructor(
     message: string,
-    readonly status?: number
+    readonly status?: number,
+    /** The parsed error body, for the few callers that act on its contents. */
+    readonly body?: unknown
   ) {
     super(message);
     this.name = 'ApiRequestError';
@@ -49,7 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body && typeof body === 'object' && 'message' in body
         ? String((body as { message: unknown }).message)
         : `Request failed with ${response.status}`;
-    throw new ApiRequestError(message, response.status);
+    throw new ApiRequestError(message, response.status, body);
   }
 
   return body as T;
@@ -59,16 +61,52 @@ export function fetchBoard(): Promise<Board> {
   return request<Board>('/api/tickets');
 }
 
-export function fetchBoardColumnPreferences(): Promise<{ statuses: string[] }> {
-  return request<{ statuses: string[] }>('/api/preferences/board-columns');
+/**
+ * What a column save did. `ok: false` is the server refusing the write because
+ * someone else replaced the row first — not a failure to reach it — and the set
+ * it carries is what is stored now.
+ */
+export type BoardColumnUpdate = {
+  ok: boolean;
+  statuses: string[];
+  version: number;
+};
+
+function isStoredPreference(body: unknown): body is { statuses: string[]; version: number } {
+  if (!body || typeof body !== 'object') return false;
+  const candidate = body as { statuses?: unknown; version?: unknown };
+  return (
+    Array.isArray(candidate.statuses) &&
+    candidate.statuses.every((status) => typeof status === 'string') &&
+    typeof candidate.version === 'number'
+  );
 }
 
-export function updateBoardColumns(statuses: string[]): Promise<{ statuses: string[] }> {
-  return request<{ statuses: string[] }>('/api/preferences/board-columns', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statuses }),
-  });
+/**
+ * Replaces the shared column set, quoting the version this tab last saw. The
+ * server writes only while that version is still current, so the older of two
+ * saves cannot land last.
+ */
+export async function updateBoardColumns(
+  statuses: string[],
+  version: number
+): Promise<BoardColumnUpdate> {
+  try {
+    const stored = await request<{ statuses: string[]; version: number }>(
+      '/api/preferences/board-columns',
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statuses, version }),
+      }
+    );
+    return { ok: true, ...stored };
+  } catch (cause) {
+    if (cause instanceof ApiRequestError && cause.status === 409 && isStoredPreference(cause.body)) {
+      return { ok: false, statuses: cause.body.statuses, version: cause.body.version };
+    }
+    throw cause;
+  }
 }
 
 /** The whole report in one response — the server picks no week, the client picks no range. */

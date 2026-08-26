@@ -71,6 +71,8 @@ export type Board = {
   columns: BoardColumn[];
   extraColumns: BoardColumn[];
   otherStatuses: Array<{ status: string; count: number }>;
+  /** Version of the stored column preference this board was assembled from. */
+  columnVersion: number;
   /** May be a later failed attempt — that is how stale data is spotted. */
   lastPull: PullSummary | null;
 };

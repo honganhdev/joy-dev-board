@@ -30,6 +30,17 @@ export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) 
   const reportSettled = useRef(onPullSettled);
   reportSettled.current = onPullSettled;
 
+  /**
+   * Writes a board the caller fetched itself.
+   *
+   * `refreshBoard` fetches and writes in one step, which is right for the pull
+   * loop and wrong for anything that has to decide whether its own answer is
+   * still the newest one: by the time it resolves, the write has already
+   * happened. A caller that needs the guard to come first reads the board and
+   * hands it here.
+   */
+  const applyBoard = useCallback((next: Board) => setBoard(next), []);
+
   /** Best effort: a re-read that fails leaves the board already on screen. */
   const refreshBoard = useCallback(async (): Promise<Board | null> => {
     try {
@@ -103,5 +114,5 @@ export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) 
     }
   }, []);
 
-  return { board, loading, pulling, error, reload: load, refreshBoard, pull };
+  return { board, loading, pulling, error, reload: load, refreshBoard, applyBoard, pull };
 }

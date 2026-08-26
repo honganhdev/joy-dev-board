@@ -8,7 +8,8 @@ import type { AuthConfig } from './config';
 import type { Db } from './db/client';
 import {
   InvalidBoardColumnsError,
-  readEnabledColumns,
+  BoardColumnVersionConflictError,
+  readBoardColumns,
   writeEnabledColumns,
 } from './db/preferences';
 import {
@@ -80,8 +81,13 @@ function boardFromDb(db: Db): BoardResponse {
   // only reachable if the pulls table was truncated by hand.
   const pulledAt = lastSuccessful?.finishedAt ?? lastPull?.startedAt ?? new Date(0).toISOString();
 
+  const preference = readBoardColumns(db);
+
   return {
-    ...assembleBoard(readTickets(db), pulledAt, { enabled: readEnabledColumns(db) }),
+    ...assembleBoard(readTickets(db), pulledAt, { enabled: preference.statuses }),
+    // The board is where the client learns which version of the column
+    // preference it is looking at, so a save can quote it back.
+    columnVersion: preference.version,
     lastPull: toPullSummary(lastPull),
   };
 }
@@ -165,15 +171,22 @@ export function createRouter({ db, pulls, tags, auth, year, webDistPath, throttl
         return json(toPullSummary(readLastPull(db)));
       }
 
-      if (pathname === '/api/preferences/board-columns' && request.method === 'GET') {
-        return json({ statuses: readEnabledColumns(db) });
-      }
-
       if (pathname === '/api/preferences/board-columns' && request.method === 'PUT') {
-        const body = (await request.json().catch(() => null)) as { statuses?: unknown } | null;
+        const body = (await request.json().catch(() => null)) as {
+          statuses?: unknown;
+          version?: unknown;
+        } | null;
         try {
-          return json({ statuses: writeEnabledColumns(db, body?.statuses) });
+          return json(writeEnabledColumns(db, body?.statuses, body?.version));
         } catch (cause) {
+          if (cause instanceof BoardColumnVersionConflictError) {
+            // The refusal carries what is stored now, so the caller can show the
+            // truth rather than the set it just failed to write.
+            return json(
+              { error: 'version_conflict', message: cause.message, ...cause.current },
+              409
+            );
+          }
           if (cause instanceof InvalidBoardColumnsError) {
             return json({ error: 'invalid_request', message: cause.message }, 400);
           }

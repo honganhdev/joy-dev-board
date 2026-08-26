@@ -99,12 +99,12 @@ describe('assembleBoard', () => {
       enabled: ['brand_new_status_from_helpdesk', '(no status)'],
     });
     expect(enabled.extraColumns.map(({ status, label, count }) => ({ status, label, count }))).toEqual([
-      { status: '(no status)', label: 'No status', count: 1 },
       {
         status: 'brand_new_status_from_helpdesk',
         label: 'Brand new status from helpdesk',
         count: 1,
       },
+      { status: '(no status)', label: 'No status', count: 1 },
     ]);
     expect(enabled.otherStatuses).not.toContainEqual({
       status: 'brand_new_status_from_helpdesk',
@@ -121,7 +121,7 @@ describe('assembleBoard', () => {
     ]);
   });
 
-  test('renders every enabled extra after the defaults in alphabetical status order', () => {
+  test('renders every enabled extra after the defaults in alphabetical label order', () => {
     const source = [
       ticket({ ticketId: 'JOY-default', tsStatus: 'doing' }),
       ticket({ ticketId: 'JOY-zeta', tsStatus: 'zeta_status' }),

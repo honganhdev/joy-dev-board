@@ -121,9 +121,16 @@ export const sessions = sqliteTable(
 
 export type SessionRow = typeof sessions.$inferSelect;
 
-/** One shared set of optional board columns for the single shared login. */
+/**
+ * One shared set of optional board columns for the single shared login.
+ *
+ * `version` is bumped by every accepted write and quoted back by the writer it
+ * came from, so two people saving at once cannot have the older save land last:
+ * the second write is refused rather than silently replacing the first.
+ */
 export const boardColumnSettings = sqliteTable('board_column_settings', {
   id: integer('id').primaryKey(),
   statuses: text('statuses').notNull(),
   updatedAt: text('updatedAt').notNull(),
+  version: integer('version').notNull().default(0),
 });

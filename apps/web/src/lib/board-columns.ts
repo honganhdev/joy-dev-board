@@ -34,5 +34,9 @@ export function boardColumnOptions(board: Board): BoardColumnOption[] {
     });
   }
 
-  return [...options.values()].sort((a, b) => a.status.localeCompare(b.status));
+  // Sorted the way the list reads, not the way the statuses spell: `(no status)`
+  // shows as "No status" and belongs after "Customization". Status breaks ties.
+  return [...options.values()].sort(
+    (a, b) => a.label.localeCompare(b.label) || a.status.localeCompare(b.status)
+  );
 }

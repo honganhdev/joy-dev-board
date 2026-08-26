@@ -102,7 +102,6 @@ export function assembleBoard(
   });
 
   const extraColumns: ExtraBoardColumn[] = [...enabled]
-    .sort((a, b) => a.localeCompare(b))
     .map((status) => {
       const tickets = extraPerStatus.get(status) ?? [];
       return {
@@ -111,7 +110,11 @@ export function assembleBoard(
         count: tickets.length,
         groups: groupByCategory(tickets),
       };
-    });
+    })
+    // By label, not by status: `(no status)` sorts before `customization` but
+    // reads as "No status" and belongs after "Customization" on screen. The
+    // status is the tie-break so the order never depends on input order.
+    .sort((a, b) => a.label.localeCompare(b.label) || a.status.localeCompare(b.status));
 
   return {
     pulledAt,

@@ -222,48 +222,93 @@ describe('pull routes', () => {
 });
 
 describe('board column preference routes', () => {
-  test('both preference verbs require a session', async () => {
+  test('writing a preference requires a session', async () => {
     const { handle } = harness(async () => []);
-    expect((await handle(get('/api/preferences/board-columns'))).status).toBe(401);
-    expect((await handle(put('/api/preferences/board-columns', { statuses: [] }))).status).toBe(
-      401
-    );
+    expect(
+      (await handle(put('/api/preferences/board-columns', { statuses: [], version: 0 }))).status
+    ).toBe(401);
   });
 
-  test('rejects a non-array and more than 20 entries', async () => {
+  test('rejects a non-array, more than 20 entries, and a missing version', async () => {
     const { handle } = harness(async () => []);
     const cookie = await login(handle);
 
     expect(
-      (await handle(put('/api/preferences/board-columns', { statuses: 'pending' }, { cookie })))
-        .status
+      (
+        await handle(
+          put('/api/preferences/board-columns', { statuses: 'pending', version: 0 }, { cookie })
+        )
+      ).status
     ).toBe(400);
     expect(
       (
         await handle(
           put(
             '/api/preferences/board-columns',
-            { statuses: Array.from({ length: 21 }, (_, index) => `status_${index}`) },
+            {
+              statuses: Array.from({ length: 21 }, (_, index) => `status_${index}`),
+              version: 0,
+            },
             { cookie }
           )
         )
       ).status
     ).toBe(400);
+    expect(
+      (await handle(put('/api/preferences/board-columns', { statuses: ['pending'] }, { cookie })))
+        .status
+    ).toBe(400);
   });
 
-  test('PUT replaces the stored set and GET reads it back', async () => {
+  test('PUT replaces the stored set and the board reports the new version', async () => {
     const { handle } = harness(async () => []);
     const cookie = await login(handle);
 
     const written = await handle(
-      put('/api/preferences/board-columns', { statuses: ['pending'] }, { cookie })
+      put('/api/preferences/board-columns', { statuses: ['pending'], version: 0 }, { cookie })
     );
     expect(written.status).toBe(200);
-    expect(await written.json()).toEqual({ statuses: ['pending'] });
+    expect(await written.json()).toEqual({ statuses: ['pending'], version: 1 });
 
-    const read = await handle(get('/api/preferences/board-columns', { cookie }));
-    expect(read.status).toBe(200);
-    expect(await read.json()).toEqual({ statuses: ['pending'] });
+    const board = (await (await handle(get('/api/tickets', { cookie }))).json()) as {
+      columnVersion: number;
+      extraColumns: Array<{ status: string }>;
+    };
+    expect(board.columnVersion).toBe(1);
+    expect(board.extraColumns.map((column) => column.status)).toEqual(['pending']);
+  });
+
+  test('the older of two writes is refused and never reaches the row', async () => {
+    // Both writers read version 0. Whichever commits second used to win, so the
+    // board kept the set the user had already replaced.
+    const { handle } = harness(async () => []);
+    const cookie = await login(handle);
+
+    const newer = await handle(
+      put(
+        '/api/preferences/board-columns',
+        { statuses: ['done_for_you', 'pending'], version: 0 },
+        { cookie }
+      )
+    );
+    expect(newer.status).toBe(200);
+
+    const older = await handle(
+      put('/api/preferences/board-columns', { statuses: [], version: 0 }, { cookie })
+    );
+    expect(older.status).toBe(409);
+    expect(await older.json()).toMatchObject({
+      error: 'version_conflict',
+      statuses: ['done_for_you', 'pending'],
+      version: 1,
+    });
+
+    const board = (await (await handle(get('/api/tickets', { cookie }))).json()) as {
+      columnVersion: number;
+      extraColumns: Array<{ status: string }>;
+    };
+    expect(board.extraColumns.map((column) => column.status)).toEqual(['done_for_you', 'pending']);
+    expect(board.columnVersion).toBe(1);
   });
 
   test('the stored set drives GET /api/tickets without a request parameter', async () => {
@@ -274,7 +319,11 @@ describe('board column preference routes', () => {
     await pulls.run();
 
     await handle(
-      put('/api/preferences/board-columns', { statuses: ['done_for_you'] }, { cookie })
+      put(
+        '/api/preferences/board-columns',
+        { statuses: ['done_for_you'], version: 0 },
+        { cookie }
+      )
     );
     const response = await handle(get('/api/tickets', { cookie }));
     const board = (await response.json()) as {

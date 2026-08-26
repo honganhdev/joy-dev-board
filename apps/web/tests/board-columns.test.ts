@@ -17,15 +17,17 @@ function board(): Board {
       { status: 'pending', count: 4 },
       { status: '(no status)', count: 2 },
     ],
+    columnVersion: 0,
     lastPull: null,
   };
 }
 
 describe('boardColumnOptions', () => {
   test('unions open hidden statuses with every currently enabled status', () => {
+    // Ordered by the label people read, so `(no status)` lands under N.
     expect(boardColumnOptions(board())).toEqual([
-      { status: '(no status)', label: 'No status', count: 2, enabled: false },
       { status: 'done_for_you', label: 'Done for you', count: 3, enabled: true },
+      { status: '(no status)', label: 'No status', count: 2, enabled: false },
       { status: 'pending', label: 'Pending', count: 4, enabled: false },
       { status: 'retired_status', label: 'Retired status', count: 0, enabled: true },
     ]);

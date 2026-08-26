@@ -1,0 +1,1 @@
+ALTER TABLE `board_column_settings` ADD `version` integer DEFAULT 0 NOT NULL;

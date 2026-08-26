@@ -11,7 +11,8 @@ type TopBarProps = {
   onViewChange: (view: BoardView) => void;
   query: string;
   onQueryChange: (query: string) => void;
-  columnSettings: ReactNode;
+  /** Optional so a surface that has no column control can leave it out. */
+  columnSettings?: ReactNode;
   onPull: () => void;
   pulling: boolean;
   /** Replaces the Pull button's label while a pull is being followed. */

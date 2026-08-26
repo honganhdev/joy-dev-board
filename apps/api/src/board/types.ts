@@ -84,4 +84,8 @@ export type PullSummary = {
  * `pulledAt` is the last *successful* pull; `lastPull` may be a later failed
  * attempt, which is how a stale board is told apart from a fresh one.
  */
-export type BoardResponse = Board & { lastPull: PullSummary | null };
+export type BoardResponse = Board & {
+  /** Version of the stored column preference this board was assembled from. */
+  columnVersion: number;
+  lastPull: PullSummary | null;
+};
