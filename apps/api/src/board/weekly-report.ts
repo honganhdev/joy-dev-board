@@ -158,6 +158,16 @@ function merchantName(ticket: HelpDeskTicket): string {
   );
 }
 
+/**
+ * Grouping key for a merchant row: case-folded, with surrounding and repeated
+ * whitespace collapsed. `Hegen` and `HEGEN ` are one merchant, so they cannot
+ * split into two rows and understate the concentration this panel measures.
+ * The row keeps a real spelling from the data as its label — see `openByMerchant`.
+ */
+function merchantKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 const COLUMN_LABELS = new Map<string, string>(
   BOARD_COLUMNS.map((column) => [column.status as string, column.label as string])
 );
@@ -605,22 +615,27 @@ function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
 }
 
 function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] {
-  const counts = new Map<string, number>();
+  const groups = new Map<string, { label: string; count: number }>();
   for (const ticket of open) {
-    const key = merchantName(ticket);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const name = merchantName(ticket);
+    const group = groups.get(merchantKey(name));
+    // The label is the first spelling seen, so the row shows a spelling that
+    // exists in the data rather than a folded key nobody writes.
+    if (group) group.count += 1;
+    else groups.set(merchantKey(name), { label: name, count: 1 });
   }
 
-  const noMerchant = counts.get(NO_MERCHANT) ?? 0;
-  const named = [...counts.entries()]
-    .filter(([key]) => key !== NO_MERCHANT)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const noMerchantKey = merchantKey(NO_MERCHANT);
+  const noMerchant = groups.get(noMerchantKey)?.count ?? 0;
+  const named = [...groups.entries()]
+    .filter(([key]) => key !== noMerchantKey)
+    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
   const busiest = named.slice(0, 5);
   const tail = named.slice(5);
-  const busiestCount = busiest.reduce((total, [, count]) => total + count, 0);
-  const tailCount = tail.reduce((total, [, count]) => total + count, 0);
+  const busiestCount = busiest.reduce((total, [, group]) => total + group.count, 0);
+  const tailCount = tail.reduce((total, [, group]) => total + group.count, 0);
   const percentage = open.length === 0 ? 0 : Math.round((busiestCount / open.length) * 100);
-  const rows = busiest.map(([key, count]) => ({ key, label: key, count }));
+  const rows = busiest.map(([key, group]) => ({ key, label: group.label, count: group.count }));
   if (noMerchant > 0) rows.push({ key: NO_MERCHANT, label: NO_MERCHANT, count: noMerchant });
 
   let concentrationNote: string;

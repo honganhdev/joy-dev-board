@@ -678,6 +678,24 @@ describe('open tickets by plan', () => {
 });
 
 describe('open tickets by merchant', () => {
+  test('groups one merchant spelled two ways into a single row', () => {
+    // Two rows for one merchant push a real merchant out of the top five and
+    // lower the concentration figure this panel exists to report.
+    const result = report([
+      ticket({ ticketId: 'a', store: [{ shopName: 'Hegen' }] }),
+      ticket({ ticketId: 'b', store: [{ shopName: 'HEGEN' }] }),
+      ticket({ ticketId: 'c', store: [{ shopName: ' hegen  store ' }] }),
+      ticket({ ticketId: 'd', store: [{ shopName: 'Hegen Store' }] }),
+    ]).openByMerchant;
+
+    expect(result.rows).toEqual([
+      { key: 'hegen', label: 'Hegen', count: 2 },
+      { key: 'hegen store', label: 'hegen  store', count: 2 },
+    ]);
+    expect(result.concentrationNote).toContain('4 of 4 open tickets right now (100%)');
+  });
+
+
   test('words the empty case and keeps no tail', () => {
     const result = report([]).openByMerchant;
     expect(result.rows).toEqual([]);
@@ -688,7 +706,7 @@ describe('open tickets by merchant', () => {
 
   test('words a single named merchant and no tail', () => {
     const result = report([ticket({ store: [{ shopName: 'Only Shop' }] })]).openByMerchant;
-    expect(result.rows).toEqual([{ key: 'Only Shop', label: 'Only Shop', count: 1 }]);
+    expect(result.rows).toEqual([{ key: 'only shop', label: 'Only Shop', count: 1 }]);
     expect(result.concentrationNote).toContain('The busiest merchant holds 1 of 1 open ticket');
     expect(result.tailNote).toBeNull();
   });
@@ -699,7 +717,7 @@ describe('open tickets by merchant', () => {
     );
     const absent = [1, 2, 3].map((number) => ticket({ ticketId: `absent-${number}` }));
     const result = report([...merchants, ...absent]).openByMerchant;
-    expect(result.rows.map((row) => row.key)).toEqual(['A', 'B', 'C', 'D', 'E', '(no merchant)']);
+    expect(result.rows.map((row) => row.label)).toEqual(['A', 'B', 'C', 'D', 'E', '(no merchant)']);
     expect(result.rows.at(-1)?.count).toBe(3);
     expect(result.concentrationNote).toContain('5 busiest merchants');
     expect(result.tailNote).toContain('1 merchant');
@@ -713,7 +731,7 @@ describe('open tickets by merchant', () => {
       ticket({ ticketId: 'fallback', storeDomains: [' fallback.test '] }),
       ticket({ ticketId: 'absent' }),
     ]).openByMerchant;
-    expect(result.rows.map((row) => row.key)).toEqual([
+    expect(result.rows.map((row) => row.label)).toEqual([
       'domain.test',
       'fallback.test',
       'Shop',
@@ -1647,7 +1665,7 @@ describe('the all-open panels at their edges', () => {
     ]);
 
     expect(result.openByPlan.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
-    expect(result.openByMerchant.rows.map((row) => row.key)).toEqual(['Open Shop']);
+    expect(result.openByMerchant.rows.map((row) => row.label)).toEqual(['Open Shop']);
     expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(1);
   });
 });
