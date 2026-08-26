@@ -154,7 +154,7 @@ export function ReportView({ pullToken }: { pullToken: number }) {
 
       <BacklogAge data={report.openBacklog} />
 
-      <div className="flex gap-3">
+      <div className="space-y-3">
         <OpenBreakdown
           title="By service plan"
           rows={report.openByPlan.rows}
