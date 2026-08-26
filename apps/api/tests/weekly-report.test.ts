@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { FALLBACK_CATEGORY } from '../src/board/categories';
+import { CATEGORIES, FALLBACK_CATEGORY } from '../src/board/categories';
 import { aggregateWeeklyReport } from '../src/board/weekly-report';
 import type { WeeklyReport } from '../src/board/report-types';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
@@ -1353,3 +1353,203 @@ function weeklyHistoryEndingAt(weeks: number, now: Date): HelpDeskTicket[] {
     return ticket({ ticketId: `history-${index}`, createdAt: created, doneAt: created });
   });
 }
+
+/** Every string anywhere in a payload, so a guard can walk it structurally. */
+function payloadStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(payloadStrings);
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value).flatMap(payloadStrings);
+  }
+  return [];
+}
+
+describe('the unreliable upstream fields', () => {
+  test('reads none of the due or resolution-metric dates', () => {
+    // `dueDate` is always `createdAt + 48h`, `dueDateDone` disagrees with the
+    // done dates more often than it agrees, and the resolution-metrics done date
+    // contradicts the authoritative one. Poisoning all three has to change
+    // nothing: if any figure moved, something is reading them.
+    const tickets = () => [
+      ticket({ ticketId: 'open-old', createdAt: '2026-03-01T09:00:00+07:00' }),
+      ticket({
+        ticketId: 'finished',
+        ticketStatus: 'closed',
+        createdAt: '2026-08-10T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ];
+
+    const poisoned = tickets().map(
+      (value) =>
+        ({
+          ...value,
+          dueDate: '2020-01-01T00:00:00+07:00',
+          dueDateDone: true,
+          resolutionMetrics: { ticketResolution: { doneAt: '2026-01-02T00:00:00+07:00' } },
+        }) as HelpDeskTicket
+    );
+
+    expect(report(poisoned)).toEqual(report(tickets()));
+  });
+});
+
+describe('the all-open panels at their edges', () => {
+  test('puts a ticket opened hours ago in the youngest age bucket', () => {
+    const result = report([
+      ticket({ createdAt: new Date(NOW.getTime() - 3 * 60 * 60 * 1000).toISOString() }),
+    ]).openBacklog;
+    expect(result.buckets.map((bucket) => bucket.count)).toEqual([1, 0, 0, 0]);
+    expect(result.oldest[0]?.ageLabel).toBe('0 days');
+  });
+
+  test('moves the day after ninety into the last age bucket', () => {
+    const result = report(
+      [90, 91].map((days) =>
+        ticket({
+          ticketId: `age-${days}`,
+          createdAt: new Date(NOW.getTime() - days * 86400000).toISOString(),
+        })
+      )
+    ).openBacklog;
+    expect(result.buckets.map((bucket) => bucket.count)).toEqual([0, 0, 1, 1]);
+  });
+
+  test('lists only the five oldest open tickets, oldest first', () => {
+    const result = report(
+      Array.from({ length: 7 }, (_, index) =>
+        ticket({
+          ticketId: `age-${index}`,
+          createdAt: new Date(NOW.getTime() - (100 - index) * 86400000).toISOString(),
+        })
+      )
+    ).openBacklog;
+
+    expect(result.oldest.map((row) => row.ticketId)).toEqual([
+      'age-0',
+      'age-1',
+      'age-2',
+      'age-3',
+      'age-4',
+    ]);
+    expect(result.oldest.map((row) => row.ageDays)).toEqual([100, 99, 98, 97, 96]);
+  });
+
+  test('labels the absent plan row without inventing a plan name', () => {
+    const result = report([
+      ticket({ ticketId: 'null-plan', appPlan: null }),
+      ticket({ ticketId: 'missing-plan' }),
+    ]).openByPlan;
+    expect(result.rows).toEqual([{ key: '(no plan)', label: 'No plan', count: 2 }]);
+  });
+
+  test('keeps a closed ticket out of every all-open panel', () => {
+    const result = report([
+      ticket({ ticketId: 'open', appPlan: 'free', subject: 'widget broken', store: [{ shopName: 'Open Shop' }] }),
+      ticket({
+        ticketId: 'closed',
+        ticketStatus: 'closed',
+        appPlan: 'advanced_2026',
+        subject: 'point balance wrong',
+        store: [{ shopName: 'Closed Shop' }],
+        createdAt: '2026-08-10T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]);
+
+    expect(result.openByPlan.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
+    expect(result.openByMerchant.rows.map((row) => row.key)).toEqual(['Open Shop']);
+    expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(1);
+  });
+});
+
+describe('the feature rows at their edges', () => {
+  test('derives its rows from the tickets rather than from the whole taxonomy', () => {
+    const rows = report([
+      ticket({ ticketId: 'widget', subject: 'widget broken' }),
+      ticket({ ticketId: 'points', subject: 'point balance wrong' }),
+    ]).openByFeature.rows;
+
+    // A hardcoded label list would print every category with a zero row.
+    expect(rows).toHaveLength(2);
+    expect(rows.length).toBeLessThan(CATEGORIES.length);
+    for (const row of rows) expect(CATEGORIES).toContain(row.key as (typeof CATEGORIES)[number]);
+  });
+
+  test('keeps the median hidden one ticket short of the minimum sample', () => {
+    const doneAt = Date.parse('2026-08-18T09:00:00+07:00');
+    const row = report(
+      [1, 3].map((days) =>
+        ticket({
+          ticketId: `done-${days}`,
+          ticketStatus: 'closed',
+          subject: 'widget broken',
+          createdAt: new Date(doneAt - days * 86400000).toISOString(),
+          doneAt: new Date(doneAt).toISOString(),
+        })
+      )
+    ).openByFeature.rows[0];
+
+    expect(row).toMatchObject({ doneSample: 2, medianDaysToDone: null });
+    expect(row?.speedNote).toBe('2 finished tickets in range · median —');
+  });
+});
+
+describe('what the weekly speed sample leaves out', () => {
+  test('counts a done ticket with no created date in the week but in no median', () => {
+    const result = report([
+      ticket({ ticketId: 'history-anchor', createdAt: '2026-05-01T09:00:00+07:00', doneAt: null }),
+      ticket({
+        ticketId: 'no-created',
+        ticketStatus: 'closed',
+        createdAt: null,
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]);
+
+    const week = weekByKey(result, '2026-W34');
+    expect(week.done).toBe(1);
+    expect(week.doneSample).toBe(0);
+    expect(week.medianDaysToDone).toBeNull();
+    expect(result.timeToFirstDone.unmeasurable).toBe(1);
+  });
+});
+
+describe('the all-open panels over the real fixture', () => {
+  test('accounts for every open ticket in every panel', () => {
+    // Derived from the fixture, never hardcoded: `bun run fixture:pull` replaces
+    // it with whichever tickets were open that day.
+    const result = aggregateWeeklyReport(loadFixtureTickets(), { weeks: 52, now: NOW, year: YEAR });
+    const open = result.openRightNow;
+
+    expect(result.openBacklog.total).toBe(open);
+    expect(
+      result.openBacklog.buckets.reduce((total, bucket) => total + bucket.count, 0) +
+        result.openBacklog.noCreatedDate
+    ).toBe(open);
+    expect(result.openByPlan.rows.reduce((total, row) => total + row.count, 0)).toBe(open);
+
+    const named = result.openByMerchant.rows.filter((row) => row.key !== '(no merchant)');
+    const noMerchant = result.openByMerchant.rows.find((row) => row.key === '(no merchant)');
+    expect(named.length).toBeLessThanOrEqual(5);
+    expect(
+      named.reduce((total, row) => total + row.count, 0) +
+        result.openByMerchant.tailCount +
+        (noMerchant?.count ?? 0)
+    ).toBe(open);
+
+    expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(open);
+    expect(result.openBacklog.oldest.length).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('a feature label that reads like forbidden language', () => {
+  test('names the translation feature without tripping the performance-word guard', () => {
+    // `TRANSLATION` carries the letters `sla`. The guard has to read words, not
+    // substrings, or a standing taxonomy label reads as an SLA claim.
+    const values = payloadStrings(report([ticket({ subject: 'translate the widget text' })]));
+
+    expect(values).toContain('TRANSLATION');
+    expect(values.filter((value) => /\b(SLA|overdue|breach|deadline)\b/i.test(value))).toEqual([]);
+  });
+});
