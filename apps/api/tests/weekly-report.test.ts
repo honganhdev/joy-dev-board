@@ -537,7 +537,7 @@ describe('the open backlog', () => {
     expect(result.buckets).toEqual([
       { label: '< 7 days', count: 0 },
       { label: '7–30 days', count: 0 },
-      { label: '30–90 days', count: 0 },
+      { label: '31–90 days', count: 0 },
       { label: 'over 90 days', count: 0 },
     ]);
     expect(result.oldest).toEqual([]);
@@ -553,6 +553,25 @@ describe('the open backlog', () => {
     expect(result.oldest).toHaveLength(1);
     expect(result.oldest[0]).toMatchObject({ ageDays: 200, ageLabel: '200 days' });
     expect(result.agingHeadline).toContain('1 open ticket is older');
+  });
+
+  test('labels the age buckets disjointly, so no ticket reads as being in two', () => {
+    // A 30-day-old ticket is counted once. The labels have to say where.
+    const result = report(
+      [30, 31].map((days) =>
+        ticket({
+          ticketId: `age-${days}`,
+          createdAt: new Date(NOW.getTime() - days * 86400000).toISOString(),
+        })
+      )
+    ).openBacklog;
+
+    expect(result.buckets).toEqual([
+      { label: '< 7 days', count: 0 },
+      { label: '7–30 days', count: 1 },
+      { label: '31–90 days', count: 1 },
+      { label: 'over 90 days', count: 0 },
+    ]);
   });
 
   test('uses inclusive upper bounds for the four age buckets', () => {

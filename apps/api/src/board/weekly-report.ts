@@ -132,11 +132,15 @@ const BUCKETS = [
 /** How many of the oldest open tickets the backlog panel lists. Named on screen. */
 const OLDEST_ROWS = 5;
 
-/** Inclusive upper bounds for the all-open backlog age rows. */
+/**
+ * Inclusive upper bounds for the all-open backlog age rows. The labels are
+ * disjoint and match the bounds: a 30-day-old ticket is counted once, in
+ * `7–30 days`, and no other label reads as containing it.
+ */
 const AGE_BUCKETS = [
   { label: '< 7 days', maxDays: 6 },
   { label: '7–30 days', maxDays: 30 },
-  { label: '30–90 days', maxDays: 90 },
+  { label: '31–90 days', maxDays: 90 },
   { label: 'over 90 days', maxDays: Infinity },
 ];
 
