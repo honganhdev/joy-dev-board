@@ -188,6 +188,18 @@ export type WeeklyReport = {
     tailNote: string | null;
     tailCount: number;
   };
+  openByFeature: {
+    rows: Array<{
+      key: string;
+      label: string;
+      open: number;
+      olderThan30: number;
+      medianDaysToDone: number | null;
+      doneSample: number;
+      speedNote: string;
+    }>;
+    caption: string;
+  };
   openRightNow: number;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */

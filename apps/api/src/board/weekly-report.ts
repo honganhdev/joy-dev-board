@@ -586,6 +586,84 @@ function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] 
   };
 }
 
+type FeatureMetric = {
+  open: number;
+  olderThan30: number;
+  daysToDone: number[];
+};
+
+function featureMetric(metrics: Map<string, FeatureMetric>, key: string): FeatureMetric {
+  const existing = metrics.get(key);
+  if (existing) return existing;
+  const created = { open: 0, olderThan30: 0, daysToDone: [] };
+  metrics.set(key, created);
+  return created;
+}
+
+function openByFeature(
+  open: HelpDeskTicket[],
+  counted: Counted[],
+  nowMs: number,
+  rangeStartMs: number,
+  rangeEndMs: number
+): WeeklyReport['openByFeature'] {
+  const metrics = new Map<string, FeatureMetric>();
+
+  for (const ticket of open) {
+    const metric = featureMetric(metrics, classify(ticket));
+    metric.open += 1;
+    const createdMs = timestamp(ticket.createdAt);
+    if (createdMs !== null && !Number.isNaN(createdMs) && wholeDaysBetween(createdMs, nowMs) > 30) {
+      metric.olderThan30 += 1;
+    }
+  }
+
+  for (const ticket of counted) {
+    if (
+      ticket.doneMs === null ||
+      ticket.createdMs === null ||
+      ticket.doneMs < rangeStartMs ||
+      ticket.doneMs >= rangeEndMs
+    ) {
+      continue;
+    }
+    featureMetric(metrics, ticket.category).daysToDone.push(
+      wholeDaysBetween(ticket.createdMs, ticket.doneMs)
+    );
+  }
+
+  const rows = [...metrics.entries()]
+    .sort((a, b) => {
+      if (a[0] === FALLBACK_CATEGORY) return 1;
+      if (b[0] === FALLBACK_CATEGORY) return -1;
+      return b[1].open - a[1].open || a[0].localeCompare(b[0]);
+    })
+    .map(([key, metric]) => {
+      const doneSample = metric.daysToDone.length;
+      const medianDaysToDone =
+        doneSample < 3 ? null : median(metric.daysToDone.sort((a, b) => a - b));
+      return {
+        key,
+        label: key,
+        open: metric.open,
+        olderThan30: metric.olderThan30,
+        medianDaysToDone,
+        doneSample,
+        speedNote:
+          `${doneSample} ${doneSample === 1 ? 'finished ticket' : 'finished tickets'} in range · ` +
+          `median ${medianDaysToDone === null ? '—' : `${medianDaysToDone} d`}`,
+      };
+    });
+
+  return {
+    rows,
+    caption:
+      'Open and older-than-30-day figures use all open tickets right now. Speed uses tickets ' +
+      'finished in the selected range with both dates. Medians are shown only with at least 3 ' +
+      'finished tickets; the sample appears first and is not a rate.',
+  };
+}
+
 /**
  * Builds the whole report.
  *
@@ -736,6 +814,7 @@ export function aggregateWeeklyReport(
     openSectionTitle: openSectionTitle(open.length, horizon, options.year),
     openByPlan: openByPlan(open),
     openByMerchant: openByMerchant(open),
+    openByFeature: openByFeature(open, counted, nowMs, rangeStartMs, rangeEndMs),
     // Deliberately the same strict test `assembleBoard` uses, over the same
     // whole mirror, so this figure and the board's own open count agree.
     openRightNow: open.length,

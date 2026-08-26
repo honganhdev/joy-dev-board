@@ -174,6 +174,23 @@ export type WeeklyReport = {
     tailCount: number;
   };
   /**
+   * One row per feature present in either scope. Open-age figures are absolute;
+   * speed is over tickets finished in the selected range.
+   */
+  openByFeature: {
+    rows: Array<{
+      key: string;
+      label: string;
+      open: number;
+      olderThan30: number;
+      medianDaysToDone: number | null;
+      doneSample: number;
+      /** Sample-first speed wording rendered verbatim. */
+      speedNote: string;
+    }>;
+    caption: string;
+  };
+  /**
    * `ticketStatus === 'open'` right now, across the whole mirror. Not week-scoped
    * and not derivable from any week — see each week's `outstandingCaption`.
    */

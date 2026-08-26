@@ -628,6 +628,108 @@ describe('open tickets by merchant', () => {
   });
 });
 
+describe('open tickets by feature', () => {
+  test('is empty but keeps its server-worded caption', () => {
+    const result = report([]).openByFeature;
+    expect(result.rows).toEqual([]);
+    expect(result.caption.length).toBeGreaterThan(0);
+  });
+
+  test('shows one old open ticket with no speed sample', () => {
+    const result = report([
+      ticket({ createdAt: new Date(NOW.getTime() - 60 * 86400000).toISOString() }),
+    ]).openByFeature;
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      open: 1,
+      olderThan30: 1,
+      medianDaysToDone: null,
+      doneSample: 0,
+      speedNote: '0 finished tickets in range · median —',
+    });
+  });
+
+  test('suppresses a one-ticket median and prints the sample before it', () => {
+    const open = Array.from({ length: 5 }, (_, index) =>
+      ticket({ ticketId: `open-${index}`, subject: 'widget broken', doneAt: null })
+    );
+    const result = report([
+      ...open,
+      ticket({
+        ticketId: 'done',
+        ticketStatus: 'closed',
+        subject: 'widget broken',
+        createdAt: '2026-06-18T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]).openByFeature.rows[0];
+    expect(result).toMatchObject({ open: 5, doneSample: 1, medianDaysToDone: null });
+    expect(result?.speedNote).toBe('1 finished ticket in range · median —');
+  });
+
+  test('shows the median once the sample reaches three tickets', () => {
+    const doneAt = Date.parse('2026-08-18T09:00:00+07:00');
+    const result = report(
+      [1, 2, 4].map((days) =>
+        ticket({
+          ticketId: `done-${days}`,
+          ticketStatus: 'closed',
+          subject: 'widget broken',
+          createdAt: new Date(doneAt - days * 86400000).toISOString(),
+          doneAt: new Date(doneAt).toISOString(),
+        })
+      )
+    ).openByFeature.rows[0];
+    expect(result).toMatchObject({ doneSample: 3, medianDaysToDone: 2 });
+    expect(result?.speedNote).toBe('3 finished tickets in range · median 2 d');
+  });
+
+  test('includes a feature present only in the done cohort', () => {
+    const result = report([
+      ticket({
+        ticketStatus: 'closed',
+        subject: 'point balance wrong',
+        createdAt: '2026-08-15T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]).openByFeature.rows[0];
+    expect(result).toMatchObject({ open: 0, doneSample: 1, medianDaysToDone: null });
+  });
+
+  test('pins the classifier catch-all last even when it is the largest', () => {
+    const result = report([
+      ticket({ ticketId: 'other-1', subject: 'zzzz no match' }),
+      ticket({ ticketId: 'other-2', subject: 'qqqq no match' }),
+      ticket({ ticketId: 'points', subject: 'point balance wrong' }),
+    ]).openByFeature.rows;
+    expect(result.at(-1)?.key).toBe(FALLBACK_CATEGORY);
+  });
+
+  test('uses a strict older-than-30-days boundary', () => {
+    const result = report([
+      ticket({ ticketId: 'thirty', createdAt: new Date(NOW.getTime() - 30 * 86400000).toISOString() }),
+      ticket({ ticketId: 'thirty-one', createdAt: new Date(NOW.getTime() - 31 * 86400000).toISOString() }),
+    ]).openByFeature.rows[0];
+    expect(result).toMatchObject({ open: 2, olderThan30: 1 });
+  });
+
+  test('uses the same selected-range boundary as time to first done', () => {
+    const result = report([
+      ticket({ ticketId: 'open', subject: 'widget broken', doneAt: null }),
+      ticket({
+        ticketId: 'just-outside',
+        ticketStatus: 'closed',
+        subject: 'widget broken',
+        createdAt: '2026-05-01T09:00:00+07:00',
+        doneAt: '2026-06-07T16:59:59.999Z',
+      }),
+    ]);
+    const feature = result.openByFeature.rows.find((row) => row.open === 1);
+    expect(feature?.doneSample).toBe(0);
+    expect(result.timeToFirstDone.sampleSize).toBe(0);
+  });
+});
+
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -952,6 +1054,17 @@ describe('the panels agree with each other', () => {
       .filter((row) => row.key !== '(no merchant)')
       .reduce((total, row) => total + row.count, 0);
     expect(topFive + result.openByMerchant.tailCount + noMerchant).toBe(result.openBacklog.total);
+  });
+
+  test('accounts for every open ticket in the feature rows', () => {
+    const result = report([
+      ticket({ ticketId: 'widget', subject: 'widget broken' }),
+      ticket({ ticketId: 'points', subject: 'point balance wrong' }),
+      ticket({ ticketId: 'other', subject: 'zzzz no match' }),
+    ]);
+    expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(
+      result.openBacklog.total
+    );
   });
 });
 

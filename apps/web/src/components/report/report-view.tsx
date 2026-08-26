@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { BacklogColumns } from './backlog-columns';
 import { BacklogAge } from './backlog-age';
 import { DurationHistogram } from './duration-histogram';
+import { FeatureBreakdown } from './feature-breakdown';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
 import { OpenBreakdown } from './open-breakdown';
@@ -165,6 +166,8 @@ export function ReportView({ pullToken }: { pullToken: number }) {
           notes={[report.openByMerchant.concentrationNote, report.openByMerchant.tailNote]}
         />
       </div>
+
+      <FeatureBreakdown data={report.openByFeature} />
 
       {/*
         What reached no week, named so nothing vanishes silently — in the
