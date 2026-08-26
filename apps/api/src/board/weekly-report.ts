@@ -89,7 +89,8 @@ const IN_PROGRESS_TILE_LABELS = {
 
 const TIME_TO_FIRST_DONE_CAPTION =
   "Measured from a ticket's created date to the first time HelpDesk marked it done, which " +
-  'includes Dev Done. This is not time to customer delivery.';
+  'includes Dev Done. This is not time to customer delivery. 48 hours is HelpDesk\'s automatic ' +
+  'due offset on every ticket — the same offset on all of them — not a target agreed per ticket.';
 
 function weeklySpeedCaption(weeks: WeekSummary[]): string {
   const medians = weeks.flatMap((week) =>
@@ -348,6 +349,7 @@ function timeToFirstDone(counted: Counted[], rangeStartMs: number, rangeEndMs: n
   const days: number[] = [];
   const bucketCounts = BUCKETS.map((bucket) => ({ label: bucket.label, count: 0 }));
   let unmeasurable = 0;
+  let withinTwoDays = 0;
 
   for (const ticket of counted) {
     const { doneMs, createdMs } = ticket;
@@ -358,6 +360,7 @@ function timeToFirstDone(counted: Counted[], rangeStartMs: number, rangeEndMs: n
     }
     const age = wholeDaysBetween(createdMs, doneMs);
     days.push(age);
+    if (doneMs - createdMs <= 48 * 60 * 60 * 1000) withinTwoDays += 1;
     const index = BUCKETS.findIndex((bucket) => age <= bucket.maxDays);
     const bucket = bucketCounts[index];
     if (bucket) bucket.count += 1;
@@ -367,6 +370,11 @@ function timeToFirstDone(counted: Counted[], rangeStartMs: number, rangeEndMs: n
     sampleSize: days.length,
     unmeasurable,
     medianDays: median([...days].sort((a, b) => a - b)),
+    withinTwoDaysNote:
+      days.length === 0
+        ? null
+        : `${withinTwoDays} of ${days.length} finished ${days.length === 1 ? 'ticket' : 'tickets'} ` +
+          `(${Math.round((withinTwoDays / days.length) * 100)}%) reached done within 48 hours of being created.`,
     buckets: bucketCounts,
     caption: TIME_TO_FIRST_DONE_CAPTION,
   };

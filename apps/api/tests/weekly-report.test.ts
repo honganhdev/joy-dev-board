@@ -335,6 +335,13 @@ describe('unknown values', () => {
 });
 
 describe('time to first done', () => {
+  test('keeps the percentage absent for an empty sample while retaining its explanation', () => {
+    const result = report([]);
+    expect(result.timeToFirstDone.withinTwoDaysNote).toBeNull();
+    expect(result.timeToFirstDone.caption).toContain('48 hours');
+    expect(result.timeToFirstDone.caption).toContain('automatic');
+  });
+
   test('buckets a same-day finish as one day or less', () => {
     const result = report([
       ticket({ createdAt: '2026-08-18T09:00:00+07:00', doneAt: '2026-08-18T10:00:00+07:00' }),
@@ -343,6 +350,7 @@ describe('time to first done', () => {
     expect(result.timeToFirstDone.sampleSize).toBe(1);
     expect(result.timeToFirstDone.buckets[0]).toEqual({ label: '≤ 1 day', count: 1 });
     expect(result.timeToFirstDone.medianDays).toBe(0);
+    expect(result.timeToFirstDone.withinTwoDaysNote).toContain('1 of 1 finished ticket (100%)');
   });
 
   test('clamps a done date before its created date to zero instead of dropping it', () => {
@@ -382,6 +390,26 @@ describe('time to first done', () => {
     // Middle two are 2 and 5.
     expect(result.timeToFirstDone.medianDays).toBe(3.5);
     expect(result.timeToFirstDone.buckets.map((bucket) => bucket.count)).toEqual([1, 1, 1, 0, 1, 0]);
+  });
+
+  test('includes exactly 48 hours and excludes one millisecond beyond it', () => {
+    const createdAt = Date.parse('2026-08-17T09:00:00+07:00');
+    const result = report([
+      ticket({
+        ticketId: 'boundary',
+        createdAt: new Date(createdAt).toISOString(),
+        doneAt: new Date(createdAt + 48 * 60 * 60 * 1000).toISOString(),
+      }),
+      ticket({
+        ticketId: 'outside',
+        createdAt: new Date(createdAt).toISOString(),
+        doneAt: new Date(createdAt + 48 * 60 * 60 * 1000 + 1).toISOString(),
+      }),
+    ]);
+
+    expect(result.timeToFirstDone.withinTwoDaysNote).toContain(
+      '1 of 2 finished tickets (50%)'
+    );
   });
 });
 
@@ -892,6 +920,35 @@ describe('a ticket that belongs to no week', () => {
 });
 
 describe('the strings the page prints', () => {
+  test('keeps forbidden performance language out of the whole payload', () => {
+    const populated = report([
+      ticket({ ticketId: 'open', createdAt: '2026-08-18T09:00:00+07:00', doneAt: null }),
+      ticket({
+        ticketId: 'done',
+        createdAt: '2026-08-17T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]);
+    const fixture = aggregateWeeklyReport(loadFixtureTickets(), {
+      weeks: 52,
+      now: NOW,
+      year: YEAR,
+    });
+
+    function strings(value: unknown): string[] {
+      if (typeof value === 'string') return [value];
+      if (Array.isArray(value)) return value.flatMap(strings);
+      if (value !== null && typeof value === 'object') {
+        return Object.values(value).flatMap(strings);
+      }
+      return [];
+    }
+
+    for (const payload of [report([]), populated, fixture]) {
+      expect(strings(payload).filter((value) => /SLA|overdue|breach|deadline/i.test(value))).toEqual([]);
+    }
+  });
+
   test('names the running week in the backlog heading instead of promising a week end', () => {
     // The range always reaches the week holding `now`, whose Sunday has not
     // happened. A heading saying "at each week end" over a Tuesday value

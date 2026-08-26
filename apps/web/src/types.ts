@@ -146,6 +146,7 @@ export type TimeToFirstDone = {
   sampleSize: number;
   unmeasurable: number;
   medianDays: number | null;
+  withinTwoDaysNote: string | null;
   buckets: Array<{ label: string; count: number }>;
   caption: string;
 };

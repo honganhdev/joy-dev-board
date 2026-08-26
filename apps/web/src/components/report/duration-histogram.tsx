@@ -36,6 +36,11 @@ export function DurationHistogram({ data }: { data: TimeToFirstDone }) {
           </li>
         ))}
       </ul>
+      {data.withinTwoDaysNote && (
+        <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
+          {data.withinTwoDaysNote}
+        </p>
+      )}
       <p className="mt-3 text-[10px] leading-snug text-muted-foreground">{data.caption}</p>
       {data.unmeasurable > 0 && (
         <p className="mt-1 text-[10px] text-muted-foreground">

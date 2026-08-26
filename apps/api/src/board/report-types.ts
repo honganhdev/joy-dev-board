@@ -109,6 +109,8 @@ export type TimeToFirstDone = {
   /** Tickets with a `doneAt` in range but no `createdAt`. Reported, not hidden. */
   unmeasurable: number;
   medianDays: number | null;
+  /** Server-worded share measured within 48 hours; the browser divides nothing. */
+  withinTwoDaysNote: string | null;
   buckets: Array<{ label: string; count: number }>;
   /** The honest caveat, rendered verbatim. */
   caption: string;
