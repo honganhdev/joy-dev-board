@@ -504,8 +504,8 @@ describe('the weekly speed sample', () => {
       }),
     ]);
 
-    expect(weekByKey(result, '2026-W34').doneSampleLabel).toBe('1 ticket');
-    expect(weekByKey(result, '2026-W33').doneSampleLabel).toBe('0 tickets');
+    expect(weekByKey(result, '2026-W34').doneSampleLabel).toBe('n=1');
+    expect(weekByKey(result, '2026-W33').doneSampleLabel).toBe('n=0');
   });
 
   test('keeps the sample label agreeing with the sample it names', () => {
@@ -525,7 +525,13 @@ describe('the weekly speed sample', () => {
     );
 
     expect(result.doneSample).toBe(2);
-    expect(result.doneSampleLabel).toBe('2 tickets');
+    expect(result.doneSampleLabel).toBe('n=2');
+  });
+
+  test('says what n counts, since the strip prints it under every week', () => {
+    expect(report([]).weeklySpeed.caption).toContain(
+      "Each week's n is how many finished tickets its median is measured over."
+    );
   });
 });
 

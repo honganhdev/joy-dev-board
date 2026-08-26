@@ -99,7 +99,8 @@ function weeklySpeedCaption(weeks: WeekSummary[]): string {
     week.medianDaysToDone === null ? [] : [week.medianDaysToDone]
   );
   const scope =
-    'Tickets finished with no done date are in no week\'s median. Done dates include Dev Done.';
+    'Tickets finished with no done date are in no week\'s median. Done dates include Dev Done. ' +
+    "Each week's n is how many finished tickets its median is measured over.";
   if (medians.length === 0) return `${scope} No week shown has a measurable median.`;
 
   const minimum = Math.min(...medians);
@@ -107,9 +108,14 @@ function weeklySpeedCaption(weeks: WeekSummary[]): string {
   return `${scope} Measurable weekly medians range from ${minimum} to ${maximum} days.`;
 }
 
-/** The sample the weekly median stands on, printed beneath it. */
+/**
+ * The sample the weekly median stands on, printed beneath it. Kept to `n=…`
+ * rather than `… tickets` because a 52-week strip gives each week about 20px:
+ * a longer string truncates to an ellipsis and hides the very figure it adds.
+ * The caption says what `n` counts.
+ */
 function doneSampleLabel(sample: number): string {
-  return sample === 1 ? '1 ticket' : `${sample} tickets`;
+  return `n=${sample}`;
 }
 
 function emptyWeeksNote(weeks: WeekSummary[]): string | null {
