@@ -248,3 +248,81 @@ describe('webhook processing', () => {
     expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('done');
   });
 });
+
+describe('the mirrored window is judged on the fetched record', () => {
+  test('a delivery claiming an in-year createdAt cannot inject an out-of-year ticket', async () => {
+    const { db } = openDatabase(':memory:');
+    // The notification is attacker- or bug-supplied; only HelpDesk's own answer
+    // decides whether the ticket belongs in this mirror.
+    const outOfYear = ticket({ createdAt: '2025-11-02T08:00:00.000Z' });
+    const pullId = reserveDelivery(db, 'delivery-claimed-year')!;
+    const processor = createWebhookProcessor(db, config, idlePulls, async () => [outOfYear]);
+
+    await processor.process(pullId, outOfYear.id, '2026-08-23T08:00:00.000Z');
+
+    expect(readTickets(db)).toEqual([]);
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()).toMatchObject({
+      status: 'ok',
+      ticketCount: 0,
+      statusChanges: 0,
+    });
+  });
+
+  test('a next-year ticket is ignored as firmly as a previous-year one', async () => {
+    const { db } = openDatabase(':memory:');
+    const future = ticket({ createdAt: '2027-01-01T00:30:00.000Z' });
+    const pullId = reserveDelivery(db, 'delivery-next-year')!;
+    const processor = createWebhookProcessor(db, config, idlePulls, async () => [future]);
+
+    await processor.process(pullId, future.id, future.createdAt);
+
+    expect(readTickets(db)).toEqual([]);
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()?.status).toBe('ok');
+  });
+
+  test('a fetched record with no createdAt of its own is not injected', async () => {
+    const { db } = openDatabase(':memory:');
+    const undated = ticket({ createdAt: null });
+    const pullId = reserveDelivery(db, 'delivery-undated-record')!;
+    const processor = createWebhookProcessor(db, config, idlePulls, async () => [undated]);
+
+    await processor.process(pullId, undated.id, '2026-08-23T08:00:00.000Z');
+
+    expect(readTickets(db)).toEqual([]);
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()?.status).toBe('ok');
+  });
+
+  test('a busy day matched by internal id ignores every other ticket in the window', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    const neighbours = [
+      ticket({ id: 'internal-2', ticketId: 'JOY-2', tsStatus: 'todo' }),
+      ticket({ tsStatus: 'done' }),
+      ticket({ id: 'internal-3', ticketId: 'JOY-3', tsStatus: 'todo' }),
+    ];
+    const pullId = reserveDelivery(db, 'delivery-busy-day')!;
+    const processor = createWebhookProcessor(db, config, idlePulls, async () => neighbours);
+
+    await processor.process(pullId, 'internal-1', ticket().createdAt);
+
+    // A whole day of tickets came back; only the notified one may be written.
+    expect(readTickets(db).map((row) => row.ticketId)).toEqual(['JOY-1']);
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('done');
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()?.ticketCount).toBe(1);
+  });
+
+  test('a foreign-app ticket sharing the mirrored year is still not written', async () => {
+    const { db } = openDatabase(':memory:');
+    const foreign = ticket({ appName: 'JOY Subscription', createdAt: '2026-08-23T08:00:00.000Z' });
+    const pullId = reserveDelivery(db, 'delivery-foreign-in-year')!;
+    const processor = createWebhookProcessor(db, config, idlePulls, async () => [foreign]);
+
+    await processor.process(pullId, foreign.id, foreign.createdAt);
+
+    expect(readTickets(db)).toEqual([]);
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()).toMatchObject({
+      status: 'ok',
+      ticketCount: 0,
+    });
+  });
+});

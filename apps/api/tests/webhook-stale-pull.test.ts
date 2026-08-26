@@ -6,7 +6,7 @@ import type { BoardResponse } from '../src/board/types';
 import type { AuthConfig, Config } from '../src/config';
 import { openDatabase, type Db } from '../src/db/client';
 import { pulls as pullRows } from '../src/db/schema';
-import { finishPull, reserveDelivery, startPull, syncPull } from '../src/db/sync';
+import { failPull, finishPull, reserveDelivery, startPull, syncPull } from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { createPullRunner } from '../src/pull-service';
 import { createRouter } from '../src/routes';
@@ -139,5 +139,85 @@ describe('opportunistic full-pull reconciliation', () => {
     expect(h.fetches()).toBe(1);
     expect(board.lastPull?.status).toBe('running');
     await settle(h);
+  });
+});
+
+describe('reconciliation boundaries and single-flight', () => {
+  test('just inside thirty minutes does not kick; just outside does', async () => {
+    const fresh = harness({
+      finishedAt: new Date(Date.now() - 29 * 60 * 1000).toISOString(),
+      withTicket: true,
+    });
+    await fresh.handle(fresh.request());
+    expect(fresh.fetches()).toBe(0);
+
+    const stale = harness({
+      finishedAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
+      withTicket: true,
+    });
+    await stale.handle(stale.request());
+    expect(stale.fetches()).toBe(1);
+    await settle(stale);
+  });
+
+  test('concurrent board loads on a stale mirror kick exactly one pull', async () => {
+    const h = harness({
+      finishedAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
+      withTicket: true,
+    });
+
+    // Three tabs opening at once must not become three upstream year sweeps.
+    await Promise.all([h.handle(h.request()), h.handle(h.request()), h.handle(h.request())]);
+
+    expect(h.fetches()).toBe(1);
+    await settle(h);
+  });
+
+  test('a stored mirror whose only full pull failed is reconciled on load', async () => {
+    const { db } = openDatabase(':memory:');
+    const seededId = startPull(db);
+    syncPull(db, [ticket()], seededId);
+    failPull(db, seededId, 'upstream unavailable');
+    const gate = deferred<HelpDeskTicket[]>();
+    let fetches = 0;
+    const pulls = createPullRunner(db, config, () => {
+      fetches += 1;
+      return gate.promise;
+    });
+    const handle = createRouter({
+      db,
+      pulls,
+      tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
+      auth,
+      webhookSecret: 'test-webhook-secret',
+      webhooks: { process: async () => {} },
+      year: config.year,
+    });
+    const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+
+    await handle(
+      new Request('http://localhost/api/tickets', {
+        headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
+      })
+    );
+
+    expect(fetches).toBe(1);
+    gate.resolve([]);
+    await pulls.whenIdle();
+  });
+
+  test('a stale mirror kicks a full pull, never a webhook-tagged row', async () => {
+    const h = harness({
+      finishedAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
+      withTicket: true,
+    });
+
+    await h.handle(h.request());
+    await settle(h);
+
+    expect(
+      h.db.select().from(pullRows).where(eq(pullRows.source, 'webhook')).all()
+    ).toEqual([]);
+    expect(h.db.select().from(pullRows).all()).toHaveLength(2);
   });
 });

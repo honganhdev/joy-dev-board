@@ -4,7 +4,7 @@ import { createSession } from '../src/auth/session-store';
 import type { BoardResponse } from '../src/board/types';
 import type { AuthConfig, Config } from '../src/config';
 import { openDatabase } from '../src/db/client';
-import { readLastSuccessfulWebhook } from '../src/db/queries';
+import { readLastSuccessfulPull, readLastSuccessfulWebhook } from '../src/db/queries';
 import { failPull, finishPull, reserveDelivery, startPull, syncPull } from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { createPullRunner } from '../src/pull-service';
@@ -75,4 +75,86 @@ test('the board reports the latest successful webhook separately from full-pull 
 
   expect(after.webhookAt).toBe(webhookFinishedAt);
   expect(after.pulledAt).toBe(before.pulledAt);
+});
+
+test('a mirror fed only by webhooks is treated as never pulled and kicks a full pull', async () => {
+  const { db } = openDatabase(':memory:');
+  let fetches = 0;
+  let releasePull!: (tickets: HelpDeskTicket[]) => void;
+  const pullGate = new Promise<HelpDeskTicket[]>((resolve) => {
+    releasePull = resolve;
+  });
+  const pulls = createPullRunner(db, config, () => {
+    fetches += 1;
+    return pullGate;
+  });
+  const handle = createRouter({
+    db,
+    pulls,
+    tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
+    auth,
+    webhookSecret: 'test-webhook-secret',
+    webhooks: { process: async () => {} },
+    year: config.year,
+  });
+  const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+
+  const webhookId = reserveDelivery(db, 'delivery-only')!;
+  finishPull(db, webhookId, { pulled: 1, inserted: 0, statusChanges: 1 });
+  const webhookFinishedAt = readLastSuccessfulWebhook(db)?.finishedAt ?? null;
+  const board = (await (
+    await handle(
+      new Request('http://localhost/api/tickets', {
+        headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
+      })
+    )
+  ).json()) as BoardResponse;
+
+  // A successful webhook must not read as freshness: with no full pull on
+  // record the load reconciles instead of trusting the delivery.
+  expect(fetches).toBe(1);
+  expect(readLastSuccessfulPull(db)).toBeNull();
+  expect(board.lastPull).toMatchObject({ status: 'running' });
+  // The delivery id is an inbound-request identifier; it must not ride out to
+  // the browser on the pull summary.
+  expect(Object.keys(board.lastPull!)).not.toContain('deliveryId');
+  expect(Object.keys(board.lastPull!)).not.toContain('source');
+  expect(board.pulledAt).toBe(board.lastPull!.startedAt);
+  expect(board.webhookAt).toBe(webhookFinishedAt);
+
+  releasePull([]);
+  await pulls.whenIdle();
+});
+
+test('a webhook that fails after a successful one does not roll the webhook time back', async () => {
+  const { db } = openDatabase(':memory:');
+  const pulls = createPullRunner(db, config, async () => []);
+  const handle = createRouter({
+    db,
+    pulls,
+    tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
+    auth,
+    webhookSecret: 'test-webhook-secret',
+    webhooks: { process: async () => {} },
+    year: config.year,
+  });
+  const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+  const board = async () =>
+    (await (
+      await handle(
+        new Request('http://localhost/api/tickets', {
+          headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
+        })
+      )
+    ).json()) as BoardResponse;
+
+  const okId = reserveDelivery(db, 'delivery-ok')!;
+  finishPull(db, okId, { pulled: 1, inserted: 0, statusChanges: 1 });
+  const succeeded = (await board()).webhookAt;
+
+  const failedId = reserveDelivery(db, 'delivery-then-failed')!;
+  failPull(db, failedId, 'upstream unavailable');
+
+  expect(succeeded).not.toBeNull();
+  expect((await board()).webhookAt).toBe(succeeded);
 });

@@ -5,7 +5,13 @@ import type { AuthConfig, Config } from '../src/config';
 import { openDatabase, type Db } from '../src/db/client';
 import { readStatusHistory, readTicket, readTickets } from '../src/db/queries';
 import { pulls } from '../src/db/schema';
-import { finishPull, startPull, syncPull } from '../src/db/sync';
+import {
+  finishPull,
+  reserveDelivery,
+  startPull,
+  sweepInterruptedPulls,
+  syncPull,
+} from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { createPullRunner } from '../src/pull-service';
 import { createRouter } from '../src/routes';
@@ -362,5 +368,309 @@ describe('Avada webhook route', () => {
     expect(response.status).toBe(500);
     expect(responseBody).toEqual({ error: 'internal_error' });
     expect(responseBody).not.toHaveProperty('message');
+  });
+});
+
+describe('Avada webhook signature and body guards at the route', () => {
+  test('rejects a correct-length signature made with a different secret', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+    const rawBody = body();
+    const timestamp = String(Date.now());
+
+    // Same shape and length as a real header, so the constant-time comparison
+    // itself has to reject it — not the cheap length guard in front of it.
+    const forged = signWebhook('another-tenants-secret', timestamp, rawBody);
+    expect(forged).toHaveLength(signWebhook(SECRET, timestamp, rawBody).length);
+
+    const response = await handle(
+      webhookRequest({ rawBody, timestamp, signature: forged, deliveryId: 'delivery-other-secret' })
+    );
+
+    expect(response.status).toBe(401);
+    expect(db.select().from(pulls).all()).toEqual([]);
+  });
+
+  test('rejects a body re-spaced after signing, proving the raw bytes are verified', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+    const signed = body();
+    const timestamp = String(Date.now());
+    // Parses to exactly the same object; only the bytes differ.
+    const tampered = JSON.stringify(JSON.parse(signed), null, 1);
+    expect(JSON.parse(tampered)).toEqual(JSON.parse(signed));
+
+    const response = await handle(
+      webhookRequest({
+        rawBody: tampered,
+        timestamp,
+        signature: signWebhook(SECRET, timestamp, signed),
+        deliveryId: 'delivery-respaced',
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(db.select().from(pulls).all()).toEqual([]);
+  });
+
+  test('rejects a timestamp far in the future, not only a stale one', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+
+    const response = await handle(
+      webhookRequest({
+        timestamp: String(Date.now() + 20 * 60 * 1000),
+        deliveryId: 'delivery-future',
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(db.select().from(pulls).all()).toEqual([]);
+  });
+
+  test('rejects an oversized body whose Content-Length understated it', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+    // A sender that lies downward passes the header check; the read itself has
+    // to be bounded too, or the header is the only limit there is.
+    const rawBody = JSON.stringify({
+      ticket: { id: 'internal-1', createdAt: '2026-08-23T08:00:00.000Z', subject: 'x'.repeat(70_000) },
+    });
+
+    const response = await handle(
+      webhookRequest({ rawBody, contentLength: '120', deliveryId: 'delivery-understated' })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_request' });
+    expect(db.select().from(pulls).all()).toEqual([]);
+  });
+
+  test('rejects a signed body carrying no ticket id without reserving a row', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+
+    const response = await handle(
+      webhookRequest({
+        rawBody: JSON.stringify({ event: 'ticket.updated', ticket: { ticketId: 'JOY-1' } }),
+        deliveryId: 'delivery-no-id',
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(db.select().from(pulls).all()).toEqual([]);
+  });
+
+  test('a GET on the webhook path is not the unauthenticated surface', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+
+    const response = await handle(new Request(`http://localhost${PATH}`, { method: 'GET' }));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).not.toHaveProperty('accepted');
+  });
+});
+
+describe('the notification payload never reaches storage', () => {
+  test('a spec-shaped subset cannot erase the report fields already stored', async () => {
+    const { db } = openDatabase(':memory:');
+    const stored = ticket({
+      tsStatus: 'doing',
+      appPlan: 'Pro',
+      level: 3,
+      attachments: [{ id: 'file-1', name: 'log.txt' }],
+      resolutionMetrics: { firstResponseMs: 1_200 },
+    });
+    seed(db, stored);
+    // HelpDesk answers the re-fetch with the whole record, exactly as it would
+    // for a full pull. The delivery only says which ticket to go and read.
+    const fetched = { ...stored, tsStatus: 'done', updatedAt: '2026-08-26T12:00:00.000Z' };
+    const processing = trackedProcessor(db, async () => [fetched]);
+    const handle = router(db, processing.tracked);
+
+    // Every field the spec says a delivery carries, and nothing more.
+    const payload = JSON.stringify({
+      event: 'ticket.updated',
+      changedFields: ['tsStatus', 'doneAt'],
+      ticket: {
+        id: 'internal-1',
+        ticketId: 'JOY-1',
+        shortUrl: 'https://helpdesk.test/t/1',
+        subject: 'Subject from the notification',
+        description: 'body from the notification',
+        appName: 'JOY Loyalty',
+        type: 'bug',
+        tsStatus: 'done',
+        ticketStatus: 'open',
+        priority: 'high',
+        store: [],
+        members: [],
+        tagIds: [],
+        chatLink: null,
+        slackLink: null,
+        dueDate: null,
+        createdAt: '2026-08-23T08:00:00.000Z',
+        updatedAt: '2026-08-26T12:00:00.000Z',
+        doneAt: '2026-08-26T12:00:00.000Z',
+      },
+    });
+
+    const response = await handle(
+      webhookRequest({ rawBody: payload, deliveryId: 'delivery-subset' })
+    );
+    await processing.settled();
+
+    expect(response.status).toBe(202);
+    const row = readTicket(db, 'JOY-1');
+    expect(row).toMatchObject({
+      tsStatus: 'done',
+      appPlan: 'Pro',
+      level: 3,
+      ticketNumber: '1234',
+      subject: 'Fetched subject',
+      tasks: [{ id: 'task-1', title: 'Preserve this task', completed: false }],
+      attachments: [{ id: 'file-1', name: 'log.txt' }],
+      resolutionMetrics: { firstResponseMs: 1_200 },
+    });
+    // The report page reads these two; a merged payload would have blanked them.
+    expect(row).not.toHaveProperty('doneAt');
+    expect(row).not.toHaveProperty('changedFields');
+  });
+
+  test('a payload claiming another ticket id updates only the ticket it names', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ id: 'internal-1', ticketId: 'JOY-1', tsStatus: 'doing' }));
+    seed(db, ticket({ id: 'internal-2', ticketId: 'JOY-2', tsStatus: 'doing' }));
+    const processing = trackedProcessor(db, async () => [
+      ticket({ id: 'internal-2', ticketId: 'JOY-2', tsStatus: 'done' }),
+    ]);
+    const handle = router(db, processing.tracked);
+
+    await handle(
+      webhookRequest({
+        rawBody: body({ id: 'internal-2', tsStatus: 'done' }),
+        deliveryId: 'delivery-other-ticket',
+      })
+    );
+    await processing.settled();
+
+    expect(readTicket(db, 'JOY-2')?.tsStatus).toBe('done');
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('doing');
+    expect(readStatusHistory(db, 'JOY-1')).toHaveLength(1);
+  });
+});
+
+describe('retry after an interruption, end to end', () => {
+  test('a delivery swept by a restart is reprocessed when the sender retries', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    const processing = trackedProcessor(db, async () => [ticket({ tsStatus: 'done' })]);
+    const handle = router(db, processing.tracked);
+
+    // First attempt reserves the row, then the process dies before it finishes.
+    const reserved = reserveDelivery(db, 'delivery-interrupted')!;
+    expect(sweepInterruptedPulls(db)).toBe(1);
+
+    const retry = await handle(webhookRequest({ deliveryId: 'delivery-interrupted' }));
+    await processing.settled();
+
+    expect(retry.status).toBe(202);
+    expect(db.select().from(pulls).where(eq(pulls.id, reserved)).get()).toMatchObject({
+      status: 'ok',
+      statusChanges: 1,
+    });
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('done');
+    expect(db.select().from(pulls).all()).toHaveLength(2);
+  });
+
+  test('a completed delivery replayed later writes nothing a second time', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    let fetches = 0;
+    const processing = trackedProcessor(db, async () => {
+      fetches += 1;
+      return [ticket({ tsStatus: 'done' })];
+    });
+    const handle = router(db, processing.tracked);
+
+    await handle(webhookRequest({ deliveryId: 'delivery-replayed' }));
+    await processing.settled();
+    const settledRow = db.select().from(pulls).where(eq(pulls.deliveryId, 'delivery-replayed')).get();
+    const historyAfterFirst = readStatusHistory(db, 'JOY-1');
+
+    const replay = await handle(webhookRequest({ deliveryId: 'delivery-replayed' }));
+    await processing.settled();
+
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({ duplicate: true });
+    expect(fetches).toBe(1);
+    expect(readStatusHistory(db, 'JOY-1')).toEqual(historyAfterFirst);
+    expect(
+      db.select().from(pulls).where(eq(pulls.deliveryId, 'delivery-replayed')).get()
+    ).toEqual(settledRow!);
+  });
+
+  test('a delivery that failed upstream is reprocessed on the sender retry', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    let attempts = 0;
+    const processing = trackedProcessor(db, async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('upstream unavailable');
+      return [ticket({ tsStatus: 'done' })];
+    });
+    const handle = router(db, processing.tracked);
+
+    const first = await handle(webhookRequest({ deliveryId: 'delivery-transient' }));
+    await processing.settled();
+    expect(first.status).toBe(202);
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('doing');
+
+    const retry = await handle(webhookRequest({ deliveryId: 'delivery-transient' }));
+    await processing.settled();
+
+    expect(retry.status).toBe(202);
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('done');
+    expect(db.select().from(pulls).where(eq(pulls.source, 'webhook')).all()).toHaveLength(1);
+  });
+});
+
+describe('what an unauthenticated caller can learn from a rejection', () => {
+  const leaks = [/\/Users\//, /apps\/api/, /\.ts:/, /at [A-Za-z]+ \(/, /"message"/, /stack/i];
+
+  test('no rejection body carries a path, a stack frame or a message key', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, {
+      process: async () => {
+        throw new Error('should never surface');
+      },
+    });
+    const throwing = createWebhookHandler({
+      secret: SECRET,
+      reserveDelivery: () => {
+        throw new Error('/Users/someone/issue-board/apps/api/src/db/sync.ts: database is locked');
+      },
+      webhooks: { process: async () => {} },
+    });
+
+    const responses = await Promise.all([
+      handle(webhookRequest({ signature: 'sha256=wrong', deliveryId: 'leak-signature' })),
+      handle(webhookRequest({ rawBody: '{not-json', deliveryId: 'leak-json' })),
+      handle(webhookRequest({ contentLength: 'unknown', deliveryId: 'leak-length' })),
+      handle(webhookRequest({ timestamp: '0', deliveryId: 'leak-stale' })),
+      throwing(webhookRequest({ deliveryId: 'leak-internal' })),
+    ]);
+
+    for (const response of responses) {
+      const text = await response.text();
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      for (const leak of leaks) expect(text).not.toMatch(leak);
+      expect(JSON.parse(text)).toEqual(
+        response.status === 500
+          ? { error: 'internal_error' }
+          : { error: response.status === 401 ? 'unauthorized' : 'invalid_request' }
+      );
+    }
   });
 });
