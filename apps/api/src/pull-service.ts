@@ -12,7 +12,7 @@ import type { HelpDeskTicket } from './helpdesk/types';
 
 export type PullRunner = {
   run: () => Promise<SyncResult>;
-  /** Orders webhook work after the existing single-flight pull without changing either write. */
+  /** Resolves once the pull in flight *at the moment of the call* has settled. */
   whenIdle: () => Promise<void>;
 };
 export type TicketFetcher = (config: Config) => Promise<HelpDeskTicket[]>;
@@ -46,8 +46,17 @@ export function createPullRunner(db: Db, config: Config, fetchTickets: TicketFet
       return inFlight;
     },
     whenIdle() {
-      // Ordering avoids a stale pull overwriting a newer webhook observation;
-      // an updatedAt predicate on only the webhook write cannot prevent that.
+      // This resolves against `inFlight` as it is *now*: it guarantees only
+      // that the pull running at the moment of the call has committed first,
+      // not that no pull is running when the caller finally writes. A caller
+      // that awaits it, then does upstream work, has to ask again — and the
+      // webhook path additionally refuses to write at all once a full pull has
+      // committed after its own fetch began, because ordering alone says
+      // nothing about which of the two observations is the newer one.
+      //
+      // Residual: nothing waits on webhook work from this side. A full pull
+      // that starts after the webhook's last check commits second and wins,
+      // which is correct — its read of HelpDesk is the later one.
       return (inFlight ?? Promise.resolve()).then(
         () => undefined,
         () => undefined

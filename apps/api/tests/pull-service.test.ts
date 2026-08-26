@@ -10,6 +10,7 @@ import { createPullRunner } from '../src/pull-service';
 
 const config: Config = {
   apiKey: 'test-key',
+  webhookSecret: 'test-webhook-secret',
   baseUrl: 'https://helpdesk.test',
   port: 8787,
   cacheTtlMs: 300_000,

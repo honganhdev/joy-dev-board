@@ -2,7 +2,7 @@
  * Read path. Everything the API serves comes from here — HelpDesk is only ever
  * touched by a pull, never by a page load.
  */
-import { and, asc, count, desc, eq, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import type { Db } from './client';
 import { pulls, tickets, ticketStatusHistory } from './schema';
 import type { PullRow } from './schema';
@@ -60,16 +60,23 @@ export function readStatusHistory(db: Db, ticketId: string): StatusHistoryEntry[
 
 const fullPull = or(isNull(pulls.source), eq(pulls.source, 'pull'));
 
+/**
+ * A delivery that actually wrote a ticket. One that was ignored — a foreign
+ * app, another year, or a snapshot a full pull had already superseded — still
+ * gets its row, because that row is the dedupe record and the audit trail, but
+ * it did no work and must not read as freshness. NULL is a row written before
+ * this was recorded, and stays counted.
+ */
+const wroteATicket = or(isNull(pulls.ticketCount), gt(pulls.ticketCount, 0));
+
+/** Most recent full pull attempts, successful or not, newest first. */
+export function readLastPulls(db: Db, limit: number): PullRow[] {
+  return db.select().from(pulls).where(fullPull).orderBy(desc(pulls.id)).limit(limit).all();
+}
+
 /** Most recent full pull attempt, successful or not — this is what staleness is read from. */
 export function readLastPull(db: Db): PullRow | null {
-  const [row] = db
-    .select()
-    .from(pulls)
-    .where(fullPull)
-    .orderBy(desc(pulls.id))
-    .limit(1)
-    .all();
-  return row ?? null;
+  return readLastPulls(db, 1)[0] ?? null;
 }
 
 /** Most recent full pull that actually committed. `null` before the first one. */
@@ -84,12 +91,12 @@ export function readLastSuccessfulPull(db: Db): PullRow | null {
   return row ?? null;
 }
 
-/** Most recent webhook delivery that actually committed. */
+/** Most recent webhook delivery that actually wrote a ticket. */
 export function readLastSuccessfulWebhook(db: Db): PullRow | null {
   const [row] = db
     .select()
     .from(pulls)
-    .where(and(eq(pulls.source, 'webhook'), eq(pulls.status, 'ok')))
+    .where(and(eq(pulls.source, 'webhook'), eq(pulls.status, 'ok'), wroteATicket))
     .orderBy(desc(pulls.id))
     .limit(1)
     .all();

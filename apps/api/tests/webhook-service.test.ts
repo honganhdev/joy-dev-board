@@ -2,15 +2,31 @@ import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import type { Config } from '../src/config';
 import { openDatabase, type Db } from '../src/db/client';
-import { readStatusHistory, readTicket, readTickets } from '../src/db/queries';
+import {
+  readLastSuccessfulWebhook,
+  readStatusHistory,
+  readTicket,
+  readTickets,
+} from '../src/db/queries';
 import { pulls, tickets, ticketStatusHistory } from '../src/db/schema';
-import { finishPull, reserveDelivery, startPull, syncPull } from '../src/db/sync';
+import {
+  finishPull,
+  reserveDelivery,
+  startPull,
+  sweepInterruptedPulls,
+  syncPull,
+} from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { createPullRunner, type PullRunner } from '../src/pull-service';
-import { createWebhookProcessor, type CreatedOnFetcher } from '../src/webhook-service';
+import {
+  createWebhookProcessor,
+  redriveFailedDeliveries,
+  type CreatedOnFetcher,
+} from '../src/webhook-service';
 
 const config = {
   apiKey: 'test-key',
+  webhookSecret: 'service-test-secret',
   baseUrl: 'https://helpdesk.test',
   port: 8787,
   cacheTtlMs: 300_000,
@@ -324,5 +340,135 @@ describe('the mirrored window is judged on the fetched record', () => {
       status: 'ok',
       ticketCount: 0,
     });
+  });
+});
+
+
+describe('a full pull that commits while a delivery is fetching', () => {
+  test('is not reversed by the delivery\'s older snapshot', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    const webhookGate = deferred<HelpDeskTicket[]>();
+    const webhookFetchStarted = deferred<void>();
+    const pullGate = deferred<HelpDeskTicket[]>();
+    const pullRunner = createPullRunner(db, config, () => pullGate.promise);
+    const processor = createWebhookProcessor(db, config, pullRunner, async () => {
+      webhookFetchStarted.resolve(undefined);
+      return webhookGate.promise;
+    });
+    const deliveryPullId = reserveDelivery(db, 'delivery-stale-snapshot')!;
+
+    // The delivery's day fetch is in flight; its snapshot still says 'doing'.
+    const processing = processor.process(deliveryPullId, 'internal-1', ticket().createdAt);
+    await webhookFetchStarted.promise;
+
+    // Meanwhile the ticket is bulk-closed upstream, which fires no webhook at
+    // all, and a board load kicks the opportunistic pull that reads 'done'.
+    const running = pullRunner.run();
+    pullGate.resolve([ticket({ tsStatus: 'done', updatedAt: '2026-08-26T09:00:00.000Z' })]);
+    await running;
+
+    webhookGate.resolve([ticket({ tsStatus: 'doing' })]);
+    await processing;
+
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('done');
+    // `ticket_status_history` is the table nothing can repair: a done → doing
+    // row written here would be permanent.
+    expect(
+      readStatusHistory(db, 'JOY-1').map((entry) => [entry.fromStatus, entry.toStatus])
+    ).toEqual([
+      [null, 'doing'],
+      ['doing', 'done'],
+    ]);
+    expect(db.select().from(pulls).where(eq(pulls.id, deliveryPullId)).get()).toMatchObject({
+      status: 'ok',
+      ticketCount: 0,
+    });
+  });
+});
+
+describe('a delivery lost after its 202', () => {
+  test('is re-driven on the next boot, with no second request from any client', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    // Reserved exactly as the route reserves it: with the ticket it named.
+    const pullId = reserveDelivery(
+      db,
+      'delivery-lost',
+      undefined,
+      'internal-1',
+      '2026-08-23T08:00:00.000Z'
+    )!;
+    const failing = createWebhookProcessor(db, config, idlePulls, async () => {
+      throw new Error('upstream unavailable');
+    });
+    await failing.process(pullId, 'internal-1', '2026-08-23T08:00:00.000Z');
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()?.status).toBe('error');
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('doing');
+
+    // Boot. Avada saw a 2xx and will never send this delivery again.
+    sweepInterruptedPulls(db);
+    let requests = 0;
+    const recovered = createWebhookProcessor(db, config, idlePulls, async () => {
+      requests += 1;
+      return [ticket({ tsStatus: 'done' })];
+    });
+
+    expect(await redriveFailedDeliveries(db, recovered)).toBe(1);
+
+    expect(requests).toBe(1);
+    expect(readTicket(db, 'JOY-1')?.tsStatus).toBe('done');
+    expect(readStatusHistory(db, 'JOY-1')).toHaveLength(2);
+    expect(db.select().from(pulls).where(eq(pulls.id, pullId)).get()).toMatchObject({
+      status: 'ok',
+      ticketCount: 1,
+    });
+  });
+
+  test('a settled delivery is not re-driven a second time', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    const pullId = reserveDelivery(
+      db,
+      'delivery-settled-boot',
+      undefined,
+      'internal-1',
+      '2026-08-23T08:00:00.000Z'
+    )!;
+    const processor = createWebhookProcessor(db, config, idlePulls, async () => [
+      ticket({ tsStatus: 'done' }),
+    ]);
+    await processor.process(pullId, 'internal-1', '2026-08-23T08:00:00.000Z');
+
+    expect(await redriveFailedDeliveries(db, processor)).toBe(0);
+    expect(readStatusHistory(db, 'JOY-1')).toHaveLength(2);
+  });
+});
+
+describe('freshness a delivery may claim', () => {
+  test('an ignored delivery keeps its row but does not advance the webhook time', async () => {
+    const { db } = openDatabase(':memory:');
+    seed(db, ticket({ tsStatus: 'doing' }));
+    const wrote = reserveDelivery(db, 'delivery-wrote')!;
+    const writing = createWebhookProcessor(db, config, idlePulls, async () => [
+      ticket({ tsStatus: 'done' }),
+    ]);
+    await writing.process(wrote, 'internal-1', ticket().createdAt);
+    const freshAfterWrite = readLastSuccessfulWebhook(db);
+
+    const ignored = reserveDelivery(db, 'delivery-ignored')!;
+    const foreign = createWebhookProcessor(db, config, idlePulls, async () => [
+      ticket({ id: 'internal-9', ticketId: 'JOY-9', appName: 'JOY Subscription' }),
+    ]);
+    await foreign.process(ignored, 'internal-9', ticket().createdAt);
+
+    // The row is the dedupe record and the audit trail, so it stays...
+    expect(db.select().from(pulls).where(eq(pulls.id, ignored)).get()).toMatchObject({
+      source: 'webhook',
+      status: 'ok',
+      ticketCount: 0,
+    });
+    // ...but it wrote nothing, so the board must not say "webhook just now".
+    expect(readLastSuccessfulWebhook(db)?.id).toBe(freshAfterWrite!.id);
   });
 });

@@ -16,6 +16,7 @@ import {
 import {
   countTickets,
   readLastPull,
+  readLastPulls,
   readLastSuccessfulPull,
   readLastSuccessfulWebhook,
   readStatusHistory,
@@ -33,6 +34,14 @@ import type { WebhookProcessor } from './webhook-service';
 
 // Bounds drift from deletions, bulk closes and silent updates that emit no webhook.
 const STALE_PULL_MS = 30 * 60 * 1000;
+
+/**
+ * How long a board load stops starting opportunistic pulls once two full pulls
+ * have failed in a row. Staleness is measured from the last *successful* pull,
+ * so without this every request while HelpDesk is down starts another 34-window
+ * sweep. One failure is still retried at once — that is a blip, not an outage.
+ */
+const FAILED_PULL_BACKOFF_MS = 5 * 60 * 1000;
 
 /**
  * Turns a failure into an error the UI can show. HelpDesk problems become 502
@@ -142,7 +151,8 @@ export function createRouter({
   const serveStatic: StaticHandler = createStaticHandler(webDistPath ?? null);
   const handleWebhook = createWebhookHandler({
     secret: webhookSecret,
-    reserveDelivery: (deliveryId) => reserveDelivery(db, deliveryId),
+    reserveDelivery: (key, ticketId, createdAt) =>
+      reserveDelivery(db, key, undefined, ticketId, createdAt),
     webhooks,
   });
 
@@ -151,8 +161,21 @@ export function createRouter({
     void pulls.run().catch(() => undefined);
   }
 
-  /** Reconcile an empty or stale mirror without holding the board response. */
+  /** True while the upstream has failed twice running and the second failure is recent. */
+  function backingOff(): boolean {
+    const [latest, previous] = readLastPulls(db, 2);
+    if (latest?.status !== 'error' || previous?.status !== 'error') return false;
+    const failedAt = latest.finishedAt ? Date.parse(latest.finishedAt) : Number.NaN;
+    return Number.isFinite(failedAt) && Date.now() - failedAt < FAILED_PULL_BACKOFF_MS;
+  }
+
+  /**
+   * Reconcile an empty or stale mirror without holding the board response.
+   * The Pull button does not come through here: a person pressing it always
+   * pulls, whatever the last attempts did.
+   */
   function ensureSeeded(): void {
+    if (backingOff()) return;
     const finishedAt = readLastSuccessfulPull(db)?.finishedAt;
     const finishedMs = finishedAt ? Date.parse(finishedAt) : Number.NaN;
     const stale = !Number.isFinite(finishedMs) || Date.now() - finishedMs > STALE_PULL_MS;

@@ -6,8 +6,10 @@ import { join } from 'node:path';
  * and the login handler.
  */
 
-export type Config<WithWebhookSecret extends boolean = false> = {
+export type Config = {
   apiKey: string;
+  /** Shared secret the Avada webhook signs its deliveries with. */
+  webhookSecret: string;
   baseUrl: string;
   port: number;
   /** How long the HelpDesk tag directory stays cached in memory. */
@@ -20,7 +22,7 @@ export type Config<WithWebhookSecret extends boolean = false> = {
   auth: AuthConfig;
   /** Built web assets to serve alongside `/api/*`. `null` when there are none. */
   webDistPath: string | null;
-} & (WithWebhookSecret extends true ? { webhookSecret: string } : {});
+};
 
 export type AuthConfig = {
   /** The single account that may sign in. There is no user-management UI. */
@@ -79,7 +81,7 @@ export function decodePasswordHash(raw: string): string {
 }
 
 /** Throws with an actionable message when required env is missing. */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config<true> {
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const apiKey = env.API_KEY_HELPDESK?.trim();
   if (!apiKey) {
     throw new Error(

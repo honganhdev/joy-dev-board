@@ -36,6 +36,7 @@ const auth: AuthConfig = {
 
 const config = {
   apiKey: 'test-key',
+  webhookSecret: SECRET,
   baseUrl: 'https://helpdesk.test',
   port: 8787,
   cacheTtlMs: 300_000,
@@ -64,8 +65,11 @@ function ticket(overrides: Partial<HelpDeskTicket> = {}): HelpDeskTicket {
   };
 }
 
-function body(ticketFields: Record<string, unknown> = {}): string {
+// The spec's payload carries the delivery id inside the signed body, and that
+// is what dedupe keys on; the header is only logged.
+function body(ticketFields: Record<string, unknown> = {}, deliveryId?: string): string {
   return JSON.stringify({
+    ...(deliveryId ? { deliveryId } : {}),
     ticket: { id: 'internal-1', createdAt: '2026-08-23T08:00:00.000Z', ...ticketFields },
   });
 }
@@ -81,12 +85,13 @@ function webhookRequest(
     contentLength?: string;
   } = {}
 ): Request {
-  const rawBody = options.rawBody ?? body();
+  const deliveryId = options.deliveryId ?? 'delivery-1';
+  const rawBody = options.rawBody ?? body({}, deliveryId);
   const timestamp = options.timestamp ?? String(Date.now());
   const headers = new Headers({
     'Content-Type': 'application/json',
     'Content-Length': options.contentLength ?? String(Buffer.byteLength(rawBody)),
-    'X-Avada-Delivery': options.deliveryId ?? 'delivery-1',
+    'X-Avada-Delivery': deliveryId,
     'X-Avada-Timestamp': timestamp,
     'X-Avada-Signature': options.signature ?? signWebhook(SECRET, timestamp, rawBody),
     'X-Avada-Event': options.event ?? 'ticket.updated',
@@ -204,6 +209,52 @@ describe('Avada webhook route', () => {
     expect(second.status).toBe(200);
     expect(db.select().from(pulls).all()).toHaveLength(1);
     expect(invoked).toBe(1);
+  });
+
+  test('one captured request replayed under a second delivery header is processed once', async () => {
+    const { db } = openDatabase(':memory:');
+    let invoked = 0;
+    const handle = router(db, { process: async () => void (invoked += 1) });
+    // One capture, replayed verbatim: the signature covers the timestamp and
+    // the body, and neither changes. Only the unsigned header does.
+    const timestamp = String(Date.now());
+    const rawBody = body({}, 'signed-delivery-id');
+
+    const first = await handle(webhookRequest({ rawBody, timestamp, deliveryId: 'header-a' }));
+    const replay = await handle(webhookRequest({ rawBody, timestamp, deliveryId: 'header-b' }));
+
+    expect([first.status, replay.status]).toEqual([202, 200]);
+    expect(invoked).toBe(1);
+    expect(db.select().from(pulls).all()).toHaveLength(1);
+  });
+
+  test('a replayed body carrying no deliveryId of its own is deduped on its bytes', async () => {
+    const { db } = openDatabase(':memory:');
+    let invoked = 0;
+    const handle = router(db, { process: async () => void (invoked += 1) });
+    const timestamp = String(Date.now());
+    const rawBody = body();
+
+    const first = await handle(webhookRequest({ rawBody, timestamp, deliveryId: 'header-c' }));
+    const replay = await handle(webhookRequest({ rawBody, timestamp, deliveryId: 'header-d' }));
+
+    expect([first.status, replay.status]).toEqual([202, 200]);
+    expect(invoked).toBe(1);
+    expect(db.select().from(pulls).all()).toHaveLength(1);
+  });
+
+  test('records the ticket a delivery named, so a delivery lost after the 202 can be repeated', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+
+    await handle(webhookRequest({ deliveryId: 'delivery-recorded' }));
+
+    expect(
+      db.select().from(pulls).where(eq(pulls.deliveryId, 'delivery-recorded')).get()
+    ).toMatchObject({
+      deliveryTicketId: 'internal-1',
+      deliveryTicketCreatedAt: '2026-08-23T08:00:00.000Z',
+    });
   });
 
   test('an older payload arriving second cannot flap history or overwrite the fetched state', async () => {
@@ -339,18 +390,24 @@ describe('Avada webhook route', () => {
     expect(wasRead()).toBe(false);
   });
 
-  test('rejects a chunked body with no Content-Length before reading it', async () => {
+  test('accepts a signed chunked body that declares no Content-Length', async () => {
     const { db } = openDatabase(':memory:');
-    const handle = router(db, { process: async () => {} });
-    const request = webhookRequest();
+    const invoked: unknown[][] = [];
+    const handle = router(db, { process: async (...args) => void invoked.push(args) });
+    // A chunked or HTTP/2 sender declares no length. Refusing it would lose
+    // every delivery it makes, and all 8 retries with it — and the refusal
+    // would happen before the signature is even checked.
+    const request = webhookRequest({ deliveryId: 'delivery-chunked' });
     request.headers.delete('Content-Length');
     request.headers.set('Transfer-Encoding', 'chunked');
-    const wasRead = observeBodyRead(request);
 
     const response = await handle(request);
 
-    expect(response.status).toBe(400);
-    expect(wasRead()).toBe(false);
+    expect(response.status).toBe(202);
+    expect(invoked).toHaveLength(1);
+    expect(
+      db.select().from(pulls).where(eq(pulls.deliveryId, 'delivery-chunked')).get()
+    ).toMatchObject({ source: 'webhook', status: 'running' });
   });
 
   test('returns a fixed 500 when reserving throws', async () => {
@@ -672,5 +729,69 @@ describe('what an unauthenticated caller can learn from a rejection', () => {
           : { error: response.status === 401 ? 'unauthorized' : 'invalid_request' }
       );
     }
+  });
+});
+
+describe('what a rejection writes to the log', () => {
+  function captureConsole(): { lines: string[]; restore: () => void } {
+    const lines: string[] = [];
+    const original = { log: console.log, warn: console.warn, error: console.error };
+    const record =
+      (...prefix: unknown[]) =>
+      (...args: unknown[]) =>
+        void lines.push([...prefix, ...args].map(String).join(' '));
+    console.log = record();
+    console.warn = record();
+    console.error = record();
+    return {
+      lines,
+      restore: () => {
+        console.log = original.log;
+        console.warn = original.warn;
+        console.error = original.error;
+      },
+    };
+  }
+
+  test('an attacker cannot grow the log or plant control bytes with the delivery header', async () => {
+    const { db } = openDatabase(':memory:');
+    const handle = router(db, { process: async () => {} });
+    // `Headers` refuses a literal newline, so the forged separator here is a
+    // tab; the length is what an anonymous caller can push without limit.
+    const request = webhookRequest({ signature: 'sha256=wrong' });
+    request.headers.set('X-Avada-Delivery', `real\t${'x'.repeat(5000)}`);
+    const captured = captureConsole();
+
+    try {
+      await handle(request);
+    } finally {
+      captured.restore();
+    }
+
+    expect(captured.lines).toHaveLength(1);
+    expect(captured.lines[0]).not.toMatch(/[\u0000-\u001f\u007f]/);
+    expect(captured.lines[0]!.length).toBeLessThan(200);
+  });
+
+  test('the 500 path logs the cause it keeps out of the response', async () => {
+    const throwing = createWebhookHandler({
+      secret: SECRET,
+      reserveDelivery: () => {
+        throw new Error('database is locked');
+      },
+      webhooks: { process: async () => {} },
+    });
+    const captured = captureConsole();
+
+    let response: Response;
+    try {
+      response = await throwing(webhookRequest({ deliveryId: 'delivery-logged-cause' }));
+    } finally {
+      captured.restore();
+    }
+
+    expect(response!.status).toBe(500);
+    expect(await response!.json()).toEqual({ error: 'internal_error' });
+    expect(captured.lines.join(' ')).toContain('database is locked');
   });
 });

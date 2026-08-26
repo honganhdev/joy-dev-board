@@ -21,6 +21,7 @@ const auth: AuthConfig = {
 
 const config = {
   apiKey: 'test-key',
+  webhookSecret: 'test-webhook-secret',
   baseUrl: 'https://helpdesk.test',
   port: 8787,
   cacheTtlMs: 300_000,
@@ -219,5 +220,95 @@ describe('reconciliation boundaries and single-flight', () => {
       h.db.select().from(pullRows).where(eq(pullRows.source, 'webhook')).all()
     ).toEqual([]);
     expect(h.db.select().from(pullRows).all()).toHaveLength(2);
+  });
+});
+
+describe('a failing upstream and the opportunistic pull', () => {
+  function failingHarness() {
+    const { db } = openDatabase(':memory:');
+    seedFullPull(db, new Date(Date.now() - 31 * 60 * 1000).toISOString(), true);
+    let fetches = 0;
+    const pulls = createPullRunner(db, config, async () => {
+      fetches += 1;
+      throw new Error('upstream unavailable');
+    });
+    const handle = createRouter({
+      db,
+      pulls,
+      tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
+      auth,
+      webhookSecret: 'test-webhook-secret',
+      webhooks: { process: async () => {} },
+      year: config.year,
+    });
+    const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+    const load = async () => {
+      await handle(
+        new Request('http://localhost/api/tickets', {
+          headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
+        })
+      );
+      await pulls.whenIdle();
+    };
+    return { db, handle, sessionId, load, fetches: () => fetches };
+  }
+
+  test('is not re-swept on every consecutive board load', async () => {
+    const h = failingHarness();
+
+    // Every one of these would otherwise start another 34-window year sweep:
+    // staleness is measured from the last *successful* pull, which never moves
+    // while HelpDesk is down.
+    for (let load = 0; load < 5; load += 1) await h.load();
+
+    expect(h.fetches()).toBe(2);
+  });
+
+  test('the manual Pull button still pulls while the board is backing off', async () => {
+    const h = failingHarness();
+    for (let load = 0; load < 5; load += 1) await h.load();
+    expect(h.fetches()).toBe(2);
+
+    await h.handle(
+      new Request('http://localhost/api/pull', {
+        method: 'POST',
+        headers: { Cookie: `${SESSION_COOKIE}=${h.sessionId}` },
+      })
+    );
+
+    expect(h.fetches()).toBe(3);
+  });
+
+  test('a single failure is still retried at once — a blip is not an outage', async () => {
+    const { db } = openDatabase(':memory:');
+    seedFullPull(db, new Date(Date.now() - 31 * 60 * 1000).toISOString(), true);
+    const seededId = startPull(db);
+    failPull(db, seededId, 'upstream unavailable');
+    const gate = deferred<HelpDeskTicket[]>();
+    let fetches = 0;
+    const pulls = createPullRunner(db, config, () => {
+      fetches += 1;
+      return gate.promise;
+    });
+    const handle = createRouter({
+      db,
+      pulls,
+      tags: { get: async () => ({ value: [], loadedAt: '', fromCache: false }) } as never,
+      auth,
+      webhookSecret: 'test-webhook-secret',
+      webhooks: { process: async () => {} },
+      year: config.year,
+    });
+    const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+
+    await handle(
+      new Request('http://localhost/api/tickets', {
+        headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
+      })
+    );
+
+    expect(fetches).toBe(1);
+    gate.resolve([]);
+    await pulls.whenIdle();
   });
 });

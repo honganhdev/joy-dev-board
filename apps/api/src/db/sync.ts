@@ -6,7 +6,7 @@
  * closes it. Splitting it that way is what lets a failed pull still leave a
  * record of the attempt without leaving half-written tickets behind.
  */
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import type { Db } from './client';
 import { pulls, tickets, ticketStatusHistory } from './schema';
 import type { HelpDeskTicket } from '../helpdesk/types';
@@ -78,11 +78,20 @@ export function startPull(db: Db, startedAt = new Date().toISOString()): number 
 export function reserveDelivery(
   db: Db,
   deliveryId: string,
-  startedAt = new Date().toISOString()
+  startedAt = new Date().toISOString(),
+  deliveryTicketId: string | null = null,
+  deliveryTicketCreatedAt: string | null = null
 ): number | null {
   const [row] = db
     .insert(pulls)
-    .values({ startedAt, status: 'running', source: 'webhook', deliveryId })
+    .values({
+      startedAt,
+      status: 'running',
+      source: 'webhook',
+      deliveryId,
+      deliveryTicketId,
+      deliveryTicketCreatedAt,
+    })
     .onConflictDoUpdate({
       target: pulls.deliveryId,
       set: {
@@ -93,12 +102,43 @@ export function reserveDelivery(
         statusChanges: null,
         status: 'running',
         error: null,
+        deliveryTicketId,
+        deliveryTicketCreatedAt,
       },
       where: eq(pulls.status, 'error'),
     })
     .returning({ id: pulls.id })
     .all();
   return row?.id ?? null;
+}
+
+/**
+ * Deliveries that answered 202 and then failed, newest last.
+ *
+ * The sender is gone: Avada saw a 2xx and will not send them again. They can
+ * only be repeated from what the reserved row itself stored, so a row that
+ * predates those columns is not re-drivable and is left alone.
+ */
+export function readFailedDeliveries(
+  db: Db
+): Array<{ id: number; ticketId: string; createdAt: string | null }> {
+  return db
+    .select({
+      id: pulls.id,
+      ticketId: pulls.deliveryTicketId,
+      createdAt: pulls.deliveryTicketCreatedAt,
+    })
+    .from(pulls)
+    .where(
+      and(
+        eq(pulls.source, 'webhook'),
+        eq(pulls.status, 'error'),
+        isNotNull(pulls.deliveryTicketId)
+      )
+    )
+    .orderBy(asc(pulls.id))
+    .all()
+    .map((row) => ({ id: row.id, ticketId: row.ticketId as string, createdAt: row.createdAt }));
 }
 
 export function finishPull(db: Db, pullId: number, result: SyncResult): void {

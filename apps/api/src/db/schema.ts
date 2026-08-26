@@ -93,8 +93,19 @@ export const pulls = sqliteTable(
     error: text('error'),
     /** NULL means a full pull written before this source marker existed. */
     source: text('source', { enum: ['pull', 'webhook'] }),
-    /** The sender's delivery id; NULL for full pulls. */
+    /**
+     * What this delivery is deduped on: the `deliveryId` inside the signed
+     * body, or a hash of that body when it carries none. NULL for full pulls.
+     */
     deliveryId: text('deliveryId'),
+    /**
+     * The delivery's own ticket, kept so a delivery that failed after the 202
+     * can be re-driven. Avada treats any 2xx as terminal and never retries, so
+     * without these two the reserved row names work that nothing can repeat.
+     * NULL for full pulls and for deliveries reserved before this existed.
+     */
+    deliveryTicketId: text('deliveryTicketId'),
+    deliveryTicketCreatedAt: text('deliveryTicketCreatedAt'),
   },
   (table) => [uniqueIndex('pulls_deliveryId_idx').on(table.deliveryId)]
 );

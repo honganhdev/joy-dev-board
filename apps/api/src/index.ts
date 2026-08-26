@@ -6,7 +6,7 @@ import { countTickets } from './db/queries';
 import { fetchTags, fetchTicketsCreatedOn, fetchTicketsForYear } from './helpdesk/client';
 import { createPullRunner } from './pull-service';
 import { createRouter } from './routes';
-import { createWebhookProcessor } from './webhook-service';
+import { createWebhookProcessor, redriveFailedDeliveries } from './webhook-service';
 
 // Fail loudly and early: missing credentials are a startup error, not a 500
 // later — and a board with no login must never come up at all.
@@ -24,6 +24,10 @@ const { db } = openDatabase(config.databasePath);
 bootstrap(db);
 const pulls = createPullRunner(db, config, fetchTicketsForYear);
 const webhooks = createWebhookProcessor(db, config, pulls, fetchTicketsCreatedOn);
+// The sweep above has just turned every interrupted delivery into an `error`
+// row. Avada already saw a 2xx for those and will never send them again, so
+// this boot is the only thing that can finish them.
+void redriveFailedDeliveries(db, webhooks);
 
 // The tag directory is the one thing still read live from HelpDesk: it is a
 // lookup table, not part of the ticket mirror, so it is cached in memory rather
