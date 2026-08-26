@@ -25,6 +25,14 @@ function ticket(overrides: Partial<HelpDeskTicket>): HelpDeskTicket {
   };
 }
 
+/**
+ * The words the page may never print, matched as whole words. A substring match
+ * cannot tell server wording from the customer text this payload carries: the
+ * standing taxonomy label `TRANSLATION` holds `sla`, and a merchant called
+ * `Slate` holds it too.
+ */
+const FORBIDDEN_LANGUAGE = /\b(SLA|overdue|breach|deadline)\b/i;
+
 function report(tickets: HelpDeskTicket[], weeks = 12): WeeklyReport {
   return aggregateWeeklyReport(tickets, { weeks, now: NOW, year: YEAR });
 }
@@ -1235,8 +1243,34 @@ describe('the strings the page prints', () => {
     }
 
     for (const payload of [report([]), populated, fixture]) {
-      expect(strings(payload).filter((value) => /SLA|overdue|breach|deadline/i.test(value))).toEqual([]);
+      expect(strings(payload).filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual([]);
     }
+  });
+
+  test('reads whole words, so customer text holding a banned substring passes', () => {
+    // The payload carries customer text: a ticket subject and a merchant name.
+    // A substring guard reads `Slate` as an SLA claim and fails with an
+    // assertion naming no cause — whose obvious repair is to delete the guard.
+    const values = payloadStrings(
+      report([
+        ticket({
+          ticketId: 'slate',
+          subject: 'Slate translation request',
+          store: [{ shopName: 'Slate' }],
+        }),
+      ])
+    );
+
+    expect(values).toContain('Slate translation request');
+    expect(values).toContain('Slate');
+    expect(values.filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual([]);
+
+    // And it still catches the real thing, standing on its own.
+    expect(
+      ['SLA', 'we are overdue', 'a breach of the agreement', 'missed the deadline'].filter(
+        (value) => FORBIDDEN_LANGUAGE.test(value)
+      )
+    ).toHaveLength(4);
   });
 
   test('names the running week in the backlog heading instead of promising a week end', () => {
@@ -1550,6 +1584,6 @@ describe('a feature label that reads like forbidden language', () => {
     const values = payloadStrings(report([ticket({ subject: 'translate the widget text' })]));
 
     expect(values).toContain('TRANSLATION');
-    expect(values.filter((value) => /\b(SLA|overdue|breach|deadline)\b/i.test(value))).toEqual([]);
+    expect(values.filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual([]);
   });
 });
