@@ -19,6 +19,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const WEEK_MS = 7 * DAY_MS;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Indexed by `localParts(ms).weekday`: 0 = Monday, 6 = Sunday.
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 type LocalParts = { year: number; month: number; day: number; weekday: number };
 
@@ -76,6 +78,17 @@ export function weekLabel(startMs: number): string {
 /** `17 Aug` — the column tick under a week. */
 export function weekShortLabel(startMs: number): string {
   return dayAndMonth(localParts(startMs));
+}
+
+/** `Mon 17 Aug` — the column tick under a day. */
+export function dayTickLabel(ms: number): string {
+  const parts = localParts(ms);
+  return `${(WEEKDAYS[parts.weekday] ?? '').slice(0, 3)} ${dayAndMonth(parts)}`;
+}
+
+/** `Monday` — a weekday name for prose. */
+export function weekdayName(ms: number): string {
+  return WEEKDAYS[localParts(ms).weekday] ?? '';
 }
 
 /** `20 Mar 2026` — a single calendar day, for prose that names one date. */

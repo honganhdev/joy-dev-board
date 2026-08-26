@@ -2,6 +2,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-reac
 import { useState } from 'react';
 import { BacklogColumns } from './backlog-columns';
 import { BacklogAge } from './backlog-age';
+import { DayColumns } from './day-columns';
 import { DurationHistogram } from './duration-histogram';
 import { FeatureBreakdown } from './feature-breakdown';
 import { HeadlineTiles } from './headline-tiles';
@@ -20,14 +21,14 @@ import { categoryDotClass } from '@/lib/category-style';
 function ReportSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
-      {/* Matches the measured subject card; server-owned doneRule wrapping can make it drift. */}
-      <Skeleton className="h-[89px] w-full rounded-lg" />
+      {/* Matches the subject card approximately; server-owned copy wrapping can make it drift. */}
+      <Skeleton className="h-[122px] w-full rounded-lg" />
       <div className="flex gap-3">
         <Skeleton className="h-28 flex-1 rounded-lg" />
         <Skeleton className="h-28 flex-1 rounded-lg" />
         <Skeleton className="h-28 flex-1 rounded-lg" />
       </div>
-      <Skeleton className="h-52 w-full rounded-lg" />
+      <Skeleton className="h-64 w-full rounded-lg" />
       <Skeleton className="h-52 w-full rounded-lg" />
     </div>
   );
@@ -114,6 +115,9 @@ export function ReportView({ pullToken }: { pullToken: number }) {
           </Button>
         </div>
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.doneRule}</p>
+        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+          {report.timeZoneNote}
+        </p>
       </section>
 
       <HeadlineTiles
@@ -121,6 +125,16 @@ export function ReportView({ pullToken }: { pullToken: number }) {
         openRightNow={report.openRightNow}
         agingHeadline={report.openBacklog.agingHeadline}
       />
+
+      <DayColumns week={focused} />
+
+      <PairedBars
+        title="By category"
+        rows={categoryRows}
+        emptyMessage="No tickets in either cohort."
+      />
+
+      <SectionDivider title={report.trendSectionTitle} />
 
       <div className="px-1">
         <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
@@ -143,12 +157,6 @@ export function ReportView({ pullToken }: { pullToken: number }) {
       />
 
       <DurationHistogram data={report.timeToFirstDone} />
-
-      <PairedBars
-        title="By category"
-        rows={categoryRows}
-        emptyMessage="No tickets in either cohort."
-      />
 
       <SectionDivider title={report.openSectionTitle} />
 

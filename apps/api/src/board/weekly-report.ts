@@ -20,7 +20,16 @@ import type {
   WeeklyReport,
   WeekSummary,
 } from './report-types';
-import { WEEK_MS, dayLabel, weekKey, weekLabel, weekShortLabel, weekStartMs } from './weeks';
+import {
+  WEEK_MS,
+  dayLabel,
+  dayTickLabel,
+  weekKey,
+  weekLabel,
+  weekShortLabel,
+  weekStartMs,
+  weekdayName,
+} from './weeks';
 import type { HelpDeskTicket } from '../helpdesk/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +58,11 @@ const NO_PLAN = '(no plan)';
  */
 const DONE_RULE =
   'Done = reached a done state in HelpDesk at any point, dated by HelpDesk\'s own done date.';
+
+const TIME_ZONE_NOTE =
+  'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
+
+const TREND_SECTION_TITLE = 'The weeks before this one, for context.';
 
 const OUTSTANDING_CAPTION =
   'Outstanding at week end is historical, counted from the mirror; open right now is ' +
@@ -123,6 +137,11 @@ function emptyWeeksNote(weeks: WeekSummary[]): string | null {
   if (empty === 0) return null;
   if (empty === 1) return `1 of the ${weeks.length} weeks shown finished no measurable ticket, so it has no median.`;
   return `${empty} of the ${weeks.length} weeks shown finished no measurable ticket, so they have no median.`;
+}
+
+function listWeekdays(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
 }
 
 /** Upper bound in whole days, and the label the histogram prints. */
@@ -832,6 +851,8 @@ export function aggregateWeeklyReport(
     const statuses = new Map<string, number>();
     let created = 0;
     let done = 0;
+    const createdByDay = Array<number>(7).fill(0);
+    const doneByDay = Array<number>(7).fill(0);
     const daysToDone: number[] = [];
     let outstanding = 0;
     let closedWithoutDoneAt = 0;
@@ -839,10 +860,16 @@ export function aggregateWeeklyReport(
     for (const ticket of counted) {
       const { createdMs, doneMs } = ticket;
 
-      if (createdMs !== null && createdMs >= startMs && createdMs < endMs) created += 1;
+      if (createdMs !== null && createdMs >= startMs && createdMs < endMs) {
+        created += 1;
+        const day = Math.floor((createdMs - startMs) / DAY_MS);
+        createdByDay[day] = (createdByDay[day] ?? 0) + 1;
+      }
 
       if (doneMs !== null && doneMs >= startMs && doneMs < endMs) {
         done += 1;
+        const day = Math.floor((doneMs - startMs) / DAY_MS);
+        doneByDay[day] = (doneByDay[day] ?? 0) + 1;
         if (createdMs !== null) daysToDone.push(wholeDaysBetween(createdMs, doneMs));
         statuses.set(ticket.status, (statuses.get(ticket.status) ?? 0) + 1);
         bump(categories, ticket.category, 'done');
@@ -859,6 +886,48 @@ export function aggregateWeeklyReport(
         bump(priorities, ticket.priority, 'outstanding');
       }
     }
+
+    const days = Array.from({ length: 7 }, (_, day) => {
+      const dayStart = startMs + day * DAY_MS;
+      const createdCount = createdByDay[day] ?? 0;
+      const doneCount = doneByDay[day] ?? 0;
+      const received = createdCount > 0 || doneCount > 0;
+      const future = dayStart > nowMs && !received;
+      return {
+        label: dayTickLabel(dayStart),
+        created: future ? null : createdCount,
+        done: future ? null : doneCount,
+      };
+    });
+    const daysHighlight = (() => {
+      if (inProgress || (created === 0 && done === 0)) return null;
+
+      const busiestCount = Math.max(...days.map((day) => day.created ?? 0));
+      const mostClearedCount = Math.max(...days.map((day) => day.done ?? 0));
+      const busiestIndex = days.findIndex((day) => day.created === busiestCount);
+      const mostClearedIndex = days.findIndex((day) => day.done === mostClearedCount);
+      const busiest = weekdayName(startMs + busiestIndex * DAY_MS);
+      const mostCleared = weekdayName(startMs + mostClearedIndex * DAY_MS);
+
+      return busiest === mostCleared
+        ? `${busiest} was the busiest day and the most-cleared day.`
+        : `${busiest} was the busiest day and ${mostCleared} was the most-cleared day.`;
+    })();
+    const daysNote = (() => {
+      if (!inProgress) return null;
+
+      const futureDays = days.flatMap((day, index) =>
+        day.created === null ? [weekdayName(startMs + index * DAY_MS)] : []
+      );
+      const futureSentence =
+        futureDays.length === 0
+          ? ''
+          : futureDays.length === 1
+            ? `${futureDays[0] ?? ''} has not happened yet, so it has no figures. `
+            : `${listWeekdays(futureDays)} have not happened yet, so they have no figures. `;
+      const elapsedDay = Math.min(6, Math.floor((nowMs - startMs) / DAY_MS));
+      return `${futureSentence}${weekdayName(startMs + elapsedDay * DAY_MS)} is still running, so its figures are day-to-date.`;
+    })();
 
     return {
       key: weekKey(startMs),
@@ -888,6 +957,9 @@ export function aggregateWeeklyReport(
       priorities: [...priorities.entries()]
         .sort(byWeightThenKey(NO_PRIORITY))
         .map(([priority, pair]) => ({ priority, label: priorityLabel(priority), ...pair })),
+      days,
+      daysHighlight,
+      daysNote,
     };
   });
 
@@ -917,5 +989,7 @@ export function aggregateWeeklyReport(
     excluded,
     excludedNote: excludedNote(excluded),
     doneRule: DONE_RULE,
+    timeZoneNote: TIME_ZONE_NOTE,
+    trendSectionTitle: TREND_SECTION_TITLE,
   };
 }

@@ -78,6 +78,21 @@ export type WeekSummary = {
   categories: Array<{ category: string; label: string; done: number; outstanding: number }>;
   /** Same rule; an absent or unknown priority is a row keyed `(no priority)`, pinned last. */
   priorities: Array<{ priority: string; label: string; done: number; outstanding: number }>;
+  /**
+   * The focused week's seven days, Monday first. `created` and `done` are `null`
+   * together when the day has not started and received nothing; a day that has
+   * started reports a real 0.
+   */
+  days: Array<{
+    /** `Mon 17 Aug` — the column tick. Unique within a week. */
+    label: string;
+    created: number | null;
+    done: number | null;
+  }>;
+  /** The finished week's busiest and most-cleared days, or `null` when there is nothing final to name. */
+  daysHighlight: string | null;
+  /** Future-day and day-to-date wording for the running week; `null` for a finished week. */
+  daysNote: string | null;
 };
 
 export type GhostAudit = {
@@ -223,4 +238,8 @@ export type WeeklyReport = {
   excludedNote: string | null;
   /** The done rule, in words, rendered on screen verbatim. */
   doneRule: string;
+  /** The timezone and boundary rule, rendered on screen verbatim. */
+  timeZoneNote: string;
+  /** Server-worded heading for the multi-week context section. */
+  trendSectionTitle: string;
 };

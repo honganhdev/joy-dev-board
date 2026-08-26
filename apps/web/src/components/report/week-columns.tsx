@@ -73,7 +73,7 @@ export function WeekColumns({ weeks, focusedKey, onFocus }: WeekColumnsProps) {
         })}
       </div>
       <p className="mt-2 text-[10px] text-muted-foreground">
-        Click a week to focus it. The tiles and both breakdowns follow.
+        Click a week to focus it. The week detail above and the highlight here follow.
       </p>
     </Panel>
   );
