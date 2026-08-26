@@ -191,6 +191,8 @@ export type WeeklyReport = {
       key: string;
       label: string;
       open: number;
+      /** The `olderThan30` denominator: open tickets whose created date is readable. */
+      openWithCreatedDate: number;
       olderThan30: number;
       medianDaysToDone: number | null;
       doneSample: number;

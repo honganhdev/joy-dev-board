@@ -515,18 +515,37 @@ function openBacklog(open: HelpDeskTicket[], nowMs: number): WeeklyReport['openB
 
   return {
     total,
-    agingHeadline:
-      total === 0
-        ? null
-        : total === 1
-          ? `${Math.round((olderThan30 / total) * 100)}% of the 1 open ticket is older than 30 days.`
-          : `${Math.round((olderThan30 / total) * 100)}% of open tickets are older than 30 days.`,
+    agingHeadline: total === 0 ? null : agingHeadline(olderThan30, dated.length, noCreatedDate),
     buckets: bucketCounts,
     noCreatedDate,
     noCreatedDateLabel: 'No readable created date',
     oldest,
     oldestCaption: oldestCaption(dated.length),
   };
+}
+
+/**
+ * The share of the backlog older than 30 days, over the tickets whose age can
+ * actually be read. Counting an undated ticket in the denominator would count
+ * it as *not* old, which turns a lower bound into an exact-looking proportion.
+ * The tickets left out are named rather than absorbed.
+ */
+function agingHeadline(olderThan30: number, dated: number, noCreatedDate: number): string {
+  const excluded =
+    noCreatedDate === 0
+      ? ''
+      : noCreatedDate === 1
+        ? ' 1 more has no readable created date.'
+        : ` ${noCreatedDate} more have no readable created date.`;
+
+  if (dated === 0) {
+    return 'No open ticket has a readable created date, so no age share can be measured.';
+  }
+
+  const percentage = Math.round((olderThan30 / dated) * 100);
+  return dated === 1
+    ? `${percentage}% of the 1 open ticket with a readable created date is older than 30 days.${excluded}`
+    : `${percentage}% of the ${dated} open tickets with a readable created date are older than 30 days.${excluded}`;
 }
 
 /**
@@ -626,6 +645,8 @@ function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] 
 
 type FeatureMetric = {
   open: number;
+  /** Open tickets whose age can be read; the denominator of `olderThan30`. */
+  openWithCreatedDate: number;
   olderThan30: number;
   daysToDone: number[];
 };
@@ -633,7 +654,7 @@ type FeatureMetric = {
 function featureMetric(metrics: Map<string, FeatureMetric>, key: string): FeatureMetric {
   const existing = metrics.get(key);
   if (existing) return existing;
-  const created = { open: 0, olderThan30: 0, daysToDone: [] };
+  const created = { open: 0, openWithCreatedDate: 0, olderThan30: 0, daysToDone: [] };
   metrics.set(key, created);
   return created;
 }
@@ -647,13 +668,19 @@ function openByFeature(
 ): WeeklyReport['openByFeature'] {
   const metrics = new Map<string, FeatureMetric>();
 
+  let noCreatedDate = 0;
   for (const ticket of open) {
     const metric = featureMetric(metrics, classify(ticket));
     metric.open += 1;
     const createdMs = timestamp(ticket.createdAt);
-    if (createdMs !== null && !Number.isNaN(createdMs) && wholeDaysBetween(createdMs, nowMs) > 30) {
-      metric.olderThan30 += 1;
+    if (createdMs === null || Number.isNaN(createdMs)) {
+      noCreatedDate += 1;
+      continue;
     }
+    // Same rule as the backlog headline: an unreadable date is left out of the
+    // age denominator rather than counted as a ticket that is not old.
+    metric.openWithCreatedDate += 1;
+    if (wholeDaysBetween(createdMs, nowMs) > 30) metric.olderThan30 += 1;
   }
 
   for (const ticket of counted) {
@@ -684,6 +711,7 @@ function openByFeature(
         key,
         label: key,
         open: metric.open,
+        openWithCreatedDate: metric.openWithCreatedDate,
         olderThan30: metric.olderThan30,
         medianDaysToDone,
         doneSample,
@@ -693,12 +721,19 @@ function openByFeature(
       };
     });
 
+  const undated =
+    noCreatedDate === 0
+      ? ''
+      : ` ${noCreatedDate} open ${noCreatedDate === 1 ? 'ticket has' : 'tickets have'} no readable ` +
+        'created date and sit outside the age figures.';
+
   return {
     rows,
     caption:
-      'Open and older-than-30-day figures use all open tickets right now. Speed uses tickets ' +
-      'finished in the selected range with both dates. Medians are shown only with at least 3 ' +
-      'finished tickets; the sample appears first and is not a rate.',
+      'Open and older-than-30-day figures use all open tickets right now, aged over those with a ' +
+      'readable created date. Speed uses tickets finished in the selected range with both dates. ' +
+      'Medians are shown only with at least 3 finished tickets; the sample appears first and is ' +
+      `not a rate.${undated}`,
   };
 }
 

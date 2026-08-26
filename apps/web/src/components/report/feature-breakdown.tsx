@@ -29,8 +29,10 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
                   style={{ width: `${(row.olderThan30 / scale) * 100}%` }}
                 />
               </span>
+              {/* Aged over the tickets whose date can be read, not over every
+                  open ticket — an undated one is not a ticket that is not old. */}
               <span className="w-20 shrink-0 text-right text-[11px] tabular-nums">
-                {row.olderThan30} of {row.open}
+                {row.olderThan30} of {row.openWithCreatedDate}
               </span>
               <span className="w-60 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
                 {row.speedNote}

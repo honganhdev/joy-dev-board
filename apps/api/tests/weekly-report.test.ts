@@ -552,7 +552,9 @@ describe('the open backlog', () => {
     expect(result.buckets.map((bucket) => bucket.count)).toEqual([0, 0, 0, 1]);
     expect(result.oldest).toHaveLength(1);
     expect(result.oldest[0]).toMatchObject({ ageDays: 200, ageLabel: '200 days' });
-    expect(result.agingHeadline).toContain('1 open ticket is older');
+    expect(result.agingHeadline).toContain(
+      '100% of the 1 open ticket with a readable created date is older than 30 days.'
+    );
   });
 
   test('labels the age buckets disjointly, so no ticket reads as being in two', () => {
@@ -584,6 +586,35 @@ describe('the open backlog', () => {
       )
     ).openBacklog;
     expect(result.buckets.map((bucket) => bucket.count)).toEqual([1, 2, 1, 0]);
+  });
+
+  test('keeps undated tickets out of the age share instead of counting them as young', () => {
+    // One known-old ticket and one with no date is not "50% older than 30 days":
+    // the undated one is unmeasured, not measured as young.
+    const result = report([
+      ticket({
+        ticketId: 'old',
+        createdAt: new Date(NOW.getTime() - 60 * 86400000).toISOString(),
+      }),
+      ticket({ ticketId: 'undated', createdAt: null }),
+    ]).openBacklog;
+
+    expect(result.agingHeadline).toBe(
+      '100% of the 1 open ticket with a readable created date is older than 30 days. ' +
+        '1 more has no readable created date.'
+    );
+    expect(result.total).toBe(2);
+  });
+
+  test('says so when no open ticket has a readable created date at all', () => {
+    const result = report([
+      ticket({ ticketId: 'absent', createdAt: null }),
+      ticket({ ticketId: 'unreadable', createdAt: 'not a date' }),
+    ]).openBacklog;
+
+    expect(result.agingHeadline).toBe(
+      'No open ticket has a readable created date, so no age share can be measured.'
+    );
   });
 
   test('names absent and unreadable created dates without putting them in a bucket', () => {
@@ -745,6 +776,24 @@ describe('open tickets by feature', () => {
     ).openByFeature.rows[0];
     expect(result).toMatchObject({ doneSample: 3, medianDaysToDone: 2 });
     expect(result?.speedNote).toBe('3 finished tickets in range · median 2 d');
+  });
+
+  test('ages a feature over its dated open tickets and names the rest', () => {
+    const result = report([
+      ticket({
+        ticketId: 'old',
+        subject: 'widget broken',
+        createdAt: new Date(NOW.getTime() - 60 * 86400000).toISOString(),
+      }),
+      ticket({ ticketId: 'undated', subject: 'widget broken', createdAt: null }),
+    ]).openByFeature;
+
+    expect(result.rows[0]).toMatchObject({
+      open: 2,
+      openWithCreatedDate: 1,
+      olderThan30: 1,
+    });
+    expect(result.caption).toContain('1 open ticket has no readable created date');
   });
 
   test('includes a feature present only in the done cohort', () => {
