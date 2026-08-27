@@ -107,6 +107,7 @@ export function ReportView({
 
   return (
     <div className="space-y-3 pb-4">
+      <h2 className="sr-only">Weekly issue report</h2>
       <section className="rounded-lg border border-stone-200 bg-white p-4">
         <div className="flex items-center gap-2">
           <Button
