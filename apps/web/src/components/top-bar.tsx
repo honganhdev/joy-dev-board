@@ -1,5 +1,5 @@
 import { AlertTriangle, LogOut, RefreshCw, Search } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
@@ -39,6 +39,18 @@ type TopBarProps = {
   onSignOut: () => void;
 };
 
+/**
+ * The instant a timestamp names, or null when it names nothing yet. `formatAge`
+ * says the literal `never` for a missing or unparseable value, and the API
+ * falls back to the epoch when no pull has ever been recorded — both mean the
+ * same thing to a reader, and neither belongs in the bar as text.
+ */
+function instantOf(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  return Number.isNaN(at) || at === 0 ? null : at;
+}
+
 const VIEWS: Array<{ value: BoardView; label: string }> = [
   { value: 'board', label: 'Board' },
   { value: 'report', label: 'Report' },
@@ -60,6 +72,15 @@ export function TopBar({
   const initials = username ? username.slice(0, 2).toUpperCase() : null;
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // The ages below are computed while rendering, so without a clock of their
+  // own they keep reporting how old the data was when the board last loaded.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
+
   useEffect(() => {
     if (view !== 'board') return;
 
@@ -76,6 +97,16 @@ export function TopBar({
         return;
       }
 
+      // A layer that holds the focus holds the keyboard with it: pulling focus
+      // to the search field from inside the ticket dialog or the Columns
+      // popover dismisses the layer the reader was working in.
+      if (
+        target instanceof HTMLElement &&
+        target.closest('[role="dialog"], [data-radix-popper-content-wrapper]')
+      ) {
+        return;
+      }
+
       event.preventDefault();
       searchRef.current?.focus();
     };
@@ -83,6 +114,12 @@ export function TopBar({
     document.addEventListener('keydown', focusSearch);
     return () => document.removeEventListener('keydown', focusSearch);
   }, [view]);
+
+  // A pull the API could not date is a pull that has not happened: the epoch
+  // sentinel it falls back to would otherwise read as a confident `20692d 5h ago`.
+  const pulledAge =
+    instantOf(status?.pulledAt) === null ? 'not yet' : formatAge(status?.pulledAt, now);
+  const delivered = instantOf(status?.webhookAt) !== null;
 
   return (
     <header className="relative shrink-0">
@@ -104,8 +141,8 @@ export function TopBar({
         {status ? (
           <div className="ml-auto flex items-center gap-3">
             <div className="flex flex-col justify-center gap-0.5">
-              <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-                Tickets
+              <span className="text-[10px] font-semibold tracking-wider whitespace-nowrap text-muted-foreground uppercase">
+                JOY Loyalty tickets
               </span>
               <span className="text-[12px] leading-none tabular-nums">
                 {status.tickets.onBoard} of {status.tickets.open} open
@@ -113,12 +150,12 @@ export function TopBar({
             </div>
             <Separator orientation="vertical" />
             <div
-              role={status.lastPullError ? 'status' : undefined}
+              role="status"
               className={`flex flex-col justify-center gap-0.5 ${
                 status.lastPullError ? 'text-amber-900' : ''
               }`}
             >
-              <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+              <span className="text-[10px] font-semibold tracking-wider whitespace-nowrap text-muted-foreground uppercase">
                 Pulled
               </span>
               {status.lastPullError ? (
@@ -126,33 +163,33 @@ export function TopBar({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 rounded-sm text-[12px] leading-none tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      className="flex items-center gap-1.5 rounded-sm text-[12px] leading-none whitespace-nowrap tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     >
                       <AlertTriangle className="size-3.5 shrink-0" />
-                      Stale · failed {formatAge(status.lastPullError.failedAt)}
+                      {pulledAge} · retry failed {formatAge(status.lastPullError.failedAt, now)}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>{status.lastPullError.detail}</TooltipContent>
                 </Tooltip>
               ) : (
-                <span className="text-[12px] leading-none tabular-nums">
-                  {formatAge(status.pulledAt)}
+                <span className="text-[12px] leading-none whitespace-nowrap tabular-nums">
+                  {pulledAge}
                 </span>
               )}
             </div>
             <Separator orientation="vertical" />
             <div className="flex flex-col justify-center gap-0.5">
-              <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+              <span className="text-[10px] font-semibold tracking-wider whitespace-nowrap text-muted-foreground uppercase">
                 Webhook
               </span>
-              <span className="flex items-center gap-1.5 text-[12px] leading-none tabular-nums">
+              <span className="flex items-center gap-1.5 text-[12px] leading-none whitespace-nowrap tabular-nums">
                 <span
                   className={`size-1.5 rounded-full ${
-                    status.webhookAt === null ? 'bg-stone-400' : 'bg-emerald-500'
+                    delivered ? 'bg-emerald-500' : 'bg-stone-400'
                   }`}
                   aria-hidden="true"
                 />
-                {status.webhookAt === null ? 'waiting' : formatAge(status.webhookAt)}
+                {delivered ? formatAge(status.webhookAt, now) : 'waiting'}
               </span>
             </div>
           </div>
