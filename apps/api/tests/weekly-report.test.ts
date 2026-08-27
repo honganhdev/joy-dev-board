@@ -2089,6 +2089,45 @@ describe('the day breakdown inside a week', () => {
     }
   });
 
+  test('ranks the split vocabulary over the whole range, so a slot means the same in every week', () => {
+    // WIDGET is busiest across the range but appears in no week except the
+    // first. Ranked week by week it would never be named at all; ranked over
+    // the range it leads, and slot 0 keeps meaning WIDGET while the reader
+    // pages to a week that holds none. Six categories against five named slots
+    // also puts VIP TIERS — the quietest — into the remainder.
+    const AUG_3 = '2026-08-03T09:00:00+07:00';
+    const AUG_4 = '2026-08-04T09:00:00+07:00';
+    const result = report([
+      ...[0, 1, 2, 3].map((index) =>
+        ticket({ ticketId: `early-${index}`, subject: 'widget', createdAt: AUG_3, doneAt: AUG_4 })
+      ),
+      ticket({ ticketId: 'late-points', subject: 'points', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'late-coupon', subject: 'coupon', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'late-email', subject: 'email', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'late-link', subject: 'integration', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'late-vip', subject: 'vip tier', createdAt: MON_17, doneAt: TUE_18 }),
+    ]);
+    const early = weekByKey(result, '2026-W32');
+    const late = weekByKey(result, '2026-W34');
+    const labels = result.daySplit.categories.map((row) => row.label);
+
+    expect(labels).toHaveLength(6);
+    expect(labels[0]).toBe('WIDGET');
+    expect(labels).not.toContain('VIP TIERS');
+    expect(labels.at(-1)).toBe('OTHER CATEGORIES');
+
+    // Slot 0 is WIDGET in both directions: it carries the early week's four and
+    // nothing in the week that has none of them.
+    expect(early.daySplitTotals.category.created[0]).toBe(4);
+    expect(early.daySplitTotals.category.created.slice(1).every((count) => count === 0)).toBe(true);
+    expect(late.daySplitTotals.category.created[0]).toBe(0);
+    // The one category outside the named five is counted in the remainder, not dropped.
+    expect(late.daySplitTotals.category.created.at(-1)).toBe(1);
+    expect(late.daySplitTotals.category.created.reduce((sum, count) => sum + count, 0)).toBe(
+      late.created
+    );
+  });
+
   test('splits two adjacent minutes across a midnight inside the week', () => {
     // Tue 23:59 and Wed 00:00 in +07:00 — the same decision the week boundary
     // makes, one level down.
