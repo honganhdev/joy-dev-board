@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatAge } from '@/lib/format';
 
 export type BoardView = 'board' | 'report';
@@ -32,8 +33,6 @@ type TopBarProps = {
   pullLabel?: string;
   /** Board facts for the status strip. Null before the first load. */
   status: BoardStatus | null;
-  /** Set when the board is being served from storage after a failed pull. */
-  warning?: { label: string; detail: string } | null;
   /** Who the current session belongs to. */
   username: string | null;
   onSignOut: () => void;
@@ -54,7 +53,6 @@ export function TopBar({
   pulling,
   pullLabel,
   status,
-  warning,
   username,
   onSignOut,
 }: TopBarProps) {
@@ -88,13 +86,33 @@ export function TopBar({
               </span>
             </div>
             <Separator orientation="vertical" />
-            <div className="flex flex-col justify-center gap-0.5">
+            <div
+              role={status.lastPullError ? 'status' : undefined}
+              className={`flex flex-col justify-center gap-0.5 ${
+                status.lastPullError ? 'text-amber-900' : ''
+              }`}
+            >
               <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
                 Pulled
               </span>
-              <span className="text-[12px] leading-none tabular-nums">
-                {formatAge(status.pulledAt)}
-              </span>
+              {status.lastPullError ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 rounded-sm text-[12px] leading-none tabular-nums outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <AlertTriangle className="size-3.5 shrink-0" />
+                      Stale · failed {formatAge(status.lastPullError.failedAt)}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{status.lastPullError.detail}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="text-[12px] leading-none tabular-nums">
+                  {formatAge(status.pulledAt)}
+                </span>
+              )}
             </div>
             <Separator orientation="vertical" />
             <div className="flex flex-col justify-center gap-0.5">
@@ -184,16 +202,6 @@ export function TopBar({
         )}
 
         {view === 'board' && columnSettings}
-
-        {warning && (
-          <div
-            title={warning.detail}
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900"
-          >
-            <AlertTriangle className="size-3.5 shrink-0" />
-            {warning.label}
-          </div>
-        )}
 
         <Button size="sm" className="shrink-0" onClick={onPull} disabled={pulling}>
           <RefreshCw className={pulling ? 'animate-spin' : undefined} />

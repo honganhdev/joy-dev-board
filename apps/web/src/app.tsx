@@ -12,7 +12,6 @@ import { useAuth } from '@/hooks/use-auth';
 import { useBoard } from '@/hooks/use-board';
 import { useColumnSettings } from '@/hooks/use-column-settings';
 import { useTicketDetail } from '@/hooks/use-ticket-detail';
-import { formatAge } from '@/lib/format';
 import { filterBoard } from '@/lib/search';
 import { cn } from '@/lib/utils';
 import type { PullSummary } from '@/types';
@@ -103,16 +102,6 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
       }
     : null;
 
-  // The board is served from the API's database, so a failed pull leaves real
-  // tickets on screen. Say how old they are instead of pretending they are fresh.
-  const warning =
-    board && board.lastPull?.status === 'error'
-      ? {
-          label: `Stale · HelpDesk pull failed ${formatAge(board.lastPull.finishedAt ?? board.lastPull.startedAt)}`,
-          detail: board.lastPull.error ?? 'The last pull did not finish.',
-        }
-      : null;
-
   // The report scrolls in here, so focusing a week from its trend chart has to
   // scroll this element: the panels that change sit above it, off-screen.
   const reportScroll = useRef<HTMLDivElement>(null);
@@ -140,7 +129,6 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         pulling={pulling}
         pullLabel={pulling ? 'Pulling…' : undefined}
         status={status}
-        warning={warning}
         username={username}
         onSignOut={onSignOut}
       />
