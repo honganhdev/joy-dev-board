@@ -1,8 +1,9 @@
 import { AlertTriangle, LogOut, RefreshCw, Search } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatAge } from '@/lib/format';
 
@@ -57,6 +58,31 @@ export function TopBar({
   onSignOut,
 }: TopBarProps) {
   const initials = username ? username.slice(0, 2).toUpperCase() : null;
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (view !== 'board') return;
+
+    const focusSearch = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+
+    document.addEventListener('keydown', focusSearch);
+    return () => document.removeEventListener('keydown', focusSearch);
+  }, [view]);
 
   return (
     <header className="relative shrink-0">
@@ -162,34 +188,32 @@ export function TopBar({
       </div>
 
       <div className="flex h-10 items-center gap-3 border-b border-stone-200 bg-white px-5">
-        <div
-          role="tablist"
+        <ToggleGroup
+          type="single"
+          value={view}
           aria-label="View"
-          className="flex shrink-0 items-center gap-0.5 rounded-md border border-stone-200 bg-stone-50 p-0.5"
+          className="shrink-0"
+          onValueChange={(value) => {
+            if (value) onViewChange(value as BoardView);
+          }}
         >
           {VIEWS.map((entry) => (
-            <button
+            <ToggleGroupItem
               key={entry.value}
-              type="button"
-              role="tab"
-              aria-selected={view === entry.value}
-              onClick={() => onViewChange(entry.value)}
-              className={
-                view === entry.value
-                  ? 'rounded-[5px] bg-white px-3 py-1 text-[12px] font-semibold text-stone-900 shadow-none'
-                  : 'rounded-[5px] px-3 py-1 text-[12px] text-muted-foreground hover:text-stone-900'
-              }
+              value={entry.value}
+              className="rounded-md border border-stone-200 bg-white px-2.5 py-1 text-[12px] text-stone-700 hover:border-stone-300 data-[state=on]:border-stone-800 data-[state=on]:bg-stone-800 data-[state=on]:font-semibold data-[state=on]:text-white"
             >
               {entry.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {/* The search filters board cards, so it is meaningless on the report. */}
-        {view === 'board' ? (
-          <div className="relative mx-auto w-full max-w-xl">
+        {view === 'board' && (
+          <div className="relative min-w-0 flex-1 max-w-[240px] lg:max-w-sm">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchRef}
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
               placeholder="Paste ticket URL, ID, Slack or Crisp…"
@@ -197,16 +221,16 @@ export function TopBar({
               className="h-9 bg-stone-50 pl-9"
             />
           </div>
-        ) : (
-          <div className="mx-auto" />
         )}
 
-        {view === 'board' && columnSettings}
+        <div className="ml-auto flex items-center gap-3">
+          {view === 'board' && columnSettings}
 
-        <Button size="sm" className="shrink-0" onClick={onPull} disabled={pulling}>
-          <RefreshCw className={pulling ? 'animate-spin' : undefined} />
-          {pullLabel ?? 'Pull HelpDesk'}
-        </Button>
+          <Button size="sm" className="shrink-0" onClick={onPull} disabled={pulling}>
+            <RefreshCw className={pulling ? 'animate-spin' : undefined} />
+            {pullLabel ?? 'Pull HelpDesk'}
+          </Button>
+        </div>
       </div>
     </header>
   );
