@@ -6,7 +6,7 @@ import { BoardError, BoardSkeleton } from '@/components/board/board-states';
 import { LoginScreen } from '@/components/login-screen';
 import { ReportView } from '@/components/report/report-view';
 import { TicketDetailDialog } from '@/components/ticket-detail-dialog';
-import { TopBar, type BoardView } from '@/components/top-bar';
+import { TopBar, type BoardStatus, type BoardView } from '@/components/top-bar';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/hooks/use-auth';
 import { useBoard } from '@/hooks/use-board';
@@ -88,16 +88,20 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
     }
   }, [pull, reportPull]);
 
-  const boardSubtitle = board
-    ? `${board.boardTickets} of ${board.openTickets} open JOY Loyalty tickets · pulled ${formatAge(board.pulledAt)} · webhook ${formatAge(board.webhookAt)}`
-    : 'HelpDesk tickets for JOY Loyalty · read-only';
-
-  const subtitle =
-    view === 'report'
-      ? board
-        ? `Weekly issue report · as of pulled ${formatAge(board.pulledAt)}`
-        : 'Weekly issue report for JOY Loyalty'
-      : boardSubtitle;
+  const status: BoardStatus | null = board
+    ? {
+        tickets: { onBoard: board.boardTickets, open: board.openTickets },
+        pulledAt: board.pulledAt,
+        webhookAt: board.webhookAt ?? null,
+        lastPullError:
+          board.lastPull?.status === 'error'
+            ? {
+                failedAt: board.lastPull.finishedAt ?? board.lastPull.startedAt,
+                detail: board.lastPull.error ?? 'The last pull did not finish.',
+              }
+            : null,
+      }
+    : null;
 
   // The board is served from the API's database, so a failed pull leaves real
   // tickets on screen. Say how old they are instead of pretending they are fresh.
@@ -135,13 +139,13 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         onPull={handlePull}
         pulling={pulling}
         pullLabel={pulling ? 'Pulling…' : undefined}
-        subtitle={subtitle}
+        status={status}
         warning={warning}
         username={username}
         onSignOut={onSignOut}
       />
 
-      <main className="min-h-0 flex-1 px-4 py-4">
+      <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 px-4 py-4 outline-none">
         {/* The board scrolls inside its columns; the report is one long page and
             needs a scroll container of its own or everything below the first
             panels is unreachable at any window size. */}
