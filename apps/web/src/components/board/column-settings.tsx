@@ -36,7 +36,7 @@ export function ColumnSettings({
             aria-label={`Columns, ${selected.length} extra shown`}
           >
             <Columns3 />
-            Columns · {selected.length}
+            Columns · {selected.length} extra
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-72 p-3" aria-labelledby="extra-columns-heading">
