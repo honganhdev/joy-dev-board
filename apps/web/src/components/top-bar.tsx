@@ -247,7 +247,7 @@ export function TopBar({
 
         {/* The search filters board cards, so it is meaningless on the report. */}
         {view === 'board' && (
-          // 672px: wide enough to close the middle span at 1920, narrow enough that the field is not a paragraph.
+          // 672px: closes the middle span at 1024–1280 and cuts it ~28% at 1920; wider would make the field a paragraph.
           <div className="relative min-w-0 flex-1 max-w-2xl">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
