@@ -31,11 +31,11 @@ export function LoginScreen({ onSubmit, submitting, error }: LoginScreenProps) {
     <div className="flex min-h-screen items-center justify-center bg-stone-50 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-7 flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-stone-900 text-sm font-bold text-white">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-stone-900 text-sm font-bold text-white">
             J
           </div>
           <div className="leading-tight">
-            <div className="text-[15px] font-bold">JOY Dev Board</div>
+            <h1 className="text-[15px] font-bold">JOY Dev Board</h1>
             <div className="text-[11px] text-muted-foreground">Sign in to continue</div>
           </div>
         </div>
