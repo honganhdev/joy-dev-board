@@ -65,15 +65,56 @@ const TIME_ZONE_NOTE =
 const TREND_SECTION_TITLE = 'Every week in the range, for context.';
 
 const DAY_SPLIT_NAMED_SLOTS = 5;
-const OTHER_CATEGORIES = '(other categories)';
-const OTHER_STATUSES = '(other statuses)';
-const DAY_SPLIT_MODE_LABELS = { category: 'By category', status: 'By status today' };
-const DAY_SPLIT_CAPTIONS = {
-  category:
-    'Each bar is split by the feature area the ticket was classified into. The five busiest areas in this range are named; every other area is grouped into the last segment.',
-  status:
-    'Each bar is split by where its tickets stand right now, not by where they stood on the day. Tickets created here that were closed without a done date are left out of the created bar, so that bar can stop short of the figure above it.',
+/**
+ * The rolled-up slot. Named `remaining` rather than `other` because `OTHER` is
+ * itself a category the classifier emits: the two can sit side by side in the
+ * readout, and two near-identical names meaning different things is the kind of
+ * plausible-looking label this page exists to avoid.
+ */
+const REMAINING_CATEGORIES = '(remaining areas)';
+const REMAINING_STATUSES = '(remaining statuses)';
+const REMAINING_CATEGORIES_LABEL = 'REMAINING AREAS';
+const REMAINING_STATUSES_LABEL = 'Remaining statuses';
+const DAY_SPLIT_MODE_LABELS = {
+  off: 'Off',
+  category: 'By category',
+  status: 'By status today',
 };
+/** The two cohorts, named once here so the browser composes neither word. */
+const DAY_SPLIT_COHORT_LABELS = { created: 'created', done: 'done' };
+/** The hatched region under the status split, named for the key beside it. */
+const DAY_SPLIT_EXCLUDED_LABEL = 'not counted';
+/**
+ * Why a split button is dead. Deliberately says what the panel cannot do rather
+ * than why: the split is withheld both when the payload is missing counts and
+ * when the vocabulary outruns the colours the panel owns, and a message naming
+ * only the first would be false in the second.
+ */
+const DAY_SPLIT_UNAVAILABLE_NOTES = {
+  category: 'The category split cannot be drawn for this week.',
+  status: 'The status split cannot be drawn for this week.',
+};
+const DAY_SPLIT_STATUS_CAPTION =
+  'Each bar is split by where its tickets stand right now, not by where they stood on the day. Tickets created here that were closed without a done date are left out of the created bar, and are drawn as a hatched region up to the figure above it.';
+
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+
+function countWord(count: number): string {
+  return COUNT_WORDS[count] ?? String(count);
+}
+
+/**
+ * The category caption, counted from the vocabulary that was actually built
+ * rather than from the constant beside it — a range with fewer areas than named
+ * slots rolls nothing up, and the sentence has to stop promising a remainder.
+ */
+function categoryCaption(vocabulary: SplitVocabularyRow[]): string {
+  const lead = 'Each bar is split by the feature area the ticket was classified into.';
+  const rolled = vocabulary.at(-1)?.key === REMAINING_CATEGORIES;
+  const named = rolled ? vocabulary.length - 1 : vocabulary.length;
+  if (!rolled) return `${lead} Every area in this range is named.`;
+  return `${lead} The ${countWord(named)} busiest areas in this range are named; every other area is grouped into the last segment.`;
+}
 
 const OUTSTANDING_CAPTION =
   'Outstanding at week end is historical, counted from the mirror; open right now is ' +
@@ -344,8 +385,9 @@ type SplitVocabularyRow = { key: string; label: string };
 
 /**
  * Folds keys that print the same label before ranking, then pins one remainder
- * slot last. The lexicographically first raw key survives a label fold so the
- * wire identity does not depend on input order.
+ * slot last — but only when something actually rolls into it. The
+ * lexicographically first raw key survives a label fold so the wire identity
+ * does not depend on input order.
  */
 function splitVocabulary(
   counts: Map<string, number>,
@@ -376,17 +418,27 @@ function splitVocabulary(
     .slice(0, DAY_SPLIT_NAMED_SLOTS)
     .map(({ key, label }) => ({ key, label }));
 
-  return [...named, { key: remainderKey, label: remainderLabel }];
+  // Everything folded that did not get named rolls up: the labels beyond the cap
+  // and any label colliding with the remainder's own. A range with fewer areas
+  // than slots rolls up nothing, and a permanently-zero last slot printing
+  // `REMAINING AREAS 0` under a caption promising a remainder is a claim the
+  // data does not make.
+  const rolled = folded.size - named.length;
+  return rolled > 0 ? [...named, { key: remainderKey, label: remainderLabel }] : named;
 }
 
 function splitSlot(
   key: string,
   vocabulary: SplitVocabularyRow[],
-  labelFor: (key: string) => string
+  labelFor: (key: string) => string,
+  remainderKey: string
 ): number {
-  const named = vocabulary.slice(0, -1);
-  const index = named.findIndex((row) => row.label === labelFor(key));
-  return index === -1 ? vocabulary.length - 1 : index;
+  const label = labelFor(key);
+  const named = vocabulary.findIndex((row) => row.key !== remainderKey && row.label === label);
+  if (named !== -1) return named;
+  // Unreachable with no remainder slot: the vocabulary only omits one when every
+  // label it saw is named.
+  return vocabulary.findIndex((row) => row.key === remainderKey);
 }
 
 function increment(counts: Map<string, number>, key: string): void {
@@ -662,7 +714,7 @@ function outstandingCaveat(closedWithoutDoneAt: number): string | null {
 
 function createdClosedWithoutDoneAtNote(count: number): string | null {
   if (count === 0) return null;
-  return `${count} ${count === 1 ? 'ticket' : 'tickets'} created this week ${count === 1 ? 'was' : 'were'} closed without a done date and ${count === 1 ? 'is' : 'are'} not in the created bars.`;
+  return `${count} ${count === 1 ? 'ticket' : 'tickets'} created this week ${count === 1 ? 'was' : 'were'} closed without a done date and ${count === 1 ? 'is' : 'are'} drawn as a hatched slice rather than counted in the created bars.`;
 }
 
 /**
@@ -1051,14 +1103,14 @@ export function aggregateWeeklyReport(
   const categoryVocabulary = splitVocabulary(
     categoryCounts,
     (category) => category,
-    OTHER_CATEGORIES,
-    'OTHER CATEGORIES'
+    REMAINING_CATEGORIES,
+    REMAINING_CATEGORIES_LABEL
   );
   const statusVocabulary = splitVocabulary(
     statusCounts,
     statusLabel,
-    OTHER_STATUSES,
-    'Other statuses'
+    REMAINING_STATUSES,
+    REMAINING_STATUSES_LABEL
   );
 
   const weeks: WeekSummary[] = weekStarts.map((startMs) => {
@@ -1074,6 +1126,7 @@ export function aggregateWeeklyReport(
     let done = 0;
     const createdByDay = Array<number>(7).fill(0);
     const doneByDay = Array<number>(7).fill(0);
+    const createdGhostByDay = Array<number>(7).fill(0);
     const createdCategoryByDay = emptyDaySplits(7, categoryVocabulary.length);
     const createdStatusByDay = emptyDaySplits(7, statusVocabulary.length);
     const doneCategoryByDay = emptyDaySplits(7, categoryVocabulary.length);
@@ -1090,13 +1143,19 @@ export function aggregateWeeklyReport(
         created += 1;
         const day = Math.floor((createdMs - startMs) / DAY_MS);
         createdByDay[day] = (createdByDay[day] ?? 0) + 1;
-        const categorySlot = splitSlot(ticket.category, categoryVocabulary, (category) => category);
+        const categorySlot = splitSlot(
+          ticket.category,
+          categoryVocabulary,
+          (category) => category,
+          REMAINING_CATEGORIES
+        );
         const createdCategories = createdCategoryByDay[day];
         if (createdCategories) createdCategories[categorySlot] = (createdCategories[categorySlot] ?? 0) + 1;
         if (ticket.isGhost) {
           createdClosedWithoutDoneAt += 1;
+          createdGhostByDay[day] = (createdGhostByDay[day] ?? 0) + 1;
         } else {
-          const statusSlot = splitSlot(ticket.status, statusVocabulary, statusLabel);
+          const statusSlot = splitSlot(ticket.status, statusVocabulary, statusLabel, REMAINING_STATUSES);
           const createdStatuses = createdStatusByDay[day];
           if (createdStatuses) createdStatuses[statusSlot] = (createdStatuses[statusSlot] ?? 0) + 1;
         }
@@ -1106,10 +1165,15 @@ export function aggregateWeeklyReport(
         done += 1;
         const day = Math.floor((doneMs - startMs) / DAY_MS);
         doneByDay[day] = (doneByDay[day] ?? 0) + 1;
-        const categorySlot = splitSlot(ticket.category, categoryVocabulary, (category) => category);
+        const categorySlot = splitSlot(
+          ticket.category,
+          categoryVocabulary,
+          (category) => category,
+          REMAINING_CATEGORIES
+        );
         const doneCategories = doneCategoryByDay[day];
         if (doneCategories) doneCategories[categorySlot] = (doneCategories[categorySlot] ?? 0) + 1;
-        const statusSlot = splitSlot(ticket.status, statusVocabulary, statusLabel);
+        const statusSlot = splitSlot(ticket.status, statusVocabulary, statusLabel, REMAINING_STATUSES);
         const doneStatuses = doneStatusByDay[day];
         if (doneStatuses) doneStatuses[statusSlot] = (doneStatuses[statusSlot] ?? 0) + 1;
         if (createdMs !== null) daysToDone.push(wholeDaysBetween(createdMs, doneMs));
@@ -1139,6 +1203,7 @@ export function aggregateWeeklyReport(
         label: dayTickLabel(dayStart),
         created: future ? null : createdCount,
         done: future ? null : doneCount,
+        createdClosedWithoutDoneAt: future ? null : (createdGhostByDay[day] ?? 0),
         createdSplit: future
           ? null
           : {
@@ -1231,7 +1296,13 @@ export function aggregateWeeklyReport(
       categories: categoryVocabulary.map(({ key: category, label }) => ({ category, label })),
       statuses: statusVocabulary.map(({ key: status, label }) => ({ status, label })),
       modeLabels: DAY_SPLIT_MODE_LABELS,
-      captions: DAY_SPLIT_CAPTIONS,
+      cohortLabels: DAY_SPLIT_COHORT_LABELS,
+      excludedLabel: DAY_SPLIT_EXCLUDED_LABEL,
+      captions: {
+        category: categoryCaption(categoryVocabulary),
+        status: DAY_SPLIT_STATUS_CAPTION,
+      },
+      unavailableNotes: DAY_SPLIT_UNAVAILABLE_NOTES,
       asOfLabel: `Read at ${dayLabel(nowMs)}`,
     },
     openBacklog: openBacklog(open, nowMs),

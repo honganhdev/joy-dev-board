@@ -146,6 +146,8 @@ export type WeekSummary = {
     label: string;
     created: number | null;
     done: number | null;
+    /** This day's share of the created cohort the status split leaves out. */
+    createdClosedWithoutDoneAt: number | null;
     createdSplit: { category: number[]; status: number[] } | null;
     doneSplit: { category: number[]; status: number[] } | null;
   }>;
@@ -199,8 +201,11 @@ export type WeeklyReport = {
   daySplit: {
     categories: Array<{ category: string; label: string }>;
     statuses: Array<{ status: string; label: string }>;
-    modeLabels: { category: string; status: string };
+    modeLabels: { off: string; category: string; status: string };
+    cohortLabels: { created: string; done: string };
+    excludedLabel: string;
     captions: { category: string; status: string };
+    unavailableNotes: { category: string; status: string };
     asOfLabel: string;
   };
   openBacklog: {

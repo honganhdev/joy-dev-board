@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { COLUMN_GEOMETRY, barHeight } from './column-geometry';
-import { Panel } from './panel';
+import { Legend, Panel } from './panel';
 import { drawnSegments, stackHeights } from './segment-geometry';
 import type { WeeklyReport, WeekSummary } from '@/types';
 
@@ -24,6 +24,9 @@ const BAR_GROUP_STYLE = {
   height: '100%',
 } as const;
 
+const CREATED_SOLID = 'bg-stone-800';
+const DONE_SOLID = 'bg-emerald-500';
+
 const CREATED_RAMP = [
   'bg-stone-900',
   'bg-stone-700',
@@ -42,12 +45,37 @@ const DONE_RAMP = [
   'bg-emerald-300',
 ] as const;
 
+/**
+ * The created cohort the status split leaves out, drawn rather than left as a
+ * gap. A stack that simply stops short under a taller printed number is the same
+ * picture a wrong payload would draw, so the excluded tickets take the bar up to
+ * the figure above it as a hatch — a region that reads as not filled in.
+ *
+ * Written out as a literal class: Tailwind v4 scans source text, so a class name
+ * assembled at runtime matches nothing and generates no CSS.
+ */
+const EXCLUDED_HATCH =
+  'bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,#d6d3d1_3px,#d6d3d1_5px)]';
+
 type SplitMode = 'category' | 'status';
 type Mode = 'off' | SplitMode;
 type DaySplit = WeeklyReport['daySplit'];
+type Day = WeekSummary['days'][number];
 
-function modeAvailable(week: WeekSummary, mode: SplitMode, slots: number): boolean {
-  if (slots === 0) return false;
+/**
+ * Whether a split can be drawn at all. Two shape contracts, not one: the counts
+ * have to be present and as long as the range vocabulary, *and* the vocabulary
+ * has to fit the colour ramp this file owns. The second is what stops a longer
+ * server-side vocabulary from rendering a real label and a real count beside an
+ * uncoloured, invisible segment.
+ */
+function modeAvailable(
+  week: WeekSummary,
+  mode: SplitMode,
+  slots: number,
+  rampLength: number
+): boolean {
+  if (slots === 0 || slots > rampLength) return false;
   if (
     !Array.isArray(week.daySplitTotals?.[mode]?.created) ||
     week.daySplitTotals[mode].created.length !== slots ||
@@ -89,7 +117,6 @@ function StackedBar({
       {drawn.map((index) => (
         <span
           key={index}
-          data-segment-index={index}
           className={`block ${index === top ? 'rounded-t-[2px]' : ''} ${ramp[index] ?? ''}`}
           style={{ height: heights[index] ?? 0, width: '100%' }}
         />
@@ -103,22 +130,33 @@ function SegmentReadout({
   counts,
   vocabulary,
   ramp,
+  trailing,
 }: {
   label: string;
   counts: number[];
   vocabulary: Array<{ label: string }>;
   ramp: readonly string[];
+  trailing?: { label: string; count: number; className: string };
 }) {
+  const rows = [
+    ...vocabulary.map((row, index) => ({
+      label: row.label,
+      count: counts[index] ?? 0,
+      className: ramp[index] ?? '',
+    })),
+    ...(trailing ? [trailing] : []),
+  ];
+
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
       <span className="font-semibold text-stone-700">{label}</span>
-      {vocabulary.map((row, index) => (
+      {rows.map((row, index) => (
         <span key={`${row.label}-${index}`} className="contents">
           {index > 0 && <span aria-hidden="true">·</span>}
           <span className="flex items-center gap-1">
-            <span aria-hidden="true" className={`size-2 rounded-[2px] ${ramp[index] ?? ''}`} />
+            <span aria-hidden="true" className={`size-2 rounded-[2px] ${row.className}`} />
             <span>{row.label}</span>
-            <span className="font-medium tabular-nums text-stone-700">{counts[index] ?? 0}</span>
+            <span className="font-medium tabular-nums text-stone-700">{row.count}</span>
           </span>
         </span>
       ))}
@@ -126,18 +164,23 @@ function SegmentReadout({
   );
 }
 
-/** Created against done inside the focused week, with one non-interactive slot per day. */
+/** Created against done inside the focused week, with one slot per day. */
 export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: DaySplit }) {
   const [mode, setMode] = useState<Mode>('off');
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const max = week.days.reduce(
     (tallest, day) => Math.max(tallest, day.created ?? 0, day.done ?? 0),
     0
   );
   const categoryVocabulary = Array.isArray(daySplit?.categories) ? daySplit.categories : [];
   const statusVocabulary = Array.isArray(daySplit?.statuses) ? daySplit.statuses : [];
+  const cohortLabels = daySplit?.cohortLabels ?? null;
+  const modeLabels = daySplit?.modeLabels ?? null;
+  // Both ramps have to cover the vocabulary, so the shorter one is the contract.
+  const rampLength = Math.min(CREATED_RAMP.length, DONE_RAMP.length);
   const available = {
-    category: modeAvailable(week, 'category', categoryVocabulary.length),
-    status: modeAvailable(week, 'status', statusVocabulary.length),
+    category: modeAvailable(week, 'category', categoryVocabulary.length, rampLength),
+    status: modeAvailable(week, 'status', statusVocabulary.length, rampLength),
   };
   const renderedMode: Mode = mode !== 'off' && available[mode] ? mode : 'off';
 
@@ -157,50 +200,92 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
       : renderedMode === 'status'
         ? statusVocabulary
         : [];
-  const titleFor = (day: WeekSummary['days'][number], measured: boolean) => {
-    if (!measured) return `${day.label} · no figures yet`;
-    const lead = `${day.label} · ${day.created} created · ${day.done} done`;
-    if (renderedMode === 'off') return lead;
-    const created = day.createdSplit?.[renderedMode] ?? [];
-    const done = day.doneSplit?.[renderedMode] ?? [];
-    const details = (counts: number[]) =>
-      vocabulary.map((row, index) => `${row.label} ${counts[index] ?? 0}`).join(', ');
-    return `${lead} · created: ${details(created)} · done: ${details(done)}`;
+  /**
+   * The status split's created bar carries one more slot than the vocabulary:
+   * the day's excluded tickets, hatched, taking the stack up to `created`.
+   */
+  const excludedSlot = renderedMode === 'status';
+  const createdRamp = excludedSlot
+    ? [...CREATED_RAMP.slice(0, vocabulary.length), EXCLUDED_HATCH]
+    : CREATED_RAMP;
+  const createdCounts = (day: Day, splitMode: SplitMode) => {
+    const counts = day.createdSplit?.[splitMode] ?? [];
+    return excludedSlot ? [...counts, day.createdClosedWithoutDoneAt ?? 0] : counts;
   };
+
+  /**
+   * The day's whole vector as one sentence. It is the slot's accessible name and
+   * the line the slot opens when it is activated, so the per-segment numbers are
+   * reachable by keyboard, by touch and by a reader who cannot separate the
+   * hues — none of which a hover title reaches.
+   */
+  const describeDay = (day: Day, measured: boolean) => {
+    if (!measured) return `${day.label} · no figures yet`;
+    if (!cohortLabels) return `${day.label} · ${day.created} · ${day.done}`;
+    const parts = [
+      day.label,
+      `${day.created} ${cohortLabels.created}`,
+      `${day.done} ${cohortLabels.done}`,
+    ];
+    if (renderedMode !== 'off') {
+      const details = (counts: number[]) =>
+        vocabulary.map((row, index) => `${row.label} ${counts[index] ?? 0}`).join(', ');
+      const excluded =
+        excludedSlot && daySplit
+          ? `, ${daySplit.excludedLabel} ${day.createdClosedWithoutDoneAt ?? 0}`
+          : '';
+      parts.push(
+        `${cohortLabels.created}: ${details(day.createdSplit?.[renderedMode] ?? [])}${excluded}`,
+        `${cohortLabels.done}: ${details(day.doneSplit?.[renderedMode] ?? [])}`
+      );
+    }
+    return parts.join(' · ');
+  };
+
+  const openDetail = week.days.find((day) => day.label === openDay);
 
   return (
     <Panel
       title="Created vs done per day"
       aside={
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            aria-pressed={renderedMode === 'off'}
-            onClick={() => setMode('off')}
-            className={buttonClass(renderedMode === 'off')}
-          >
-            Off
-          </button>
-          <button
-            type="button"
-            aria-pressed={renderedMode === 'category'}
-            disabled={!available.category}
-            title={available.category ? undefined : 'Category split data is unavailable for this week.'}
-            onClick={() => setMode('category')}
-            className={buttonClass(renderedMode === 'category')}
-          >
-            {daySplit?.modeLabels?.category}
-          </button>
-          <button
-            type="button"
-            aria-pressed={renderedMode === 'status'}
-            disabled={!available.status}
-            title={available.status ? undefined : 'Status split data is unavailable for this week.'}
-            onClick={() => setMode('status')}
-            className={buttonClass(renderedMode === 'status')}
-          >
-            {daySplit?.modeLabels?.status}
-          </button>
+        <div className="flex shrink-0 items-center gap-3">
+          {renderedMode === 'off' && cohortLabels && (
+            <Legend
+              items={[
+                { label: cohortLabels.created, className: CREATED_SOLID },
+                { label: cohortLabels.done, className: DONE_SOLID },
+              ]}
+            />
+          )}
+          {modeLabels?.off && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-pressed={renderedMode === 'off'}
+                onClick={() => setMode('off')}
+                className={buttonClass(renderedMode === 'off')}
+              >
+                {modeLabels.off}
+              </button>
+              {(['category', 'status'] as const).map((splitMode) =>
+                modeLabels[splitMode] ? (
+                  <button
+                    key={splitMode}
+                    type="button"
+                    aria-pressed={renderedMode === splitMode}
+                    disabled={!available[splitMode]}
+                    title={
+                      available[splitMode] ? undefined : daySplit?.unavailableNotes?.[splitMode]
+                    }
+                    onClick={() => setMode(splitMode)}
+                    className={buttonClass(renderedMode === splitMode)}
+                  >
+                    {modeLabels[splitMode]}
+                  </button>
+                ) : null
+              )}
+            </div>
+          )}
         </div>
       }
     >
@@ -209,12 +294,17 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
           const created = day.created;
           const done = day.done;
           const measured = created !== null && done !== null;
+          const description = describeDay(day, measured);
           return (
-            <div
+            <button
               key={day.label}
+              type="button"
               style={DAY_SLOT_STYLE}
-              title={titleFor(day, measured)}
-              className="flex min-w-0 flex-col items-center"
+              title={description}
+              aria-label={description}
+              aria-pressed={openDay === day.label}
+              onClick={() => setOpenDay(openDay === day.label ? null : day.label)}
+              className="flex min-w-0 flex-col items-center rounded-sm focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:outline-none"
             >
               {measured ? (
                 <span
@@ -228,14 +318,14 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
                     <span className="mb-1 text-[11px] font-medium tabular-nums">{created}</span>
                     {renderedMode === 'off' ? (
                       <span
-                        className="block rounded-t-[2px] bg-stone-800"
+                        className={`block rounded-t-[2px] ${CREATED_SOLID}`}
                         style={{ height: barHeight(created, max), width: '100%' }}
                       />
                     ) : (
                       <StackedBar
-                        counts={day.createdSplit?.[renderedMode] ?? []}
+                        counts={createdCounts(day, renderedMode)}
                         max={max}
-                        ramp={CREATED_RAMP}
+                        ramp={createdRamp}
                       />
                     )}
                   </span>
@@ -246,7 +336,7 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
                     <span className="mb-1 text-[11px] font-medium tabular-nums">{done}</span>
                     {renderedMode === 'off' ? (
                       <span
-                        className="block rounded-t-[2px] bg-emerald-500"
+                        className={`block rounded-t-[2px] ${DONE_SOLID}`}
                         style={{ height: barHeight(done, max), width: '100%' }}
                       />
                     ) : (
@@ -273,20 +363,34 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
               >
                 {day.label}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
-      {renderedMode !== 'off' && (
+      {openDetail && (
+        <p className="mt-3 text-[10px] leading-snug text-muted-foreground">
+          {describeDay(openDetail, openDetail.created !== null && openDetail.done !== null)}
+        </p>
+      )}
+      {renderedMode !== 'off' && cohortLabels && (
         <div className="mt-3 space-y-1 text-[10px] leading-snug text-muted-foreground">
           <SegmentReadout
-            label="created"
+            label={cohortLabels.created}
             counts={week.daySplitTotals?.[renderedMode]?.created ?? []}
             vocabulary={vocabulary}
             ramp={CREATED_RAMP}
+            trailing={
+              excludedSlot && daySplit
+                ? {
+                    label: daySplit.excludedLabel,
+                    count: week.createdClosedWithoutDoneAt,
+                    className: EXCLUDED_HATCH,
+                  }
+                : undefined
+            }
           />
           <SegmentReadout
-            label="done"
+            label={cohortLabels.done}
             counts={week.daySplitTotals?.[renderedMode]?.done ?? []}
             vocabulary={vocabulary}
             ramp={DONE_RAMP}
@@ -298,7 +402,7 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
           {daySplit.captions[renderedMode]}
         </p>
       )}
-      {renderedMode !== 'off' && daySplit?.asOfLabel && (
+      {daySplit?.asOfLabel && (
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{daySplit.asOfLabel}</p>
       )}
       {renderedMode === 'status' && week.createdClosedWithoutDoneAtNote && (

@@ -29,26 +29,64 @@ describe('stackHeights', () => {
     }
   });
 
-  test('floors every segment but the last drawn one, which carries the whole residue', () => {
+  test('gives every drawn segment its floored share, then the dropped pixels largest-remainder first', () => {
     // The sum landing on the right pixel says nothing about where the rounding
-    // went. Pin the distribution too: every segment but one is its own floored
-    // share, and the single segment that differs is the last *drawn* slot — not
-    // the last slot, and not the tallest.
+    // went. Pin the distribution too: no segment is more than one pixel off its
+    // exact share, and the pixels flooring dropped go to the segments that lost
+    // the most, ties to the earlier slot.
     for (const { counts, max } of cases) {
       const heights = stackHeights(counts, max);
       const drawn = drawnSegments(counts);
       if (drawn.length === 0) continue;
 
-      const last = drawn.at(-1) as number;
-      let floored = 0;
-      for (const index of drawn.slice(0, -1)) {
-        expect(heights[index]).toBe(Math.floor(barHeight(counts[index] ?? 0, max)));
-        floored += heights[index] ?? 0;
-      }
+      const exact = drawn.map((index) => barHeight(counts[index] ?? 0, max));
+      const floors = exact.map((height) => Math.floor(height));
       const total = counts.reduce((sum, count) => sum + count, 0);
-      expect(heights[last]).toBe(Math.round(barHeight(total, max)) - floored);
+      const residue = Math.round(barHeight(total, max)) - floors.reduce((sum, h) => sum + h, 0);
+      const raised = new Set(
+        floors
+          .map((_, position) => position)
+          .sort(
+            (left, right) =>
+              (exact[right] ?? 0) -
+                (floors[right] ?? 0) -
+                ((exact[left] ?? 0) - (floors[left] ?? 0)) || left - right
+          )
+          .slice(0, residue)
+      );
+
+      drawn.forEach((index, position) => {
+        expect(heights[index]).toBe((floors[position] ?? 0) + (raised.has(position) ? 1 : 0));
+      });
       for (const index of counts.keys()) {
         if (!drawn.includes(index)) expect(heights[index]).toBe(0);
+      }
+    }
+  });
+
+  test('never lets one slot hoard the residue while an identical count draws short', () => {
+    // The case that named this rule: three twos and three ones, where sending
+    // the whole remainder to the last drawn slot drew the final single ticket
+    // taller than the doubles above it. Equal counts may now differ by a pixel,
+    // which integer heights cannot avoid, and by no more than that.
+    const counts = [2, 2, 2, 1, 1, 1];
+    const heights = stackHeights(counts, 27);
+
+    expect(heights.reduce((sum, height) => sum + height, 0)).toBe(Math.round(barHeight(9, 27)));
+    for (const [left, right] of [
+      [0, 1],
+      [0, 2],
+      [1, 2],
+      [3, 4],
+      [3, 5],
+      [4, 5],
+    ]) {
+      expect(Math.abs((heights[left] ?? 0) - (heights[right] ?? 0))).toBeLessThanOrEqual(1);
+    }
+    // A single ticket never outdraws a double in the same stack.
+    for (const single of [3, 4, 5]) {
+      for (const double of [0, 1, 2]) {
+        expect(heights[single] ?? 0).toBeLessThan(heights[double] ?? 0);
       }
     }
   });

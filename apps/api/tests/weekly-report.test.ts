@@ -1978,8 +1978,8 @@ describe('the day breakdown inside a week', () => {
 
     expect(result.daySplit.categories.length).toBeLessThanOrEqual(6);
     expect(result.daySplit.statuses.length).toBeLessThanOrEqual(6);
-    expect(result.daySplit.categories.at(-1)?.category).toBe('(other categories)');
-    expect(result.daySplit.statuses.at(-1)?.status).toBe('(other statuses)');
+    expect(result.daySplit.categories.at(-1)?.category).toBe('(remaining areas)');
+    expect(result.daySplit.statuses.at(-1)?.status).toBe('(remaining statuses)');
     expect(new Set(result.daySplit.categories.map((row) => row.category)).size).toBe(
       result.daySplit.categories.length
     );
@@ -2068,10 +2068,20 @@ describe('the day breakdown inside a week', () => {
       ticket({ ticketId: 'ghost-1', ticketStatus: 'closed', createdAt: MON_17, doneAt: null }),
     ]);
 
+    expect(plural.daySplit.modeLabels.off).toBe('Off');
     expect(plural.daySplit.modeLabels.category).toBe('By category');
     expect(plural.daySplit.modeLabels.status).toBe('By status today');
+    expect(plural.daySplit.cohortLabels).toEqual({ created: 'created', done: 'done' });
+    expect(plural.daySplit.excludedLabel).toBe('not counted');
+    expect(plural.daySplit.unavailableNotes.category).toBe(
+      'The category split cannot be drawn for this week.'
+    );
+    expect(plural.daySplit.unavailableNotes.status).toBe(
+      'The status split cannot be drawn for this week.'
+    );
+    // Two categories, so nothing rolls up and the caption promises no remainder.
     expect(plural.daySplit.captions.category).toBe(
-      'Each bar is split by the feature area the ticket was classified into. The five busiest areas in this range are named; every other area is grouped into the last segment.'
+      'Each bar is split by the feature area the ticket was classified into. Every area in this range is named.'
     );
     expect(plural.daySplit.captions.category).not.toMatch(/\b(today|currently|right now)\b/i);
     expect(plural.daySplit.captions.status).toContain(
@@ -2079,10 +2089,10 @@ describe('the day breakdown inside a week', () => {
     );
     expect(plural.daySplit.asOfLabel).toBe('Read at 26 Aug 2026');
     expect(weekByKey(plural, '2026-W34').createdClosedWithoutDoneAtNote).toBe(
-      '2 tickets created this week were closed without a done date and are not in the created bars.'
+      '2 tickets created this week were closed without a done date and are drawn as a hatched slice rather than counted in the created bars.'
     );
     expect(weekByKey(singular, '2026-W34').createdClosedWithoutDoneAtNote).toBe(
-      '1 ticket created this week was closed without a done date and is not in the created bars.'
+      '1 ticket created this week was closed without a done date and is drawn as a hatched slice rather than counted in the created bars.'
     );
     for (const week of report([]).weeks) {
       expect(week.createdClosedWithoutDoneAtNote).toBeNull();
@@ -2114,7 +2124,12 @@ describe('the day breakdown inside a week', () => {
     expect(labels).toHaveLength(6);
     expect(labels[0]).toBe('WIDGET');
     expect(labels).not.toContain('VIP TIERS');
-    expect(labels.at(-1)).toBe('OTHER CATEGORIES');
+    expect(labels.at(-1)).toBe('REMAINING AREAS');
+    // The caption counts the named slots off the vocabulary it just built, so a
+    // change to the cap moves the sentence with it.
+    expect(result.daySplit.captions.category).toBe(
+      'Each bar is split by the feature area the ticket was classified into. The five busiest areas in this range are named; every other area is grouped into the last segment.'
+    );
 
     // Slot 0 is WIDGET in both directions: it carries the early week's four and
     // nothing in the week that has none of them.
@@ -2126,6 +2141,60 @@ describe('the day breakdown inside a week', () => {
     expect(late.daySplitTotals.category.created.reduce((sum, count) => sum + count, 0)).toBe(
       late.created
     );
+  });
+
+  test('keeps tickets closed with no done date out of the status ranking, not just its counts', () => {
+    // Eight ghosts all carrying `vanished` — enough to top the ranking outright
+    // if they were counted. They are left out of the created split because such
+    // a ticket can appear in no done bar in any week, and the exclusion has to
+    // happen before the vocabulary is ranked: a named slot for a status no bar
+    // can ever draw is a legend entry that is permanently zero.
+    const result = report([
+      ...Array.from({ length: 8 }, (_, index) =>
+        ticket({
+          ticketId: `vanished-${index}`,
+          ticketStatus: 'closed',
+          tsStatus: 'vanished',
+          createdAt: MON_17,
+          doneAt: null,
+        })
+      ),
+      ticket({ ticketId: 'real-done', tsStatus: 'done', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'real-doing', tsStatus: 'doing', createdAt: TUE_18, doneAt: WED_19 }),
+    ]);
+    const week = weekByKey(result, '2026-W34');
+
+    expect(result.daySplit.statuses.map((row) => row.status)).not.toContain('vanished');
+    expect(result.daySplit.statuses.map((row) => row.label)).not.toContain('Vanished');
+    // Nothing was quietly swept into a remainder either: the eight are absent
+    // from the created split entirely, which is what the week note explains.
+    expect(week.daySplitTotals.status.created.reduce((sum, count) => sum + count, 0)).toBe(
+      week.created - week.createdClosedWithoutDoneAt
+    );
+    expect(week.createdClosedWithoutDoneAt).toBe(8);
+  });
+
+  test('reports the excluded created cohort per day, not only per week', () => {
+    // The panel draws the gap between the status stack and the figure above it,
+    // so it needs to know which column is short. A week figure cannot say.
+    const week = weekByKey(
+      report([
+        ticket({ ticketId: 'mon', ticketStatus: 'closed', createdAt: MON_17, doneAt: null }),
+        ticket({ ticketId: 'wed-a', ticketStatus: 'closed', createdAt: WED_19, doneAt: null }),
+        ticket({ ticketId: 'wed-b', ticketStatus: 'closed', createdAt: WED_19, doneAt: null }),
+        ticket({ ticketId: 'real', tsStatus: 'done', createdAt: WED_19, doneAt: THU_20 }),
+      ]),
+      '2026-W34'
+    );
+
+    expect(week.days.map((day) => day.createdClosedWithoutDoneAt)).toEqual([1, 0, 2, 0, 0, 0, 0]);
+    expect(
+      week.days.reduce((sum, day) => sum + (day.createdClosedWithoutDoneAt ?? 0), 0)
+    ).toBe(week.createdClosedWithoutDoneAt);
+    // A day that reports no figures reports no excluded count either.
+    for (const day of weekByKey(report([]), '2026-W35').days) {
+      expect(day.createdClosedWithoutDoneAt === null).toBe(day.created === null);
+    }
   });
 
   test('splits two adjacent minutes across a midnight inside the week', () => {

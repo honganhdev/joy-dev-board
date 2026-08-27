@@ -108,6 +108,13 @@ export type WeekSummary = {
     label: string;
     created: number | null;
     done: number | null;
+    /**
+     * This day's share of `createdClosedWithoutDoneAt`. The status split leaves
+     * these tickets out of `createdSplit.status`, so the panel draws them as a
+     * hatched not-counted region that carries the stack up to `created`. Emitted
+     * per day because the week figure cannot say which column is short.
+     */
+    createdClosedWithoutDoneAt: number | null;
     /** Positional split counts; `null` exactly when the corresponding total is. */
     createdSplit: { category: number[]; status: number[] } | null;
     /** Both dimensions sum to `done` exactly; a ghost has no done date. */
@@ -184,17 +191,24 @@ export type WeeklyReport = {
   timeToFirstDone: TimeToFirstDone;
   /**
    * Everything the day panel's split needs that does not vary by week.
-   * Vocabularies are range-wide, top five by pooled volume with remainder last.
+   * Vocabularies are range-wide, ranked by pooled volume, with a remainder slot
+   * last only when something rolled into it.
    */
   daySplit: {
     /** Category labels stay in the classifier's uppercase register. */
     categories: Array<{ category: string; label: string }>;
     /** Status labels use the server's existing humanising rule. */
     statuses: Array<{ status: string; label: string }>;
-    /** Server-worded split button labels; `Off` is browser chrome. */
-    modeLabels: { category: string; status: string };
+    /** Every word on the toggle, the unsplit setting included. */
+    modeLabels: { off: string; category: string; status: string };
+    /** The two bars' names, for the panel key and the per-slot readout. */
+    cohortLabels: { created: string; done: string };
+    /** Names the hatched region the status split leaves out of the created bar. */
+    excludedLabel: string;
     /** Server-worded explanation for the selected split. */
     captions: { category: string; status: string };
+    /** Why a split button is dead, rendered as its title. */
+    unavailableNotes: { category: string; status: string };
     /** A resolvable reading date for screenshots. */
     asOfLabel: string;
   };
