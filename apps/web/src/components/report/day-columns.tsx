@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { COLUMN_GEOMETRY, barHeight } from './column-geometry';
 import { Legend, Panel } from './panel';
-import { drawnSegments, stackHeights } from './segment-geometry';
+import { createdStackHeights, drawnSegments, stackHeights } from './segment-geometry';
 import type { WeeklyReport, WeekSummary } from '@/types';
 
 /**
@@ -51,11 +51,15 @@ const DONE_RAMP = [
  * picture a wrong payload would draw, so the excluded tickets take the bar up to
  * the figure above it as a hatch — a region that reads as not filled in.
  *
+ * The stripe is deliberately a colour neither ramp holds. It used to be the same
+ * grey as the lightest created slot, which erased the boundary between the last
+ * named category and the region that was not counted wherever a sixth slot drew.
+ *
  * Written out as a literal class: Tailwind v4 scans source text, so a class name
  * assembled at runtime matches nothing and generates no CSS.
  */
 const EXCLUDED_HATCH =
-  'bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,#d6d3d1_3px,#d6d3d1_5px)]';
+  'bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,#64748b_3px,#64748b_5px)]';
 
 type SplitMode = 'category' | 'status';
 type Mode = 'off' | SplitMode;
@@ -98,14 +102,13 @@ function modeAvailable(
 
 function StackedBar({
   counts,
-  max,
+  heights,
   ramp,
 }: {
   counts: number[];
-  max: number;
+  heights: number[];
   ramp: readonly string[];
 }) {
-  const heights = stackHeights(counts, max);
   const drawn = drawnSegments(counts);
   const top = drawn.at(-1);
 
@@ -208,9 +211,20 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
   const createdRamp = excludedSlot
     ? [...CREATED_RAMP.slice(0, vocabulary.length), EXCLUDED_HATCH]
     : CREATED_RAMP;
-  const createdCounts = (day: Day, splitMode: SplitMode) => {
+  /**
+   * One day's created stack. In the status split the excluded cohort is appended
+   * as a further slot, and its height comes from `createdStackHeights` rather
+   * than from the shared distribution — it is the one slot allowed to draw past
+   * the printed total so that a single excluded ticket still reads as hatched.
+   */
+  const createdStack = (day: Day, splitMode: SplitMode) => {
     const counts = day.createdSplit?.[splitMode] ?? [];
-    return excludedSlot ? [...counts, day.createdClosedWithoutDoneAt ?? 0] : counts;
+    if (!excludedSlot) return { counts, heights: stackHeights(counts, max) };
+    const excluded = day.createdClosedWithoutDoneAt ?? 0;
+    return {
+      counts: [...counts, excluded],
+      heights: createdStackHeights(counts, excluded, max),
+    };
   };
 
   /**
@@ -248,7 +262,14 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
     <Panel
       title="Created vs done per day"
       aside={
-        <div className="flex shrink-0 items-center gap-3">
+        /**
+         * Wraps rather than holding one rigid row: below a ~408px header content
+         * box the key and the toggles no longer fit beside even the title's
+         * narrowest column, and a non-shrinking row escapes the header into the
+         * card's padding. Wrapping trades that overflow for extra header height,
+         * and only at the widths where the row genuinely does not fit.
+         */
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           {renderedMode === 'off' && cohortLabels && (
             <Legend
               items={[
@@ -322,11 +343,7 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
                         style={{ height: barHeight(created, max), width: '100%' }}
                       />
                     ) : (
-                      <StackedBar
-                        counts={createdCounts(day, renderedMode)}
-                        max={max}
-                        ramp={createdRamp}
-                      />
+                      <StackedBar {...createdStack(day, renderedMode)} ramp={createdRamp} />
                     )}
                   </span>
                   <span
@@ -342,7 +359,7 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
                     ) : (
                       <StackedBar
                         counts={day.doneSplit?.[renderedMode] ?? []}
-                        max={max}
+                        heights={stackHeights(day.doneSplit?.[renderedMode] ?? [], max)}
                         ramp={DONE_RAMP}
                       />
                     )}
@@ -402,7 +419,7 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
           {daySplit.captions[renderedMode]}
         </p>
       )}
-      {daySplit?.asOfLabel && (
+      {renderedMode !== 'off' && daySplit?.asOfLabel && (
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{daySplit.asOfLabel}</p>
       )}
       {renderedMode === 'status' && week.createdClosedWithoutDoneAtNote && (
