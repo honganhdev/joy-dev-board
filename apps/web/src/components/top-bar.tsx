@@ -130,7 +130,7 @@ export function TopBar({
         Skip to content
       </a>
 
-      <div className="flex h-11 items-center gap-4 border-b border-stone-200 bg-white px-5">
+      <div className="flex h-12 items-center gap-4 border-b border-stone-100 bg-stone-50 px-5">
         <div className="flex shrink-0 items-center gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-stone-900 text-sm font-bold text-white">
             J
@@ -224,7 +224,7 @@ export function TopBar({
         </div>
       </div>
 
-      <div className="flex h-10 items-center gap-3 border-b border-stone-200 bg-white px-5">
+      <div className="flex h-12 items-center gap-6 border-b border-stone-200 bg-white px-5">
         <ToggleGroup
           type="single"
           value={view}
@@ -238,7 +238,7 @@ export function TopBar({
             <ToggleGroupItem
               key={entry.value}
               value={entry.value}
-              className="rounded-md border border-stone-200 bg-white px-2.5 py-1 text-[12px] text-stone-700 hover:border-stone-300 data-[state=on]:border-stone-800 data-[state=on]:bg-stone-800 data-[state=on]:font-semibold data-[state=on]:text-white"
+              className="rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] text-stone-700 hover:border-stone-300 data-[state=on]:border-stone-800 data-[state=on]:bg-stone-800 data-[state=on]:font-semibold data-[state=on]:text-white"
             >
               {entry.label}
             </ToggleGroupItem>
@@ -247,7 +247,8 @@ export function TopBar({
 
         {/* The search filters board cards, so it is meaningless on the report. */}
         {view === 'board' && (
-          <div className="relative min-w-0 flex-1 max-w-[240px] lg:max-w-sm">
+          // 672px: wide enough to close the middle span at 1920, narrow enough that the field is not a paragraph.
+          <div className="relative min-w-0 flex-1 max-w-2xl">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={searchRef}
