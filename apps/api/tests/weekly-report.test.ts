@@ -1957,6 +1957,138 @@ describe('the day breakdown inside a week', () => {
     }
   });
 
+  test('keeps range-wide split vocabularies stable and every positional count accounted for', () => {
+    const result = report([
+      ticket({ ticketId: 'widget', subject: 'widget', tsStatus: 'done', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'reward', subject: 'reward', tsStatus: 'dev_done', createdAt: MON_17, doneAt: WED_19 }),
+      ticket({ ticketId: 'points', subject: 'points', tsStatus: 'done_for_you', createdAt: TUE_18, doneAt: THU_20 }),
+      ticket({ ticketId: 'earning', subject: 'birthday earning', tsStatus: 'feature_request', createdAt: WED_19, doneAt: FRI_21 }),
+      ticket({ ticketId: 'tiers', subject: 'vip tier', tsStatus: 'sale_request', createdAt: THU_20, doneAt: FRI_21 }),
+      ticket({ ticketId: 'integration', subject: 'integration', tsStatus: 'doing', createdAt: FRI_21, doneAt: FRI_21 }),
+      ticket({ ticketId: 'email', subject: 'email', tsStatus: 'pending', createdAt: FRI_21, doneAt: FRI_21 }),
+      ticket({
+        ticketId: 'ghost',
+        subject: 'coupon',
+        ticketStatus: 'closed',
+        tsStatus: 'done',
+        createdAt: FRI_21,
+        doneAt: null,
+      }),
+    ]);
+
+    expect(result.daySplit.categories.length).toBeLessThanOrEqual(6);
+    expect(result.daySplit.statuses.length).toBeLessThanOrEqual(6);
+    expect(result.daySplit.categories.at(-1)?.category).toBe('(other categories)');
+    expect(result.daySplit.statuses.at(-1)?.status).toBe('(other statuses)');
+    expect(new Set(result.daySplit.categories.map((row) => row.category)).size).toBe(
+      result.daySplit.categories.length
+    );
+    expect(new Set(result.daySplit.categories.map((row) => row.label)).size).toBe(
+      result.daySplit.categories.length
+    );
+    expect(new Set(result.daySplit.statuses.map((row) => row.status)).size).toBe(
+      result.daySplit.statuses.length
+    );
+    expect(new Set(result.daySplit.statuses.map((row) => row.label)).size).toBe(
+      result.daySplit.statuses.length
+    );
+
+    const drawnStatuses = new Set(result.daySplit.statuses.slice(0, -1).map((row) => row.status));
+    for (const week of result.weeks) {
+      let statusCreated = 0;
+      for (const day of week.days) {
+        expect(day.createdSplit === null).toBe(day.created === null);
+        expect(day.doneSplit === null).toBe(day.done === null);
+        if (day.createdSplit && day.created !== null) {
+          expect(day.createdSplit.category).toHaveLength(result.daySplit.categories.length);
+          expect(day.createdSplit.status).toHaveLength(result.daySplit.statuses.length);
+          expect(day.createdSplit.category.reduce((sum, count) => sum + count, 0)).toBe(day.created);
+          statusCreated += day.createdSplit.status.reduce((sum, count) => sum + count, 0);
+        }
+        if (day.doneSplit && day.done !== null) {
+          expect(day.doneSplit.category).toHaveLength(result.daySplit.categories.length);
+          expect(day.doneSplit.status).toHaveLength(result.daySplit.statuses.length);
+          expect(day.doneSplit.category.reduce((sum, count) => sum + count, 0)).toBe(day.done);
+          expect(day.doneSplit.status.reduce((sum, count) => sum + count, 0)).toBe(day.done);
+        }
+      }
+
+      expect(statusCreated + week.createdClosedWithoutDoneAt).toBe(week.created);
+      // This is deliberately only a loose sanity bound: `closedWithoutDoneAt`
+      // is cumulative over tickets created in this and every earlier week.
+      expect(week.createdClosedWithoutDoneAt).toBeLessThanOrEqual(week.closedWithoutDoneAt);
+
+      for (const dimension of ['category', 'status'] as const) {
+        for (const cohort of ['created', 'done'] as const) {
+          const totals = week.daySplitTotals[dimension][cohort];
+          const fromDays = totals.map((_, slot) =>
+            week.days.reduce(
+              (sum, day) => sum + (day[`${cohort}Split`]?.[dimension][slot] ?? 0),
+              0
+            )
+          );
+          expect(totals).toEqual(fromDays);
+        }
+      }
+
+      const statusTotals = new Map(week.doneByStatus.map((row) => [row.status, row.count]));
+      const splitDone = week.daySplitTotals.status.done;
+      result.daySplit.statuses.slice(0, -1).forEach((row, index) => {
+        expect(splitDone[index]).toBe(statusTotals.get(row.status) ?? 0);
+      });
+      expect(splitDone.at(-1)).toBe(
+        week.doneByStatus
+          .filter((row) => !drawnStatuses.has(row.status))
+          .reduce((sum, row) => sum + row.count, 0)
+      );
+    }
+  });
+
+  test('folds statuses with the same printable label before ranking and counting', () => {
+    const result = report([
+      ticket({ ticketId: 'lower', tsStatus: 'done', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'title', tsStatus: 'Done', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'upper', tsStatus: 'DONE', createdAt: MON_17, doneAt: TUE_18 }),
+    ]);
+    const doneRows = result.daySplit.statuses.filter((row) => row.label === 'Done');
+    const doneIndex = result.daySplit.statuses.findIndex((row) => row.label === 'Done');
+    const week = weekByKey(result, '2026-W34');
+
+    expect(doneRows).toEqual([{ status: 'done', label: 'Done' }]);
+    expect(week.daySplitTotals.status.created[doneIndex]).toBe(3);
+    expect(week.daySplitTotals.status.done[doneIndex]).toBe(3);
+  });
+
+  test('carries the server-owned split wording and names the created-bar gap', () => {
+    const plural = report([
+      ticket({ ticketId: 'ghost-1', ticketStatus: 'closed', createdAt: MON_17, doneAt: null }),
+      ticket({ ticketId: 'ghost-2', ticketStatus: 'closed', createdAt: TUE_18, doneAt: null }),
+    ]);
+    const singular = report([
+      ticket({ ticketId: 'ghost-1', ticketStatus: 'closed', createdAt: MON_17, doneAt: null }),
+    ]);
+
+    expect(plural.daySplit.modeLabels.category).toBe('By category');
+    expect(plural.daySplit.modeLabels.status).toBe('By status today');
+    expect(plural.daySplit.captions.category).toBe(
+      'Each bar is split by the feature area the ticket was classified into. The five busiest areas in this range are named; every other area is grouped into the last segment.'
+    );
+    expect(plural.daySplit.captions.category).not.toMatch(/\b(today|currently|right now)\b/i);
+    expect(plural.daySplit.captions.status).toContain(
+      'Tickets created here that were closed without a done date are left out of the created bar'
+    );
+    expect(plural.daySplit.asOfLabel).toBe('Read at 26 Aug 2026');
+    expect(weekByKey(plural, '2026-W34').createdClosedWithoutDoneAtNote).toBe(
+      '2 tickets created this week were closed without a done date and are not in the created bars.'
+    );
+    expect(weekByKey(singular, '2026-W34').createdClosedWithoutDoneAtNote).toBe(
+      '1 ticket created this week was closed without a done date and is not in the created bars.'
+    );
+    for (const week of report([]).weeks) {
+      expect(week.createdClosedWithoutDoneAtNote).toBeNull();
+    }
+  });
+
   test('splits two adjacent minutes across a midnight inside the week', () => {
     // Tue 23:59 and Wed 00:00 in +07:00 — the same decision the week boundary
     // makes, one level down.
@@ -2008,10 +2140,14 @@ describe('the day breakdown inside a week', () => {
     for (const index of [0, 1, 2]) {
       expect(running.days[index]?.created).toBe(0);
       expect(running.days[index]?.done).toBe(0);
+      expect(running.days[index]?.createdSplit).not.toBeNull();
+      expect(running.days[index]?.doneSplit).not.toBeNull();
     }
     for (const index of [3, 4, 5, 6]) {
       expect(running.days[index]?.created).toBeNull();
       expect(running.days[index]?.done).toBeNull();
+      expect(running.days[index]?.createdSplit).toBeNull();
+      expect(running.days[index]?.doneSplit).toBeNull();
     }
     expect(running.daysNote).not.toBeNull();
 

@@ -64,6 +64,17 @@ const TIME_ZONE_NOTE =
 
 const TREND_SECTION_TITLE = 'Every week in the range, for context.';
 
+const DAY_SPLIT_NAMED_SLOTS = 5;
+const OTHER_CATEGORIES = '(other categories)';
+const OTHER_STATUSES = '(other statuses)';
+const DAY_SPLIT_MODE_LABELS = { category: 'By category', status: 'By status today' };
+const DAY_SPLIT_CAPTIONS = {
+  category:
+    'Each bar is split by the feature area the ticket was classified into. The five busiest areas in this range are named; every other area is grouped into the last segment.',
+  status:
+    'Each bar is split by where its tickets stand right now, not by where they stood on the day. Tickets created here that were closed without a done date are left out of the created bar, so that bar can stop short of the figure above it.',
+};
+
 const OUTSTANDING_CAPTION =
   'Outstanding at week end is historical, counted from the mirror; open right now is ' +
   "today's live count of tickets whose status is open.";
@@ -329,6 +340,69 @@ function statusLabel(status: string): string {
   return sentenceCase(COLUMN_LABELS.get(status) ?? status) || status;
 }
 
+type SplitVocabularyRow = { key: string; label: string };
+
+/**
+ * Folds keys that print the same label before ranking, then pins one remainder
+ * slot last. The lexicographically first raw key survives a label fold so the
+ * wire identity does not depend on input order.
+ */
+function splitVocabulary(
+  counts: Map<string, number>,
+  labelFor: (key: string) => string,
+  remainderKey: string,
+  remainderLabel: string
+): SplitVocabularyRow[] {
+  const folded = new Map<string, { keys: string[]; count: number }>();
+  for (const [key, count] of counts) {
+    const label = labelFor(key);
+    const entry = folded.get(label);
+    if (entry) {
+      entry.keys.push(key);
+      entry.count += count;
+    } else {
+      folded.set(label, { keys: [key], count });
+    }
+  }
+
+  const named = [...folded.entries()]
+    .filter(([label]) => label !== remainderLabel)
+    .map(([label, entry]) => ({
+      key: [...entry.keys].sort((a, b) => a.localeCompare(b))[0] ?? remainderKey,
+      label,
+      count: entry.count,
+    }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, DAY_SPLIT_NAMED_SLOTS)
+    .map(({ key, label }) => ({ key, label }));
+
+  return [...named, { key: remainderKey, label: remainderLabel }];
+}
+
+function splitSlot(
+  key: string,
+  vocabulary: SplitVocabularyRow[],
+  labelFor: (key: string) => string
+): number {
+  const named = vocabulary.slice(0, -1);
+  const index = named.findIndex((row) => row.label === labelFor(key));
+  return index === -1 ? vocabulary.length - 1 : index;
+}
+
+function increment(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
+function emptyDaySplits(days: number, slots: number): number[][] {
+  return Array.from({ length: days }, () => Array<number>(slots).fill(0));
+}
+
+function splitTotals(days: number[][], slots: number): number[] {
+  return Array.from({ length: slots }, (_, slot) =>
+    days.reduce((total, counts) => total + (counts[slot] ?? 0), 0)
+  );
+}
+
 /** `high` → `High`. The absent-priority key is named rather than printed with its brackets. */
 function priorityLabel(priority: string): string {
   if (priority === NO_PRIORITY) return 'No priority';
@@ -584,6 +658,11 @@ function outstandingCaveat(closedWithoutDoneAt: number): string | null {
   return closedWithoutDoneAt === 1
     ? '+1 ticket closed with no done date'
     : `+${closedWithoutDoneAt} tickets closed with no done date`;
+}
+
+function createdClosedWithoutDoneAtNote(count: number): string | null {
+  if (count === 0) return null;
+  return `${count} ${count === 1 ? 'ticket' : 'tickets'} created this week ${count === 1 ? 'was' : 'were'} closed without a done date and ${count === 1 ? 'is' : 'are'} not in the created bars.`;
 }
 
 /**
@@ -955,6 +1034,33 @@ export function aggregateWeeklyReport(
     (_, index) => latestWeekStart - (range.selectedWeeks - 1 - index) * WEEK_MS
   );
 
+  const rangeStartMs = weekStarts[0] ?? latestWeekStart;
+  const rangeEndMs = latestWeekStart + WEEK_MS;
+  const categoryCounts = new Map<string, number>();
+  const statusCounts = new Map<string, number>();
+  for (const ticket of counted) {
+    if (ticket.createdMs !== null && ticket.createdMs >= rangeStartMs && ticket.createdMs < rangeEndMs) {
+      increment(categoryCounts, ticket.category);
+      if (!ticket.isGhost) increment(statusCounts, ticket.status);
+    }
+    if (ticket.doneMs !== null && ticket.doneMs >= rangeStartMs && ticket.doneMs < rangeEndMs) {
+      increment(categoryCounts, ticket.category);
+      increment(statusCounts, ticket.status);
+    }
+  }
+  const categoryVocabulary = splitVocabulary(
+    categoryCounts,
+    (category) => category,
+    OTHER_CATEGORIES,
+    'OTHER CATEGORIES'
+  );
+  const statusVocabulary = splitVocabulary(
+    statusCounts,
+    statusLabel,
+    OTHER_STATUSES,
+    'Other statuses'
+  );
+
   const weeks: WeekSummary[] = weekStarts.map((startMs) => {
     const endMs = startMs + WEEK_MS;
     // The range always reaches the week holding `now`, because the question the
@@ -968,9 +1074,14 @@ export function aggregateWeeklyReport(
     let done = 0;
     const createdByDay = Array<number>(7).fill(0);
     const doneByDay = Array<number>(7).fill(0);
+    const createdCategoryByDay = emptyDaySplits(7, categoryVocabulary.length);
+    const createdStatusByDay = emptyDaySplits(7, statusVocabulary.length);
+    const doneCategoryByDay = emptyDaySplits(7, categoryVocabulary.length);
+    const doneStatusByDay = emptyDaySplits(7, statusVocabulary.length);
     const daysToDone: number[] = [];
     let outstanding = 0;
     let closedWithoutDoneAt = 0;
+    let createdClosedWithoutDoneAt = 0;
 
     for (const ticket of counted) {
       const { createdMs, doneMs } = ticket;
@@ -979,12 +1090,28 @@ export function aggregateWeeklyReport(
         created += 1;
         const day = Math.floor((createdMs - startMs) / DAY_MS);
         createdByDay[day] = (createdByDay[day] ?? 0) + 1;
+        const categorySlot = splitSlot(ticket.category, categoryVocabulary, (category) => category);
+        const createdCategories = createdCategoryByDay[day];
+        if (createdCategories) createdCategories[categorySlot] = (createdCategories[categorySlot] ?? 0) + 1;
+        if (ticket.isGhost) {
+          createdClosedWithoutDoneAt += 1;
+        } else {
+          const statusSlot = splitSlot(ticket.status, statusVocabulary, statusLabel);
+          const createdStatuses = createdStatusByDay[day];
+          if (createdStatuses) createdStatuses[statusSlot] = (createdStatuses[statusSlot] ?? 0) + 1;
+        }
       }
 
       if (doneMs !== null && doneMs >= startMs && doneMs < endMs) {
         done += 1;
         const day = Math.floor((doneMs - startMs) / DAY_MS);
         doneByDay[day] = (doneByDay[day] ?? 0) + 1;
+        const categorySlot = splitSlot(ticket.category, categoryVocabulary, (category) => category);
+        const doneCategories = doneCategoryByDay[day];
+        if (doneCategories) doneCategories[categorySlot] = (doneCategories[categorySlot] ?? 0) + 1;
+        const statusSlot = splitSlot(ticket.status, statusVocabulary, statusLabel);
+        const doneStatuses = doneStatusByDay[day];
+        if (doneStatuses) doneStatuses[statusSlot] = (doneStatuses[statusSlot] ?? 0) + 1;
         if (createdMs !== null) daysToDone.push(wholeDaysBetween(createdMs, doneMs));
         statuses.set(ticket.status, (statuses.get(ticket.status) ?? 0) + 1);
         bump(categories, ticket.category, 'done');
@@ -1012,6 +1139,18 @@ export function aggregateWeeklyReport(
         label: dayTickLabel(dayStart),
         created: future ? null : createdCount,
         done: future ? null : doneCount,
+        createdSplit: future
+          ? null
+          : {
+              category: createdCategoryByDay[day] ?? [],
+              status: createdStatusByDay[day] ?? [],
+            },
+        doneSplit: future
+          ? null
+          : {
+              category: doneCategoryByDay[day] ?? [],
+              status: doneStatusByDay[day] ?? [],
+            },
       };
     });
     const daysHighlight = inProgress ? null : describeDays(days, created, done);
@@ -1047,6 +1186,18 @@ export function aggregateWeeklyReport(
       outstandingWithDoneDate: outstanding - closedWithoutDoneAt,
       closedWithoutDoneAt,
       outstandingCaveat: outstandingCaveat(closedWithoutDoneAt),
+      daySplitTotals: {
+        category: {
+          created: splitTotals(createdCategoryByDay, categoryVocabulary.length),
+          done: splitTotals(doneCategoryByDay, categoryVocabulary.length),
+        },
+        status: {
+          created: splitTotals(createdStatusByDay, statusVocabulary.length),
+          done: splitTotals(doneStatusByDay, statusVocabulary.length),
+        },
+      },
+      createdClosedWithoutDoneAt,
+      createdClosedWithoutDoneAtNote: createdClosedWithoutDoneAtNote(createdClosedWithoutDoneAt),
       doneByStatus: [...statuses.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([status, count]) => ({ status, label: statusLabel(status), count })),
@@ -1065,9 +1216,6 @@ export function aggregateWeeklyReport(
     };
   });
 
-  const rangeStartMs = weekStarts[0] ?? latestWeekStart;
-  const rangeEndMs = latestWeekStart + WEEK_MS;
-
   return {
     weeks,
     range,
@@ -1079,6 +1227,13 @@ export function aggregateWeeklyReport(
       emptyWeeksNote: emptyWeeksNote(weeks),
     },
     timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
+    daySplit: {
+      categories: categoryVocabulary.map(({ key: category, label }) => ({ category, label })),
+      statuses: statusVocabulary.map(({ key: status, label }) => ({ status, label })),
+      modeLabels: DAY_SPLIT_MODE_LABELS,
+      captions: DAY_SPLIT_CAPTIONS,
+      asOfLabel: `Read at ${dayLabel(nowMs)}`,
+    },
     openBacklog: openBacklog(open, nowMs),
     openSectionTitle: openSectionTitle(open.length, horizon, options.year),
     openByPlan: openByPlan(open),

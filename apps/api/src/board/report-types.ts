@@ -67,6 +67,26 @@ export type WeekSummary = {
    * always describes the week the tile is showing.
    */
   outstandingCaveat: string | null;
+  /**
+   * The focused week's totals per slot, positional against `daySplit`. The
+   * readout under the chart prints these: the browser derives no printed number.
+   * `status.created` sums to `created - createdClosedWithoutDoneAt`, not to
+   * `created`, because the status split leaves those tickets out.
+   */
+  daySplitTotals: {
+    category: { created: number[]; done: number[] };
+    status: { created: number[]; done: number[] };
+  };
+  /**
+   * Created inside this week and already closed with no done date. Left out of
+   * the created bar under the status split: such a ticket carries a done-ish
+   * current status and can appear in no done bar in any week, so counting it
+   * would make the created bar claim work that was never done. This is the size
+   * of the gap between that stack's top and the figure printed above it.
+   */
+  createdClosedWithoutDoneAt: number;
+  /** That count in words, rendered under the status split, or `null` when none. */
+  createdClosedWithoutDoneAtNote: string | null;
   /** The done cohort split by each ticket's *current* tsStatus. Sums to `done`. */
   doneByStatus: Array<{ status: string; label: string; count: number }>;
   /**
@@ -88,6 +108,10 @@ export type WeekSummary = {
     label: string;
     created: number | null;
     done: number | null;
+    /** Positional split counts; `null` exactly when the corresponding total is. */
+    createdSplit: { category: number[]; status: number[] } | null;
+    /** Both dimensions sum to `done` exactly; a ghost has no done date. */
+    doneSplit: { category: number[]; status: number[] } | null;
   }>;
   /** The finished week's shape in words, or `null` when there is nothing final to describe. */
   daysHighlight: string | null;
@@ -158,6 +182,22 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. See its own caption. */
   timeToFirstDone: TimeToFirstDone;
+  /**
+   * Everything the day panel's split needs that does not vary by week.
+   * Vocabularies are range-wide, top five by pooled volume with remainder last.
+   */
+  daySplit: {
+    /** Category labels stay in the classifier's uppercase register. */
+    categories: Array<{ category: string; label: string }>;
+    /** Status labels use the server's existing humanising rule. */
+    statuses: Array<{ status: string; label: string }>;
+    /** Server-worded split button labels; `Off` is browser chrome. */
+    modeLabels: { category: string; status: string };
+    /** Server-worded explanation for the selected split. */
+    captions: { category: string; status: string };
+    /** A resolvable reading date for screenshots. */
+    asOfLabel: string;
+  };
   /** Every open ticket right now over the whole mirror, independent of the selected range. */
   openBacklog: {
     /** Equals `openRightNow`; both are derived from the same array. */

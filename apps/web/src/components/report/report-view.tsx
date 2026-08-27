@@ -146,7 +146,7 @@ export function ReportView({
         agingHeadline={report.openBacklog.agingHeadline}
       />
 
-      <DayColumns week={focused} />
+      <DayColumns week={focused} daySplit={report.daySplit} />
 
       <PairedBars
         title="By category"

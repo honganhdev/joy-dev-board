@@ -123,6 +123,15 @@ export type WeekSummary = {
   closedWithoutDoneAt: number;
   /** The residue as the tile's second figure, added to `outstandingWithDoneDate`; `null` when none. */
   outstandingCaveat: string | null;
+  /** Focused-week totals, positional against the root-scoped split vocabularies. */
+  daySplitTotals: {
+    category: { created: number[]; done: number[] };
+    status: { created: number[]; done: number[] };
+  };
+  /** Created here and already closed without a done date. */
+  createdClosedWithoutDoneAt: number;
+  /** Server-worded explanation of that excluded created cohort, or `null`. */
+  createdClosedWithoutDoneAtNote: string | null;
   doneByStatus: Array<{ status: string; label: string; count: number }>;
   /** Any number of rows, any names — both come from the classifier at runtime. */
   categories: Array<{ category: string; label: string; done: number; outstanding: number }>;
@@ -137,6 +146,8 @@ export type WeekSummary = {
     label: string;
     created: number | null;
     done: number | null;
+    createdSplit: { category: number[]; status: number[] } | null;
+    doneSplit: { category: number[]; status: number[] } | null;
   }>;
   /** The finished week's shape in words, or `null` when there is nothing final to describe. */
   daysHighlight: string | null;
@@ -184,6 +195,14 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;
+  /** Range-wide vocabularies and every server-owned word used by the day split. */
+  daySplit: {
+    categories: Array<{ category: string; label: string }>;
+    statuses: Array<{ status: string; label: string }>;
+    modeLabels: { category: string; status: string };
+    captions: { category: string; status: string };
+    asOfLabel: string;
+  };
   openBacklog: {
     total: number;
     agingHeadline: string | null;
