@@ -117,6 +117,8 @@ export type WeekSummary = {
   /** Why this week's outstanding figure and `devFixOpenRightNow` differ. */
   outstandingCaption: string;
   created: number;
+  createdComparison: Comparison;
+  createdDeltaLabel: string | null;
   done: number;
   medianDaysToDone: number | null;
   doneSample: number;
@@ -201,6 +203,13 @@ export type WeeklyReport = {
   weeklySpeed: {
     caption: string;
     emptyWeeksNote: string | null;
+  };
+  weeklyGrowth: {
+    title: string;
+    caption: string;
+    direction: string;
+    horizonNote: string | null;
+    unavailableNote: string | null;
   };
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;

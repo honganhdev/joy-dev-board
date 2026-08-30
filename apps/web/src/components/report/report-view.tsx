@@ -12,6 +12,7 @@ import { Panel } from './panel';
 import { RangePicker } from './range-picker';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
+import { WeeklyGrowth } from './weekly-growth';
 import { WeeklySpeed } from './weekly-speed';
 import { neighbourKeys, resolveFocusedWeek } from './week-focus';
 import { Button } from '@/components/ui/button';
@@ -191,6 +192,8 @@ export function ReportView({
       </Panel>
 
       <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={focusWeekFromTrend} />
+
+      <WeeklyGrowth weeks={weeks} data={report.weeklyGrowth} />
 
       <BacklogColumns
         weeks={weeks}

@@ -44,6 +44,10 @@ export type WeekSummary = {
    */
   outstandingCaption: string;
   created: number;
+  /** Created intake against the same span one week earlier. */
+  createdComparison: Comparison;
+  /** Signed delta, or the current count when the earlier week predates the mirror. */
+  createdDeltaLabel: string | null;
   done: number;
   /**
    * Whole days from creation to first done, over tickets whose first done date
@@ -196,6 +200,14 @@ export type WeeklyReport = {
     caption: string;
     /** Names empty weeks, or `null` when every week has a median. */
     emptyWeeksNote: string | null;
+  };
+  /** Range-scoped week-on-week created-intake figures and wording. */
+  weeklyGrowth: {
+    title: string;
+    caption: string;
+    direction: string;
+    horizonNote: string | null;
+    unavailableNote: string | null;
   };
   /** Range-scoped, not week-scoped. See its own caption. */
   timeToFirstDone: TimeToFirstDone;

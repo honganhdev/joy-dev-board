@@ -47,6 +47,7 @@ const DEFAULT_WEEKS = 12;
  */
 const PRESET_GRACE_WEEKS = 4;
 const PERCENT_BASELINE_FLOOR = 5;
+const GROWTH_SERIES_MAX_WEEKS = 26;
 
 const DEV_FIX_STATUSES = new Set(['dev_fixing', 'dev_done']);
 
@@ -81,6 +82,11 @@ const RANGE_COMPARISON_CAPTION =
   'The selected range up to now, against the same number of weeks immediately before it. A percentage is shown only when the earlier count is at least 5; below that the change is given as a count.';
 const RANGE_COMPARISON_UNAVAILABLE =
   'The mirror has no comparable earlier period for this selected range.';
+const WEEKLY_GROWTH_TITLE = 'Week-on-week created change';
+const WEEKLY_GROWTH_CAPTION =
+  'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier.';
+const WEEKLY_GROWTH_HORIZON_NOTE =
+  'A week with no comparable earlier period shows its created count instead of a change.';
 
 const DAY_SPLIT_NAMED_SLOTS = 5;
 /**
@@ -190,6 +196,16 @@ function weeklySpeedCaption(weeks: WeekSummary[]): string {
   const minimum = Math.min(...medians);
   const maximum = Math.max(...medians);
   return `${scope} Measurable weekly medians range from ${minimum} to ${maximum} days.`;
+}
+
+function weeklyGrowthDirection(weeks: WeekSummary[]): string {
+  const first = weeks[0];
+  const last = weeks.at(-1);
+  if (!first || !last) return 'The selected range contains no named week to compare.';
+  return (
+    `Across the selected range, created intake moved from ${first.created} in ${first.label} to ` +
+    `${last.created} in ${last.label} (${signed(last.created - first.created)}).`
+  );
 }
 
 /**
@@ -1232,6 +1248,7 @@ export function aggregateWeeklyReport(
     REMAINING_STATUSES,
     REMAINING_STATUSES_LABEL
   );
+  const showWeeklyGrowth = range.selectedWeeks <= GROWTH_SERIES_MAX_WEEKS;
 
   const weeks: WeekSummary[] = weekStarts.map((startMs) => {
     const endMs = startMs + WEEK_MS;
@@ -1339,6 +1356,13 @@ export function aggregateWeeklyReport(
       };
     });
     const daysHighlight = inProgress ? null : describeDays(days, created, done);
+    const createdComparison = compareCreated(
+      bugs,
+      startMs,
+      Math.min(endMs, nowMs),
+      WEEK_MS,
+      horizon
+    );
     const daysNote = (() => {
       if (!inProgress) return null;
 
@@ -1363,6 +1387,12 @@ export function aggregateWeeklyReport(
       tileLabels: inProgress ? IN_PROGRESS_TILE_LABELS : FINISHED_TILE_LABELS,
       outstandingCaption: inProgress ? IN_PROGRESS_OUTSTANDING_CAPTION : OUTSTANDING_CAPTION,
       created,
+      createdComparison,
+      createdDeltaLabel: showWeeklyGrowth
+        ? createdComparison.previous === null
+          ? createdComparison.figure
+          : signed(createdComparison.delta ?? 0)
+        : null,
       done,
       medianDaysToDone: median(daysToDone.sort((a, b) => a - b)),
       doneSample: daysToDone.length,
@@ -1410,6 +1440,19 @@ export function aggregateWeeklyReport(
     weeklySpeed: {
       caption: weeklySpeedCaption(weeks),
       emptyWeeksNote: emptyWeeksNote(weeks),
+    },
+    weeklyGrowth: {
+      title: WEEKLY_GROWTH_TITLE,
+      caption: WEEKLY_GROWTH_CAPTION,
+      direction: weeklyGrowthDirection(weeks),
+      horizonNote:
+        showWeeklyGrowth && weeks.some((week) => week.createdComparison.previous === null)
+          ? WEEKLY_GROWTH_HORIZON_NOTE
+          : null,
+      unavailableNote:
+        showWeeklyGrowth
+          ? null
+          : `A range of ${range.selectedWeeks} weeks leaves each week too narrow to print a figure, so the week-on-week change is shown for ranges up to ${GROWTH_SERIES_MAX_WEEKS} weeks.`,
     },
     timeToFirstDone: timeToFirstDone(bugs, rangeStartMs, rangeEndMs),
     dayComparison: {

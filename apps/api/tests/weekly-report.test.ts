@@ -216,6 +216,98 @@ describe('the selected range against its preceding range', () => {
   });
 });
 
+describe('week-on-week created change', () => {
+  test('compares the running week to the same elapsed span one week earlier', () => {
+    const result = report(
+      [
+        ticket({
+          ticketId: 'horizon',
+          ticketStatus: 'closed',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          doneAt: '2026-06-02T00:00:00.000Z',
+        }),
+        ticket({ ticketId: 'previous-1', createdAt: '2026-08-17T00:00:00.000Z' }),
+        ticket({ ticketId: 'previous-2', createdAt: '2026-08-18T00:00:00.000Z' }),
+        ticket({ ticketId: 'later-in-previous-week', createdAt: '2026-08-20T00:00:00.000Z' }),
+        ...Array.from({ length: 4 }, (_, index) =>
+          ticket({ ticketId: `current-${index}`, createdAt: '2026-08-24T00:00:00.000Z' })
+        ),
+      ],
+      4
+    );
+    const running = weekByKey(result, '2026-W35');
+
+    expect(running.createdComparison).toMatchObject({ current: 4, previous: 2, delta: 2 });
+    expect(running.createdDeltaLabel).toBe('+2');
+    expect(result.weeklyGrowth.caption).toContain(
+      'Monday to now against Monday to the same time one week earlier'
+    );
+  });
+
+  test('uses an ASCII hyphen-minus for a negative weekly change', () => {
+    const result = report([
+      ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+      ticket({ ticketId: 'previous-1', createdAt: '2026-08-17T00:00:00.000Z' }),
+      ticket({ ticketId: 'previous-2', createdAt: '2026-08-18T00:00:00.000Z' }),
+      ticket({ ticketId: 'current', createdAt: '2026-08-24T00:00:00.000Z' }),
+    ], 4);
+
+    expect(weekByKey(result, '2026-W35').createdDeltaLabel).toBe('-1');
+    expect(weekByKey(result, '2026-W35').createdDeltaLabel).not.toContain('−');
+  });
+
+  test('shows the earliest week comparison when its preceding week is inside the mirror', () => {
+    const latestWeekStart = weekStartMs(NOW.getTime());
+    const firstWeekStart = latestWeekStart - 3 * WEEK;
+    const result = report(
+      [
+        ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+        ticket({
+          ticketId: 'before-range',
+          createdAt: new Date(firstWeekStart - WEEK + 1).toISOString(),
+        }),
+        ticket({ ticketId: 'first', createdAt: new Date(firstWeekStart + 1).toISOString() }),
+      ],
+      4
+    );
+
+    expect(result.weeks[0]?.createdComparison.previous).toBe(1);
+    expect(result.weeks[0]?.createdDeltaLabel).toBe('0');
+  });
+
+  test('prints the current count and explains a horizon-suppressed week', () => {
+    const result = report([
+      ticket({ ticketId: 'first', createdAt: '2026-08-03T00:00:00.000Z' }),
+    ], 4);
+
+    expect(result.weeks[0]?.createdComparison.previous).toBeNull();
+    expect(result.weeks[0]?.createdDeltaLabel).toBe('1');
+    expect(result.weeklyGrowth.horizonNote).toContain('no comparable earlier period');
+  });
+
+  test('ships figures through 26 weeks and withholds them at 52', () => {
+    const twentySix = report(weeklyHistory(24), 26);
+    const fiftyTwo = report(weeklyHistory(48), 52);
+
+    expect(twentySix.weeklyGrowth.unavailableNote).toBeNull();
+    expect(twentySix.weeks.every((week) => week.createdDeltaLabel !== null)).toBe(true);
+    expect(fiftyTwo.weeklyGrowth.unavailableNote).toContain('ranges up to 26 weeks');
+    expect(fiftyTwo.weeks.every((week) => week.createdDeltaLabel === null)).toBe(true);
+  });
+
+  test('states aggregate movement between the first and last named weeks', () => {
+    const result = report([
+      ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+      ticket({ ticketId: 'current', createdAt: '2026-08-24T00:00:00.000Z' }),
+    ], 4);
+    const first = result.weeks[0];
+    const last = result.weeks.at(-1);
+
+    expect(result.weeklyGrowth.direction).toContain(`from ${first?.created} in ${first?.label}`);
+    expect(result.weeklyGrowth.direction).toContain(`to ${last?.created} in ${last?.label}`);
+  });
+});
+
 describe('week boundaries', () => {
   test('splits two adjacent minutes across the Monday boundary in Vietnam time', () => {
     // Sun 23:59 and Mon 00:00 in +07:00 — the whole timezone decision, in two minutes.
