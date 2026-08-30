@@ -292,6 +292,8 @@ export type WeeklyReport = {
    * plural.
    */
   excludedNote: string | null;
+  /** The dev-fix counting rule, in words, rendered on screen verbatim. */
+  bugRule: string;
   /** The done rule, in words, rendered on screen verbatim. */
   doneRule: string;
   /** The timezone and boundary rule, rendered on screen verbatim. */

@@ -61,6 +61,9 @@ const NO_PLAN = '(no plan)';
 const DONE_RULE =
   'Done = reached a done state in HelpDesk at any point, dated by HelpDesk\'s own done date.';
 
+const BUG_RULE =
+  'Counted here: tickets whose HelpDesk status is Dev Fixing or Dev Done. Weekly, day, range and feature figures use only those tickets.';
+
 const TIME_ZONE_NOTE =
   'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
 
@@ -725,7 +728,7 @@ function createdClosedWithoutDoneAtNote(count: number): string | null {
 }
 
 /**
- * The footnote naming what reached no week, worded here like every other string
+ * The footnote naming what reached no week or report figure, worded here like every other string
  * on the page so the browser composes no prose and picks no plural.
  *
  * "Not counted" is the wrong claim for the undated bucket: a ticket with
@@ -745,14 +748,23 @@ function excludedNote(excluded: WeeklyReport['excluded']): string | null {
     const noun = excluded.undated === 1 ? 'ticket' : 'tickets';
     parts.push(`${excluded.undated} ${noun} with neither a created nor a done date`);
   }
-  if (parts.length === 0) return null;
-
-  const sentence = `In no week on this page: ${parts.join(' · ')}.`;
-  if (excluded.undated === 0) return sentence;
-  return (
-    `${sentence} A ticket with neither date is in no weekly figure, but is still counted in ` +
-    'open right now while its status is open.'
-  );
+  const sentences: string[] = [];
+  if (parts.length > 0) sentences.push(`In no week on this page: ${parts.join(' · ')}.`);
+  if (excluded.undated > 0) {
+    sentences.push(
+      'A ticket with neither date is in no weekly figure, but is still counted in open right now while its status is open.'
+    );
+  }
+  if (excluded.notDevFix > 0) {
+    const subject =
+      excluded.notDevFix === 1
+        ? '1 dated ticket has another HelpDesk status and sits'
+        : `${excluded.notDevFix} dated tickets have another HelpDesk status and sit`;
+    sentences.push(
+      `${subject} outside the Dev Fixing and Dev Done figures.`
+    );
+  }
+  return sentences.length === 0 ? null : sentences.join(' ');
 }
 
 function ghostAudit(counted: Counted[]): GhostAudit {
@@ -859,13 +871,22 @@ function oldestCaption(dated: number): string {
  * range-scoped on its speed column, so a blanket claim here would contradict
  * that panel's own caption. Each panel carries its own scope.
  */
-function openSectionTitle(total: number, horizon: Horizon, year: number): string {
+function openSectionTitle(
+  total: number,
+  devFixTotal: number,
+  horizon: Horizon,
+  year: number
+): string {
   const count = total === 1 ? '1 ticket' : `${total} tickets`;
+  const devFixCount = devFixTotal === 1 ? '1 is' : `${devFixTotal} are`;
   const reach =
     horizon.startsAtMs === null
       ? `The mirror covers tickets created since 1 Jan ${year}.`
       : `The mirror reaches back to ${dayLabel(horizon.startsAtMs)}.`;
-  return `All open tickets right now — ${count}. ${reach}`;
+  return (
+    `All open tickets right now — ${count}. ${devFixCount} marked Dev Fixing or Dev Done, and ` +
+    `only those are counted in the report figures below. ${reach}`
+  );
 }
 
 function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
@@ -1317,7 +1338,7 @@ export function aggregateWeeklyReport(
       asOfLabel: `Read at ${dayLabel(nowMs)}`,
     },
     openBacklog: openBacklog(openBugs, nowMs),
-    openSectionTitle: openSectionTitle(open.length, horizon, options.year),
+    openSectionTitle: openSectionTitle(open.length, openBugs.length, horizon, options.year),
     openByPlan: openByPlan(openBugs),
     openByMerchant: openByMerchant(openBugs),
     openByFeature: openByFeature(openBugs, bugs, nowMs, rangeStartMs, rangeEndMs),
@@ -1328,6 +1349,7 @@ export function aggregateWeeklyReport(
     ghosts: ghostAudit(bugs),
     excluded,
     excludedNote: excludedNote(excluded),
+    bugRule: BUG_RULE,
     doneRule: DONE_RULE,
     timeZoneNote: TIME_ZONE_NOTE,
     trendSectionTitle: TREND_SECTION_TITLE,

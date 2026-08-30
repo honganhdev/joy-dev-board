@@ -257,6 +257,8 @@ export type WeeklyReport = {
   excluded: { deleted: number; unparseableDate: number; undated: number; notDevFix: number };
   /** The same exclusions in words, or `null` when there are none. Rendered verbatim. */
   excludedNote: string | null;
+  /** The dev-fix counting rule, rendered verbatim. */
+  bugRule: string;
   doneRule: string;
   /** The timezone and boundary rule, rendered on screen verbatim. */
   timeZoneNote: string;

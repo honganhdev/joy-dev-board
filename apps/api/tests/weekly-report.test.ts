@@ -1067,6 +1067,8 @@ describe('range and fixed strings', () => {
 
   test('carries the rules and captions the page renders verbatim', () => {
     const result = report([]);
+    expect(result.bugRule).toContain('Dev Fixing or Dev Done');
+    expect(result.bugRule).toContain('Weekly, day, range and feature figures');
     // The rule is the date, not a list of statuses: `tsStatus` is open-ended, so
     // any enumerated list in this sentence is one release from being untrue.
     expect(result.doneRule).toContain('reached a done state in HelpDesk at any point');
@@ -1591,6 +1593,7 @@ describe('the strings the page prints', () => {
   test('names the all-open scope, its count and the mirror reach-back date', () => {
     const empty = report([]);
     expect(empty.openSectionTitle).toContain('0 tickets');
+    expect(empty.openSectionTitle).toContain('0 are marked Dev Fixing or Dev Done');
     expect(empty.openSectionTitle).toContain('1 Jan 2026');
 
     const single = report([
@@ -1598,6 +1601,7 @@ describe('the strings the page prints', () => {
     ]);
     expect(single.openSectionTitle).toContain('1 ticket');
     expect(single.openSectionTitle).not.toContain('1 tickets');
+    expect(single.openSectionTitle).toContain('1 is marked Dev Fixing or Dev Done');
     expect(single.openSectionTitle).toContain('4 Mar 2026');
     // The divider heads a section holding a range-scoped speed column, so it
     // claims nothing about the range; each panel below carries its own scope.
@@ -1632,6 +1636,21 @@ describe('the strings the page prints', () => {
       notDevFix: 0,
     });
     expect(result.excludedNote).toBeNull();
+  });
+
+  test('names tickets outside the dev-fix figures and keeps both open totals visible', () => {
+    const result = report([
+      ticket({ ticketId: 'dev', tsStatus: 'dev_fixing' }),
+      ticket({ ticketId: 'other', tsStatus: 'doing' }),
+    ]);
+
+    expect(result.openRightNow).toBe(2);
+    expect(result.devFixOpenRightNow).toBe(1);
+    expect(result.excludedNote).toContain(
+      '1 dated ticket has another HelpDesk status and sits outside the Dev Fixing and Dev Done figures.'
+    );
+    expect(result.openSectionTitle).toContain('All open tickets right now — 2 tickets.');
+    expect(result.openSectionTitle).toContain('1 is marked Dev Fixing or Dev Done');
   });
 
   test('blames the span for a withheld preset, not a gap in the history', () => {

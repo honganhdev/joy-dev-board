@@ -134,6 +134,7 @@ export function ReportView({
             <ChevronRight />
           </Button>
         </div>
+        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.bugRule}</p>
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.doneRule}</p>
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
           {report.timeZoneNote}
