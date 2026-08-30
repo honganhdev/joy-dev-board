@@ -254,9 +254,8 @@ describe('a suppressed comparison carries no count at all', () => {
 
     expect(suppressed.previous).toBeNull();
     expect(suppressed.delta).toBeNull();
-    expect(suppressed.figure).toBe('1');
-    // Nothing in the printed figure may read as a previous count of zero.
-    expect(suppressed.figure).not.toContain('→');
+    expect(suppressed.magnitudeLabel).toBeNull();
+    expect(suppressed.percentLabel).toBeNull();
   });
 
   test('suppresses every comparison on the page the same way', () => {
@@ -265,6 +264,7 @@ describe('a suppressed comparison carries no count at all', () => {
     for (const comparison of [result.dayComparison, result.rangeComparison]) {
       expect(comparison.previous).toBeNull();
       expect(comparison.delta).toBeNull();
+      expect(comparison.changeLabel).toBeNull();
       expect(comparison.unavailableNote).not.toBeNull();
     }
     expect(result.openByFeature.rows[0]?.comparison.previous).toBeNull();
@@ -286,29 +286,40 @@ describe('the four printed shapes stay distinguishable', () => {
       end,
       DAY,
       horizon
-    ).figure;
+    );
+
+  test('lays out the five comparison states as structured labels', () => {
+    expect(
+      compareCreated([{ createdMs: start }], start, end, DAY, {
+        startsAtMs: start - DAY + 1,
+      })
+    ).toMatchObject({ magnitudeLabel: null, percentLabel: null });
+    expect(shape(0, 4)).toMatchObject({ magnitudeLabel: '4', percentLabel: null });
+    expect(shape(2, 3)).toMatchObject({ magnitudeLabel: '1', percentLabel: null });
+    expect(shape(7, 9)).toMatchObject({ magnitudeLabel: '2', percentLabel: '+29%' });
+    expect(shape(7, 7)).toMatchObject({ magnitudeLabel: null, percentLabel: null });
+  });
 
   test('prints a percentage only from a baseline of five upward', () => {
-    expect(shape(18, 25)).toBe('18 → 25 · +7 (+39%)');
-    expect(shape(5, 6)).toBe('5 → 6 · +1 (+20%)');
-    expect(shape(4, 6)).toBe('4 → 6 · +2 · —');
-    expect(shape(2, 3)).toBe('2 → 3 · +1 · —');
+    expect(shape(18, 25)).toMatchObject({ magnitudeLabel: '7', percentLabel: '+39%' });
+    expect(shape(5, 6)).toMatchObject({ magnitudeLabel: '1', percentLabel: '+20%' });
+    expect(shape(4, 6)).toMatchObject({ magnitudeLabel: '2', percentLabel: null });
+    expect(shape(2, 3)).toMatchObject({ magnitudeLabel: '1', percentLabel: null });
   });
 
   test('prints no percentage at all against a zero baseline', () => {
-    const figure = shape(0, 4);
-    expect(figure).toBe('0 → 4 · +4');
-    expect(figure).not.toContain('%');
-    expect(figure).not.toContain('Infinity');
-    expect(figure).not.toContain('NaN');
+    expect(shape(0, 4)).toMatchObject({ magnitudeLabel: '4', percentLabel: null });
   });
 
   test('never divides by a suppressed baseline', () => {
-    const figure = compareCreated([{ createdMs: start }], start, end, DAY, {
+    const comparison = compareCreated([{ createdMs: start }], start, end, DAY, {
       startsAtMs: start - DAY + 1,
-    }).figure;
-    expect(figure).toBe('1');
-    expect(figure).not.toContain('%');
+    });
+    expect(comparison).toMatchObject({
+      previous: null,
+      magnitudeLabel: null,
+      percentLabel: null,
+    });
   });
 });
 

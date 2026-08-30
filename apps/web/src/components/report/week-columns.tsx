@@ -1,11 +1,13 @@
 import { COLUMN_GEOMETRY, SLOT_STYLE, barHeight } from './column-geometry';
+import { directionGlyph } from './direction';
 import { Legend, Panel } from './panel';
-import type { WeekSummary } from '@/types';
+import type { WeeklyReport, WeekSummary } from '@/types';
 
 type WeekColumnsProps = {
   weeks: WeekSummary[];
   focusedKey: string;
   onFocus: (key: string) => void;
+  growth: WeeklyReport['weeklyGrowth'];
 };
 
 /**
@@ -17,7 +19,7 @@ type WeekColumnsProps = {
  * interactive chart element, and a div gets no keyboard focus, no Enter, no role
  * and no focus ring.
  */
-export function WeekColumns({ weeks, focusedKey, onFocus }: WeekColumnsProps) {
+export function WeekColumns({ weeks, focusedKey, onFocus, growth }: WeekColumnsProps) {
   const max = weeks.reduce((tallest, week) => Math.max(tallest, week.created, week.done), 0);
 
   return (
@@ -72,9 +74,35 @@ export function WeekColumns({ weeks, focusedKey, onFocus }: WeekColumnsProps) {
           );
         })}
       </div>
-      <p className="mt-2 text-[10px] text-muted-foreground">
-        Click a week to focus it. The week detail above and the highlight here follow.
-      </p>
+      {growth.unavailableNote ? (
+        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+          {growth.unavailableNote}
+        </p>
+      ) : (
+        <div className="mt-2 flex items-end" style={{ gap: COLUMN_GEOMETRY.gap }}>
+          {weeks.map((week) => (
+            <div
+              key={week.key}
+              style={SLOT_STYLE}
+              title={week.label}
+              className="flex min-w-0 flex-col items-center border-t border-stone-200 pt-2"
+            >
+              <span className="text-[10px] font-semibold tabular-nums">
+                {[directionGlyph(week.createdComparison.delta), week.createdDeltaLabel]
+                  .filter(Boolean)
+                  .join(' ')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{growth.direction}</p>
+      {growth.horizonNote && (
+        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+          {growth.horizonNote}
+        </p>
+      )}
+      <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{growth.caption}</p>
     </Panel>
   );
 }

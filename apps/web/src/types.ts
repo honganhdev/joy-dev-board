@@ -100,7 +100,8 @@ export type Comparison = {
   current: number;
   previous: number | null;
   delta: number | null;
-  figure: string;
+  magnitudeLabel: string | null;
+  percentLabel: string | null;
 };
 
 export type WeekSummary = {
@@ -121,6 +122,7 @@ export type WeekSummary = {
   created: number;
   createdComparison: Comparison;
   createdDeltaLabel: string | null;
+  createdChangeLabel: string | null;
   done: number;
   medianDaysToDone: number | null;
   doneSample: number;
@@ -191,6 +193,8 @@ export type TimeToFirstDone = {
   sampleSize: number;
   unmeasurable: number;
   medianDays: number | null;
+  /** Server wording for a range that finished nothing measurable. */
+  noMedianLabel: string;
   withinTwoDaysNote: string | null;
   buckets: Array<{ label: string; count: number }>;
   caption: string;
@@ -205,9 +209,9 @@ export type WeeklyReport = {
   weeklySpeed: {
     caption: string;
     emptyWeeksNote: string | null;
+    unavailableLabel: string | null;
   };
   weeklyGrowth: {
-    title: string;
     caption: string;
     direction: string;
     horizonNote: string | null;
@@ -219,12 +223,16 @@ export type WeeklyReport = {
   dayComparison: Comparison & {
     title: string;
     caption: string;
+    currentLabel: string;
+    changeLabel: string | null;
     unavailableNote: string | null;
   };
   /** Selected range up to now against the equally long preceding range. */
   rangeComparison: Comparison & {
     title: string;
     caption: string;
+    currentLabel: string;
+    changeLabel: string | null;
     unavailableNote: string | null;
   };
   /** Range-wide vocabularies and every server-owned word used by the day split. */

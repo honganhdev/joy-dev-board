@@ -14,8 +14,10 @@ export type Comparison = {
   previous: number | null;
   /** `null` with `previous`; otherwise `current - previous`. */
   delta: number | null;
-  /** Counts and available change, composed by the server. */
-  figure: string;
+  /** `|delta|` as a string; `null` when there is no delta and when delta is 0. */
+  magnitudeLabel: string | null;
+  /** e.g. `+29%`; `null` whenever the percentage is not earned and when delta is 0. */
+  percentLabel: string | null;
 };
 
 export type WeekSummary = {
@@ -50,6 +52,8 @@ export type WeekSummary = {
   createdComparison: Comparison;
   /** Signed delta, or the current count when the earlier week predates the mirror. */
   createdDeltaLabel: string | null;
+  /** Server wording for the created intake change. */
+  createdChangeLabel: string | null;
   done: number;
   /**
    * Whole days from creation to first done, over tickets whose first done date
@@ -178,6 +182,8 @@ export type TimeToFirstDone = {
   /** Tickets with a `doneAt` in range but no `createdAt`. Reported, not hidden. */
   unmeasurable: number;
   medianDays: number | null;
+  /** Server wording for a range that finished nothing measurable. */
+  noMedianLabel: string;
   /** Server-worded share measured within 48 hours; the browser divides nothing. */
   withinTwoDaysNote: string | null;
   buckets: Array<{ label: string; count: number }>;
@@ -202,10 +208,10 @@ export type WeeklyReport = {
     caption: string;
     /** Names empty weeks, or `null` when every week has a median. */
     emptyWeeksNote: string | null;
+    unavailableLabel: string | null;
   };
   /** Range-scoped week-on-week created-intake figures and wording. */
   weeklyGrowth: {
-    title: string;
     caption: string;
     direction: string;
     horizonNote: string | null;
@@ -217,12 +223,16 @@ export type WeeklyReport = {
   dayComparison: Comparison & {
     title: string;
     caption: string;
+    currentLabel: string;
+    changeLabel: string | null;
     unavailableNote: string | null;
   };
   /** Selected range up to now against the equally long preceding range. */
   rangeComparison: Comparison & {
     title: string;
     caption: string;
+    currentLabel: string;
+    changeLabel: string | null;
     unavailableNote: string | null;
   };
   /**

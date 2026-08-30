@@ -168,7 +168,15 @@ function SegmentReadout({
 }
 
 /** Created against done inside the focused week, with one slot per day. */
-export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: DaySplit }) {
+export function DayColumns({
+  week,
+  daySplit,
+  timeZoneNote,
+}: {
+  week: WeekSummary;
+  daySplit?: DaySplit;
+  timeZoneNote: string;
+}) {
   const [mode, setMode] = useState<Mode>('off');
   const [openDay, setOpenDay] = useState<string | null>(week.currentDayLabel ?? null);
   const max = week.days.reduce(
@@ -371,11 +379,9 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
                 </span>
               ) : (
                 <span
-                  className="flex items-end justify-center text-[15px] font-semibold text-muted-foreground"
+                  className="flex"
                   style={{ height: BAR_COLUMN_HEIGHT }}
-                >
-                  —
-                </span>
+                />
               )}
               <span className="mt-1 border-t-2 border-stone-200" style={{ width: '100%' }} />
               <span
@@ -437,6 +443,7 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
       {week.daysNote && (
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{week.daysNote}</p>
       )}
+      <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{timeZoneNote}</p>
     </Panel>
   );
 }

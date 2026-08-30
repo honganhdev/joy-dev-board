@@ -12,12 +12,16 @@ export function DurationHistogram({ data }: { data: TimeToFirstDone }) {
   return (
     <Panel
       title="Time to first done"
+      className="min-w-0 flex-1"
       aside={
         <span className="shrink-0 text-[11px] text-muted-foreground">
-          median{' '}
-          <span className="tabular-nums">
-            {data.medianDays === null ? '—' : `${data.medianDays} days`}
-          </span>{' '}
+          {data.medianDays === null ? (
+            data.noMedianLabel
+          ) : (
+            <>
+              median <span className="tabular-nums">{data.medianDays} days</span>
+            </>
+          )}{' '}
           · <span className="tabular-nums">{data.sampleSize}</span> tickets
         </span>
       }

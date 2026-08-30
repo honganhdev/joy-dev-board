@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { directionGlyph } from './direction';
 import type { WeekSummary } from '@/types';
 
 type HeadlineTilesProps = {
@@ -6,6 +7,7 @@ type HeadlineTilesProps = {
   devFixOpenRightNow: number;
   devFixOpenRightNowLabel: string;
   agingHeadline: string | null;
+  doneRule: string;
 };
 
 function Tile({ label, children }: { label: string; children: ReactNode }) {
@@ -46,17 +48,38 @@ export function HeadlineTiles({
   devFixOpenRightNow,
   devFixOpenRightNowLabel,
   agingHeadline,
+  doneRule,
 }: HeadlineTilesProps) {
   const doneMax = Math.max(1, week.done);
+  const createdChange =
+    week.createdComparison.previous === null
+      ? null
+      : [
+          directionGlyph(week.createdComparison.delta),
+          week.createdComparison.magnitudeLabel,
+          week.createdChangeLabel,
+          `(${week.createdComparison.previous})`,
+        ]
+          .filter(Boolean)
+          .join(' ') +
+        (week.createdComparison.percentLabel === null
+          ? ''
+          : ` · ${week.createdComparison.percentLabel}`);
 
   return (
     <div className="flex gap-3">
       <Tile label={week.tileLabels.created}>
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.created}</p>
+        {createdChange && (
+          <p className="mt-1 inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-[11px] leading-snug tabular-nums text-stone-700">
+            {createdChange}
+          </p>
+        )}
       </Tile>
 
       <Tile label={week.tileLabels.done}>
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.done}</p>
+        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{doneRule}</p>
         {week.doneByStatus.length > 0 && (
           <>
             <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-stone-100">

@@ -64,6 +64,7 @@ const NO_PLAN = '(no plan)';
  */
 const DONE_RULE =
   'Done = reached a done state in HelpDesk at any point, dated by HelpDesk\'s own done date.';
+const NO_MEDIAN_LABEL = 'no median';
 
 const BUG_RULE =
   'Counted here: tickets whose HelpDesk status is Dev Fixing or Dev Done. Weekly, day, range and feature figures use only those tickets.';
@@ -75,18 +76,14 @@ const TREND_SECTION_TITLE = 'Every week in the range, for context.';
 const DAY_COMPARISON_TITLE = 'Today against yesterday';
 const DAY_COMPARISON_CAPTION =
   'Created Dev Fixing or Dev Done tickets today from midnight to now, against the same hours ' +
-  'yesterday. This stays on today when another week is selected. A percentage is shown only when ' +
-  `yesterday's count is at least ${PERCENT_BASELINE_FLOOR}; below that the change is given as a count.`;
-const DAY_COMPARISON_UNAVAILABLE =
-  'The mirror has no comparable earlier period for today.';
+  'yesterday. This stays on today when another week is selected. ' +
+  `A percentage is shown only when yesterday's count is at least ${PERCENT_BASELINE_FLOOR}.`;
+const DAY_COMPARISON_UNAVAILABLE = 'no earlier day to compare';
 const RANGE_COMPARISON_TITLE = 'Selected range against the preceding range';
 const RANGE_COMPARISON_CAPTION =
   'Created Dev Fixing or Dev Done tickets in the selected range up to now, against the same number ' +
-  'of weeks immediately before it. A percentage is shown only when the earlier count is at least ' +
-  `${PERCENT_BASELINE_FLOOR}; below that the change is given as a count.`;
-const RANGE_COMPARISON_UNAVAILABLE =
-  'The mirror has no comparable earlier period for this selected range.';
-const WEEKLY_GROWTH_TITLE = 'Week-on-week created change';
+  'of weeks immediately before it.';
+const RANGE_COMPARISON_UNAVAILABLE = 'no earlier range to compare';
 const WEEKLY_GROWTH_CAPTION =
   'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier.';
 const WEEKLY_GROWTH_HORIZON_NOTE =
@@ -558,6 +555,13 @@ function signed(value: number): string {
   return value > 0 ? `+${value}` : String(value);
 }
 
+function changePhrase(delta: number | null, noun: string): string | null {
+  if (delta === null) return null;
+  if (delta > 0) return `more than ${noun}`;
+  if (delta < 0) return `fewer than ${noun}`;
+  return `same as ${noun}`;
+}
+
 /** A ticket that survived exclusion, with everything the week loop needs precomputed. */
 type Counted = {
   createdMs: number | null;
@@ -587,7 +591,13 @@ export function compareCreated(
   const previousStartMs = startMs - periodMs;
 
   if (horizon.startsAtMs !== null && previousStartMs < horizon.startsAtMs) {
-    return { current, previous: null, delta: null, figure: String(current) };
+    return {
+      current,
+      previous: null,
+      delta: null,
+      magnitudeLabel: null,
+      percentLabel: null,
+    };
   }
 
   const previousEndMs = endMs - periodMs;
@@ -598,15 +608,12 @@ export function compareCreated(
       ticket.createdMs < previousEndMs
   ).length;
   const delta = current - previous;
-  const base = `${previous} → ${current} · ${signed(delta)}`;
-
-  if (previous === 0) return { current, previous, delta, figure: base };
-  if (previous < PERCENT_BASELINE_FLOOR) {
-    return { current, previous, delta, figure: `${base} · —` };
-  }
-
-  const percentage = Math.round((delta / previous) * 100);
-  return { current, previous, delta, figure: `${base} (${signed(percentage)}%)` };
+  const magnitudeLabel = delta === 0 ? null : String(Math.abs(delta));
+  const percentLabel =
+    delta === 0 || previous < PERCENT_BASELINE_FLOOR
+      ? null
+      : `${signed(Math.round((delta / previous) * 100))}%`;
+  return { current, previous, delta, magnitudeLabel, percentLabel };
 }
 
 type Pair = { done: number; outstanding: number };
@@ -794,6 +801,7 @@ function timeToFirstDone(counted: Counted[], rangeStartMs: number, rangeEndMs: n
     sampleSize: days.length,
     unmeasurable,
     medianDays: median([...days].sort((a, b) => a - b)),
+    noMedianLabel: NO_MEDIAN_LABEL,
     withinTwoDaysNote:
       days.length === 0
         ? null
@@ -1145,7 +1153,7 @@ function openByFeature(
         doneSample,
         speedNote:
           `${doneSample} ${doneSample === 1 ? 'finished ticket' : 'finished tickets'} in range · ` +
-          `median ${medianDaysToDone === null ? '—' : `${medianDaysToDone} d`}`,
+          (medianDaysToDone === null ? NO_MEDIAN_LABEL : `median ${medianDaysToDone} d`),
         comparison: compareCreated(
           counted.filter((ticket) => ticket.category === key),
           rangeStartMs,
@@ -1174,10 +1182,7 @@ function openByFeature(
       'readable created date. Speed uses tickets finished in the selected range with both dates. ' +
       'Medians are shown only with at least 3 finished tickets; the sample appears first and is ' +
       'not a rate. Intake change compares the selected range up to now with the same span immediately ' +
-      `before it. A percentage is shown only when the earlier count is at least ${PERCENT_BASELINE_FLOOR}; below that the ` +
-      'change is given as a count. The two floors differ because they hold back different figures: ' +
-      'a median needs enough finished tickets to have a middle, and a percentage needs an earlier ' +
-      `count large enough not to swing on a single ticket.${undated}`,
+      `before it.${undated}`,
   };
 }
 
@@ -1431,9 +1436,13 @@ export function aggregateWeeklyReport(
       createdComparison,
       createdDeltaLabel: showWeeklyGrowth
         ? createdComparison.previous === null
-          ? createdComparison.figure
+          ? String(createdComparison.current)
           : signed(createdComparison.delta ?? 0)
         : null,
+      createdChangeLabel: changePhrase(
+        createdComparison.delta,
+        inProgress ? 'the same span last week' : 'last week'
+      ),
       done,
       medianDaysToDone: median(daysToDone.sort((a, b) => a - b)),
       doneSample: daysToDone.length,
@@ -1481,9 +1490,13 @@ export function aggregateWeeklyReport(
     weeklySpeed: {
       caption: weeklySpeedCaption(weeks),
       emptyWeeksNote: emptyWeeksNote(weeks),
+      // Shares GROWTH_SERIES_MAX_WEEKS with the growth row: the same slot width
+      // that cannot hold a signed figure cannot hold a median either.
+      unavailableLabel: showWeeklyGrowth
+        ? null
+        : `A range of ${range.selectedWeeks} weeks leaves each week too narrow to print a figure, so the weekly median is shown for ranges up to ${GROWTH_SERIES_MAX_WEEKS} weeks.`,
     },
     weeklyGrowth: {
-      title: WEEKLY_GROWTH_TITLE,
       caption: WEEKLY_GROWTH_CAPTION,
       direction: weeklyGrowthDirection(weeks),
       horizonNote:
@@ -1500,6 +1513,8 @@ export function aggregateWeeklyReport(
       ...dayComparison,
       title: DAY_COMPARISON_TITLE,
       caption: DAY_COMPARISON_CAPTION,
+      currentLabel: 'created today',
+      changeLabel: changePhrase(dayComparison.delta, 'yesterday'),
       unavailableNote:
         dayComparison.previous === null ? DAY_COMPARISON_UNAVAILABLE : null,
     },
@@ -1507,6 +1522,11 @@ export function aggregateWeeklyReport(
       ...rangeComparison,
       title: RANGE_COMPARISON_TITLE,
       caption: RANGE_COMPARISON_CAPTION,
+      currentLabel: 'created in this range',
+      changeLabel: changePhrase(
+        rangeComparison.delta,
+        `the preceding ${range.selectedWeeks} weeks`
+      ),
       unavailableNote:
         rangeComparison.previous === null ? RANGE_COMPARISON_UNAVAILABLE : null,
     },

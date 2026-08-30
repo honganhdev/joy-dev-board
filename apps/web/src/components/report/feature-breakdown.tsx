@@ -1,4 +1,5 @@
 import { Panel } from './panel';
+import { directionGlyph } from './direction';
 import { categoryDotClass } from '@/lib/category-style';
 import type { WeeklyReport } from '@/types';
 
@@ -13,6 +14,19 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
       <ul className="space-y-1.5">
         {data.rows.map((row) => {
           const marker = categoryDotClass(row.key);
+          const comparisonLabel =
+            row.comparison.previous === null
+              ? String(row.comparison.current)
+              : [
+                  directionGlyph(row.comparison.delta),
+                  row.comparison.magnitudeLabel,
+                  `(${row.comparison.previous} → ${row.comparison.current})`,
+                ]
+                  .filter(Boolean)
+                  .join(' ') +
+                (row.comparison.percentLabel === null
+                  ? ''
+                  : ` · ${row.comparison.percentLabel}`);
           return (
             <li key={row.key} className="flex items-center gap-2">
               <span className={`size-2 shrink-0 rounded-full ${marker}`} />
@@ -38,7 +52,7 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
                 {row.speedNote}
               </span>
               <span className="w-48 shrink-0 text-right text-[11px] tabular-nums">
-                {row.comparison.figure}
+                {comparisonLabel}
               </span>
             </li>
           );

@@ -2,6 +2,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-reac
 import { useState, type RefObject } from 'react';
 import { BacklogColumns } from './backlog-columns';
 import { BacklogAge } from './backlog-age';
+import { ComparisonFigure } from './comparison-figure';
 import { DayColumns } from './day-columns';
 import { DurationHistogram } from './duration-histogram';
 import { FeatureBreakdown } from './feature-breakdown';
@@ -12,7 +13,6 @@ import { Panel } from './panel';
 import { RangePicker } from './range-picker';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
-import { WeeklyGrowth } from './weekly-growth';
 import { WeeklySpeed } from './weekly-speed';
 import { neighbourKeys, resolveFocusedWeek } from './week-focus';
 import { Button } from '@/components/ui/button';
@@ -137,10 +137,6 @@ export function ReportView({
           </Button>
         </div>
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.bugRule}</p>
-        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.doneRule}</p>
-        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          {report.timeZoneNote}
-        </p>
       </section>
 
       <HeadlineTiles
@@ -148,23 +144,34 @@ export function ReportView({
         devFixOpenRightNow={report.devFixOpenRightNow}
         devFixOpenRightNowLabel={report.devFixOpenRightNowLabel}
         agingHeadline={report.openBacklog.agingHeadline}
+        doneRule={report.doneRule}
       />
 
-      <Panel title={report.dayComparison.title}>
-        <p className="text-[20px] leading-none font-semibold tabular-nums">
-          {report.dayComparison.figure}
-        </p>
-        {report.dayComparison.unavailableNote && (
-          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            {report.dayComparison.unavailableNote}
-          </p>
-        )}
-        <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
-          {report.dayComparison.caption}
-        </p>
-      </Panel>
+      <div className="px-1">
+        <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
+      </div>
 
-      <DayColumns week={focused} daySplit={report.daySplit} />
+      <div className="flex gap-3">
+        <Panel title={report.dayComparison.title} className="min-w-0 flex-1">
+          <ComparisonFigure {...report.dayComparison} />
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+            {report.dayComparison.caption}
+          </p>
+        </Panel>
+
+        <Panel title={report.rangeComparison.title} className="min-w-0 flex-1">
+          <ComparisonFigure {...report.rangeComparison} />
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+            {report.rangeComparison.caption}
+          </p>
+        </Panel>
+      </div>
+
+      <DayColumns
+        week={focused}
+        daySplit={report.daySplit}
+        timeZoneNote={report.timeZoneNote}
+      />
 
       <PairedBars
         title="By category"
@@ -174,27 +181,12 @@ export function ReportView({
 
       <SectionDivider title={report.trendSectionTitle} />
 
-      <div className="px-1">
-        <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
-      </div>
-
-      <Panel title={report.rangeComparison.title}>
-        <p className="text-[20px] leading-none font-semibold tabular-nums">
-          {report.rangeComparison.figure}
-        </p>
-        {report.rangeComparison.unavailableNote && (
-          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            {report.rangeComparison.unavailableNote}
-          </p>
-        )}
-        <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
-          {report.rangeComparison.caption}
-        </p>
-      </Panel>
-
-      <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={focusWeekFromTrend} />
-
-      <WeeklyGrowth weeks={weeks} data={report.weeklyGrowth} />
+      <WeekColumns
+        weeks={weeks}
+        focusedKey={focused.key}
+        onFocus={focusWeekFromTrend}
+        growth={report.weeklyGrowth}
+      />
 
       <BacklogColumns
         weeks={weeks}
@@ -204,19 +196,22 @@ export function ReportView({
         ghostCaveat={report.ghosts.caveat}
       />
 
-      <WeeklySpeed
-        weeks={weeks}
-        caption={report.weeklySpeed.caption}
-        emptyWeeksNote={report.weeklySpeed.emptyWeeksNote}
-      />
+      <div className="flex gap-3">
+        <WeeklySpeed
+          weeks={weeks}
+          caption={report.weeklySpeed.caption}
+          emptyWeeksNote={report.weeklySpeed.emptyWeeksNote}
+          unavailableLabel={report.weeklySpeed.unavailableLabel}
+        />
 
-      <DurationHistogram data={report.timeToFirstDone} />
+        <DurationHistogram data={report.timeToFirstDone} />
+      </div>
 
       <SectionDivider title={report.openSectionTitle} />
 
       <BacklogAge data={report.openBacklog} />
 
-      <div className="space-y-3">
+      <div className="flex gap-3">
         <OpenBreakdown
           title="By service plan"
           rows={report.openByPlan.rows}

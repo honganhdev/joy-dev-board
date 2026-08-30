@@ -81,15 +81,18 @@ describe('comparison arithmetic', () => {
   });
 
   test('floors percentages below five and prints them from five upward', () => {
-    expect(compareCreated(withCounts(4, 5), start, end, DAY, horizon).figure).toBe(
-      '4 → 5 · +1 · —'
-    );
-    expect(compareCreated(withCounts(5, 7), start, end, DAY, horizon).figure).toBe(
-      '5 → 7 · +2 (+40%)'
-    );
-    expect(compareCreated(withCounts(6, 3), start, end, DAY, horizon).figure).toBe(
-      '6 → 3 · -3 (-50%)'
-    );
+    expect(compareCreated(withCounts(4, 5), start, end, DAY, horizon)).toMatchObject({
+      magnitudeLabel: '1',
+      percentLabel: null,
+    });
+    expect(compareCreated(withCounts(5, 7), start, end, DAY, horizon)).toMatchObject({
+      magnitudeLabel: '2',
+      percentLabel: '+40%',
+    });
+    expect(compareCreated(withCounts(6, 3), start, end, DAY, horizon)).toMatchObject({
+      magnitudeLabel: '3',
+      percentLabel: '-50%',
+    });
   });
 
   test('prints no percentage for a zero baseline', () => {
@@ -97,14 +100,21 @@ describe('comparison arithmetic', () => {
       current: 4,
       previous: 0,
       delta: 4,
-      figure: '0 → 4 · +4',
+      magnitudeLabel: '4',
+      percentLabel: null,
     });
   });
 
   test('sends no false previous count when the earlier period predates the mirror', () => {
     expect(
       compareCreated(withCounts(5, 2), start, end, DAY, { startsAtMs: start - DAY + 1 })
-    ).toEqual({ current: 2, previous: null, delta: null, figure: '2' });
+    ).toEqual({
+      current: 2,
+      previous: null,
+      delta: null,
+      magnitudeLabel: null,
+      percentLabel: null,
+    });
   });
 });
 
@@ -134,7 +144,13 @@ describe('today against yesterday', () => {
       ticket({ ticketId: 'current', createdAt: '2026-08-25T18:00:00.000Z' }),
     ]).dayComparison;
 
-    expect(result).toMatchObject({ current: 1, previous: 1, delta: 0, figure: '1 → 1 · 0 · —' });
+    expect(result).toMatchObject({
+      current: 1,
+      previous: 1,
+      delta: 0,
+      magnitudeLabel: null,
+      percentLabel: null,
+    });
     expect(result.caption).toContain('This stays on today when another week is selected.');
     expect(result.caption).toContain("yesterday's count is at least 5");
     expect(result.unavailableNote).toBeNull();
@@ -145,8 +161,14 @@ describe('today against yesterday', () => {
       ticket({ ticketId: 'today', createdAt: '2026-08-25T18:00:00.000Z' }),
     ]).dayComparison;
 
-    expect(result).toMatchObject({ current: 1, previous: null, delta: null, figure: '1' });
-    expect(result.unavailableNote).toContain('no comparable earlier period');
+    expect(result).toMatchObject({
+      current: 1,
+      previous: null,
+      delta: null,
+      magnitudeLabel: null,
+      percentLabel: null,
+    });
+    expect(result.unavailableNote).toBe('no earlier day to compare');
   });
 });
 
@@ -186,7 +208,8 @@ describe('the selected range against its preceding range', () => {
         current: 1,
         previous: 1,
         delta: 0,
-        figure: '1 → 1 · 0 · —',
+        magnitudeLabel: null,
+        percentLabel: null,
         unavailableNote: null,
       });
     }
@@ -216,7 +239,7 @@ describe('the selected range against its preceding range', () => {
     expect(comparison(12, 34).previous).toBe(0);
     expect(comparison(26, 34).previous).toBeNull();
     expect(comparison(52, 55).previous).toBeNull();
-    expect(comparison(26, 34).unavailableNote).toContain('no comparable earlier period');
+    expect(comparison(26, 34).unavailableNote).toBe('no earlier range to compare');
   });
 });
 
@@ -295,8 +318,10 @@ describe('week-on-week created change', () => {
 
     expect(twentySix.weeklyGrowth.unavailableNote).toBeNull();
     expect(twentySix.weeks.every((week) => week.createdDeltaLabel !== null)).toBe(true);
+    expect(twentySix.weeklySpeed.unavailableLabel).toBeNull();
     expect(fiftyTwo.weeklyGrowth.unavailableNote).toContain('ranges up to 26 weeks');
     expect(fiftyTwo.weeks.every((week) => week.createdDeltaLabel === null)).toBe(true);
+    expect(fiftyTwo.weeklySpeed.unavailableLabel).toContain('ranges up to 26 weeks');
   });
 
   test('states aggregate movement between the first and last FINISHED weeks', () => {
@@ -1140,16 +1165,35 @@ describe('open tickets by feature', () => {
       ],
       4
     ).openByFeature;
-    const figures = Object.fromEntries(
-      result.rows.map((row) => [row.key, row.comparison.figure])
+    const comparisons = Object.fromEntries(
+      result.rows.map((row) => [row.key, row.comparison])
     );
 
-    expect(figures.WIDGET).toBe('5 → 10 · +5 (+100%)');
-    expect(figures.POINTS).toBe('2 → 3 · +1 · —');
-    expect(figures['EARNING RULES']).toBe('0 → 4 · +4');
-    expect(figures['EMAIL / NOTIFY']).toBe('9 → 0 · -9 (-100%)');
+    expect(comparisons.WIDGET).toMatchObject({
+      previous: 5,
+      current: 10,
+      magnitudeLabel: '5',
+      percentLabel: '+100%',
+    });
+    expect(comparisons.POINTS).toMatchObject({
+      previous: 2,
+      current: 3,
+      magnitudeLabel: '1',
+      percentLabel: null,
+    });
+    expect(comparisons['EARNING RULES']).toMatchObject({
+      previous: 0,
+      current: 4,
+      magnitudeLabel: '4',
+      percentLabel: null,
+    });
+    expect(comparisons['EMAIL / NOTIFY']).toMatchObject({
+      previous: 9,
+      current: 0,
+      magnitudeLabel: '9',
+      percentLabel: '-100%',
+    });
     expect(result.unavailableNote).toBeNull();
-    expect(result.caption).toContain('earlier count is at least 5');
   });
 
   test('keeps the existing open-backlog sort instead of sorting by current intake', () => {
@@ -1184,7 +1228,10 @@ describe('open tickets by feature', () => {
     ], 4).openByFeature;
 
     expect(result.rows[0]?.comparison.previous).toBeNull();
-    expect(result.rows[0]?.comparison.figure).toBe('1');
+    expect(result.rows[0]?.comparison).toMatchObject({
+      magnitudeLabel: null,
+      percentLabel: null,
+    });
     expect(result.unavailableNote).toContain('no comparable earlier period');
   });
 
@@ -1198,7 +1245,7 @@ describe('open tickets by feature', () => {
       olderThan30: 1,
       medianDaysToDone: null,
       doneSample: 0,
-      speedNote: '0 finished tickets in range · median —',
+      speedNote: '0 finished tickets in range · no median',
     });
   });
 
@@ -1217,7 +1264,7 @@ describe('open tickets by feature', () => {
       }),
     ]).openByFeature.rows[0];
     expect(result).toMatchObject({ open: 5, doneSample: 1, medianDaysToDone: null });
-    expect(result?.speedNote).toBe('1 finished ticket in range · median —');
+    expect(result?.speedNote).toBe('1 finished ticket in range · no median');
   });
 
   test('shows the median once the sample reaches three tickets', () => {
@@ -2340,8 +2387,13 @@ describe('the feature rows at their edges', () => {
     ).openByFeature.rows;
     const declined = rows.find((row) => row.key === 'REFERRAL');
 
-    expect(declined?.comparison).toMatchObject({ current: 0, previous: 5, delta: -5 });
-    expect(declined?.comparison.figure).toContain('5 → 0');
+    expect(declined?.comparison).toMatchObject({
+      current: 0,
+      previous: 5,
+      delta: -5,
+      magnitudeLabel: '5',
+      percentLabel: '-100%',
+    });
     // Nothing current, so every current-data column falls to a real zero or the
     // em dash — never a zero standing in for a value it does not have.
     expect(declined).toMatchObject({
@@ -2351,7 +2403,7 @@ describe('the feature rows at their edges', () => {
       doneSample: 0,
       medianDaysToDone: null,
     });
-    expect(declined?.speedNote).toBe('0 finished tickets in range · median —');
+    expect(declined?.speedNote).toBe('0 finished tickets in range · no median');
   });
 
   test('sorts a previous-span-only row on the same key as every other row', () => {
@@ -2395,7 +2447,7 @@ describe('the feature rows at their edges', () => {
     ).openByFeature.rows[0];
 
     expect(row).toMatchObject({ doneSample: 2, medianDaysToDone: null });
-    expect(row?.speedNote).toBe('2 finished tickets in range · median —');
+    expect(row?.speedNote).toBe('2 finished tickets in range · no median');
   });
 });
 
