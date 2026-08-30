@@ -51,6 +51,11 @@ export function weekStartMs(ms: number): number {
   return localMidnight(parts) - parts.weekday * DAY_MS - OFFSET_MS;
 }
 
+/** UTC instant of the 00:00 +07:00 that opens the day containing `ms`. */
+export function dayStartMs(ms: number): number {
+  return localMidnight(localParts(ms)) - OFFSET_MS;
+}
+
 /** ISO week key (`2026-W34`) of the week that starts at `startMs`. */
 export function weekKey(startMs: number): string {
   // A week's Thursday always falls in that week's ISO week-year, which is what

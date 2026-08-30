@@ -14,6 +14,7 @@ import { FALLBACK_CATEGORY } from './categories';
 import { classify } from './classify';
 import { BOARD_COLUMNS } from './types';
 import type {
+  Comparison,
   GhostAudit,
   RangeMeta,
   TimeToFirstDone,
@@ -44,6 +45,7 @@ const DEFAULT_WEEKS = 12;
  * being full fills itself within a month; one that is half empty never does.
  */
 const PRESET_GRACE_WEEKS = 4;
+const PERCENT_BASELINE_FLOOR = 5;
 
 const DEV_FIX_STATUSES = new Set(['dev_fixing', 'dev_done']);
 
@@ -501,6 +503,10 @@ function median(sorted: number[]): number | null {
   return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
 /** A ticket that survived exclusion, with everything the week loop needs precomputed. */
 type Counted = {
   createdMs: number | null;
@@ -511,6 +517,46 @@ type Counted = {
   priority: string;
   status: string;
 };
+
+/**
+ * Compares created-ticket counts in two matching slices of adjacent periods.
+ * `periodMs`, rather than elapsed time, keeps a partial day or week anchored to
+ * the same clock span in the prior period.
+ */
+export function compareCreated(
+  bugs: Array<Pick<Counted, 'createdMs'>>,
+  startMs: number,
+  endMs: number,
+  periodMs: number,
+  horizon: Pick<Horizon, 'startsAtMs'>
+): Comparison {
+  const current = bugs.filter(
+    (ticket) => ticket.createdMs !== null && ticket.createdMs >= startMs && ticket.createdMs < endMs
+  ).length;
+  const previousStartMs = startMs - periodMs;
+
+  if (horizon.startsAtMs !== null && previousStartMs < horizon.startsAtMs) {
+    return { current, previous: null, delta: null, figure: String(current) };
+  }
+
+  const previousEndMs = endMs - periodMs;
+  const previous = bugs.filter(
+    (ticket) =>
+      ticket.createdMs !== null &&
+      ticket.createdMs >= previousStartMs &&
+      ticket.createdMs < previousEndMs
+  ).length;
+  const delta = current - previous;
+  const base = `${previous} → ${current} · ${signed(delta)}`;
+
+  if (previous === 0) return { current, previous, delta, figure: base };
+  if (previous < PERCENT_BASELINE_FLOOR) {
+    return { current, previous, delta, figure: `${base} · —` };
+  }
+
+  const percentage = Math.round((delta / previous) * 100);
+  return { current, previous, delta, figure: `${base} (${signed(percentage)}%)` };
+}
 
 type Pair = { done: number; outstanding: number };
 

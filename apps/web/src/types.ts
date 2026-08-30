@@ -96,6 +96,13 @@ export type StatusHistoryEntry = {
  * and rule here is a string the server rendered: the report view formats no
  * dates, cases no names and derives no counts.
  */
+export type Comparison = {
+  current: number;
+  previous: number | null;
+  delta: number | null;
+  figure: string;
+};
+
 export type WeekSummary = {
   /** ISO week key, e.g. `2026-W34`. */
   key: string;

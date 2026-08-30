@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { CATEGORIES, FALLBACK_CATEGORY } from '../src/board/categories';
-import { aggregateWeeklyReport } from '../src/board/weekly-report';
+import { aggregateWeeklyReport, compareCreated } from '../src/board/weekly-report';
 import type { WeeklyReport } from '../src/board/report-types';
+import { dayStartMs } from '../src/board/weeks';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { loadFixtureTickets } from './fixtures';
 
@@ -45,6 +46,80 @@ function weekByKey(result: WeeklyReport, key: string) {
   if (!week) throw new Error(`no week ${key} in ${result.weeks.map((w) => w.key).join(', ')}`);
   return week;
 }
+
+describe('comparison arithmetic', () => {
+  const DAY = 86400000;
+  const start = Date.parse('2026-08-25T17:00:00.000Z');
+  const end = start + 10 * 60 * 60 * 1000;
+  const horizon = { startsAtMs: start - 10 * DAY };
+
+  function withCounts(previous: number, current: number) {
+    return [
+      ...Array.from({ length: previous }, (_, index) => ({
+        createdMs: start - DAY + 1000 + index,
+      })),
+      ...Array.from({ length: current }, (_, index) => ({ createdMs: start + 1000 + index })),
+    ];
+  }
+
+  test('uses the full period to compare the same elapsed hours', () => {
+    const bugs = [
+      { createdMs: start - DAY + 60 * 60 * 1000 },
+      { createdMs: start - 2 * 60 * 60 * 1000 },
+      { createdMs: start + 60 * 60 * 1000 },
+    ];
+
+    expect(compareCreated(bugs, start, end, DAY, horizon)).toMatchObject({
+      current: 1,
+      previous: 1,
+      delta: 0,
+    });
+  });
+
+  test('floors percentages below five and prints them from five upward', () => {
+    expect(compareCreated(withCounts(4, 5), start, end, DAY, horizon).figure).toBe(
+      '4 → 5 · +1 · —'
+    );
+    expect(compareCreated(withCounts(5, 7), start, end, DAY, horizon).figure).toBe(
+      '5 → 7 · +2 (+40%)'
+    );
+    expect(compareCreated(withCounts(6, 3), start, end, DAY, horizon).figure).toBe(
+      '6 → 3 · -3 (-50%)'
+    );
+  });
+
+  test('prints no percentage for a zero baseline', () => {
+    expect(compareCreated(withCounts(0, 4), start, end, DAY, horizon)).toEqual({
+      current: 4,
+      previous: 0,
+      delta: 4,
+      figure: '0 → 4 · +4',
+    });
+  });
+
+  test('sends no false previous count when the earlier period predates the mirror', () => {
+    expect(
+      compareCreated(withCounts(5, 2), start, end, DAY, { startsAtMs: start - DAY + 1 })
+    ).toEqual({ current: 2, previous: null, delta: null, figure: '2' });
+  });
+});
+
+describe('day starts in Vietnam time', () => {
+  test('splits adjacent minutes across local midnight', () => {
+    expect(dayStartMs(Date.parse('2026-08-23T16:59:00.000Z'))).toBe(
+      Date.parse('2026-08-22T17:00:00.000Z')
+    );
+    expect(dayStartMs(Date.parse('2026-08-23T17:00:00.000Z'))).toBe(
+      Date.parse('2026-08-23T17:00:00.000Z')
+    );
+  });
+
+  test('keeps a Monday instant anchored to that Monday midnight', () => {
+    expect(dayStartMs(Date.parse('2026-08-24T03:00:00.000Z'))).toBe(
+      Date.parse('2026-08-23T17:00:00.000Z')
+    );
+  });
+});
 
 describe('week boundaries', () => {
   test('splits two adjacent minutes across the Monday boundary in Vietnam time', () => {

@@ -8,6 +8,16 @@
  * away from the one the tests pin.
  */
 
+export type Comparison = {
+  current: number;
+  /** `null` when the mirror has no comparable earlier period. */
+  previous: number | null;
+  /** `null` with `previous`; otherwise `current - previous`. */
+  delta: number | null;
+  /** Counts and available change, composed by the server. */
+  figure: string;
+};
+
 export type WeekSummary = {
   /** ISO week key, e.g. `2026-W34`. */
   key: string;
