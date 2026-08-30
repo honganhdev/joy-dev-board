@@ -1,15 +1,12 @@
 /**
  * Week selection stays in a pure module because this app has no DOM renderer,
  * so burying it in the report component would leave its boundary cases
- * untestable. The default is the last finished week: landing on a partial week
- * makes correct week-to-date figures look like a surprising drop.
+ * untestable. The default is the running week: the report now compares its
+ * week-to-date intake with the same elapsed span one week earlier.
  */
 import type { WeekSummary } from '@/types';
 
 export function defaultFocusWeek(weeks: WeekSummary[]): WeekSummary | null {
-  for (let index = weeks.length - 1; index >= 0; index -= 1) {
-    if (!weeks[index]?.inProgress) return weeks[index] ?? null;
-  }
   return weeks[weeks.length - 1] ?? null;
 }
 

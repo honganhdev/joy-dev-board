@@ -1695,6 +1695,8 @@ describe('the week that has not finished yet', () => {
 
     expect(running).toHaveLength(1);
     expect(running[0]).toBe(result.weeks[result.weeks.length - 1]);
+    expect(running[0]?.currentDayLabel).toBe('Wed 26 Aug');
+    expect(running[0]?.days.some((day) => day.label === running[0]?.currentDayLabel)).toBe(true);
 
     for (const week of result.weeks) {
       expect(week.label.includes('in progress')).toBe(week.inProgress);
@@ -1702,6 +1704,7 @@ describe('the week that has not finished yet', () => {
       expect(week.tileLabels.done.includes('so far')).toBe(week.inProgress);
       expect(week.tileLabels.outstanding.includes('week end')).toBe(!week.inProgress);
       expect(week.outstandingCaption.includes('has not finished')).toBe(week.inProgress);
+      expect(week.currentDayLabel === null).toBe(!week.inProgress);
     }
   });
 });

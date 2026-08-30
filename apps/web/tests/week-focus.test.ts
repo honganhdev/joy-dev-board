@@ -18,8 +18,8 @@ const weeks = [
 ];
 
 describe('defaultFocusWeek', () => {
-  test('lands on the last finished week rather than the one still running', () => {
-    expect(defaultFocusWeek(weeks)?.key).toBe('W34');
+  test('lands on the week that is still running', () => {
+    expect(defaultFocusWeek(weeks)?.key).toBe('W35');
   });
 
   test('uses the available week when none are finished and returns null when there are none', () => {
@@ -45,15 +45,15 @@ describe('neighbourKeys', () => {
 
 describe('resolveFocusedWeek', () => {
   test('falls back to the default when a range no longer contains the stored focus', () => {
-    expect(resolveFocusedWeek(weeks, 'W20')?.key).toBe('W34');
+    expect(resolveFocusedWeek(weeks, 'W20')?.key).toBe('W35');
     expect(resolveFocusedWeek(weeks, 'W33')?.key).toBe('W33');
-    expect(resolveFocusedWeek(weeks, null)?.key).toBe('W34');
+    expect(resolveFocusedWeek(weeks, null)?.key).toBe('W35');
   });
 
   test('keeps a week the viewer chose when the new range still holds it', () => {
     // A wider range restores what was being looked at rather than snapping back
     // to that range's own default — including the running week, which the
-    // default would never pick but which the viewer may have stepped onto.
+    // default also picks but which remains an explicit stored choice.
     const wider = [week('W28', false), week('W29', false), ...weeks];
 
     expect(resolveFocusedWeek(wider, 'W33')?.key).toBe('W33');
@@ -68,10 +68,10 @@ describe('a range that no longer holds the focused week', () => {
     // plainly showing an interior week.
     const focused = resolveFocusedWeek(weeks, 'W20');
 
-    expect(focused?.key).toBe('W34');
+    expect(focused?.key).toBe('W35');
     expect(neighbourKeys(weeks, focused?.key ?? null)).toEqual({
-      previous: 'W33',
-      next: 'W35',
+      previous: 'W34',
+      next: null,
     });
     // The vanished key on its own names no neighbour in either direction.
     expect(neighbourKeys(weeks, 'W20')).toEqual({ previous: null, next: null });

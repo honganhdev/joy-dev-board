@@ -112,6 +112,8 @@ export type WeekSummary = {
   shortLabel: string;
   /** The week holding `now`: its figures are week-to-date, not final. */
   inProgress: boolean;
+  /** The running day's label; `null` on every finished week. */
+  currentDayLabel: string | null;
   /** Titles for the three headline tiles; the week still running is worded differently. */
   tileLabels: { created: string; done: string; outstanding: string };
   /** Why this week's outstanding figure and `devFixOpenRightNow` differ. */

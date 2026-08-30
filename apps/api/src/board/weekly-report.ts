@@ -1356,6 +1356,7 @@ export function aggregateWeeklyReport(
       };
     });
     const daysHighlight = inProgress ? null : describeDays(days, created, done);
+    const elapsedDay = inProgress ? Math.min(6, Math.floor((nowMs - startMs) / DAY_MS)) : null;
     const createdComparison = compareCreated(
       bugs,
       startMs,
@@ -1375,8 +1376,7 @@ export function aggregateWeeklyReport(
           : futureDays.length === 1
             ? `${futureDays[0] ?? ''} has not happened yet, so it has no figures. `
             : `${listWeekdays(futureDays)} have not happened yet, so they have no figures. `;
-      const elapsedDay = Math.min(6, Math.floor((nowMs - startMs) / DAY_MS));
-      return `${futureSentence}${weekdayName(startMs + elapsedDay * DAY_MS)} is still running, so its figures are day-to-date.`;
+      return `${futureSentence}${weekdayName(startMs + (elapsedDay ?? 0) * DAY_MS)} is still running, so its figures are day-to-date.`;
     })();
 
     return {
@@ -1384,6 +1384,7 @@ export function aggregateWeeklyReport(
       label: inProgress ? `${weekLabel(startMs)} · in progress` : weekLabel(startMs),
       shortLabel: weekShortLabel(startMs),
       inProgress,
+      currentDayLabel: elapsedDay === null ? null : (days[elapsedDay]?.label ?? null),
       tileLabels: inProgress ? IN_PROGRESS_TILE_LABELS : FINISHED_TILE_LABELS,
       outstandingCaption: inProgress ? IN_PROGRESS_OUTSTANDING_CAPTION : OUTSTANDING_CAPTION,
       created,

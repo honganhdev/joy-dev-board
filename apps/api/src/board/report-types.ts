@@ -31,6 +31,8 @@ export type WeekSummary = {
    * and the alternative is the browser reading meaning out of `label`'s prose.
    */
   inProgress: boolean;
+  /** The running day's label; `null` on every finished week. */
+  currentDayLabel: string | null;
   /**
    * Titles for the three headline tiles. Worded per week because the week
    * holding `now` has not finished: its figures are week-to-date, so it cannot

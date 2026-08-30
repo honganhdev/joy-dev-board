@@ -170,7 +170,7 @@ function SegmentReadout({
 /** Created against done inside the focused week, with one slot per day. */
 export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: DaySplit }) {
   const [mode, setMode] = useState<Mode>('off');
-  const [openDay, setOpenDay] = useState<string | null>(null);
+  const [openDay, setOpenDay] = useState<string | null>(week.currentDayLabel ?? null);
   const max = week.days.reduce(
     (tallest, day) => Math.max(tallest, day.created ?? 0, day.done ?? 0),
     0
@@ -190,6 +190,10 @@ export function DayColumns({ week, daySplit }: { week: WeekSummary; daySplit?: D
   useEffect(() => {
     if (mode !== 'off' && !available[mode]) setMode('off');
   }, [available.category, available.status, mode]);
+
+  useEffect(() => {
+    setOpenDay(week.currentDayLabel ?? null);
+  }, [week.key]);
 
   const buttonClass = (selected: boolean) =>
     `rounded-md border px-2 py-1 text-[10px] focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40 ${
