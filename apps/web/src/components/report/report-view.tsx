@@ -146,6 +146,7 @@ export function ReportView({
       <HeadlineTiles
         week={focused}
         devFixOpenRightNow={report.devFixOpenRightNow}
+        devFixOpenRightNowLabel={report.devFixOpenRightNowLabel}
         agingHeadline={report.openBacklog.agingHeadline}
       />
 

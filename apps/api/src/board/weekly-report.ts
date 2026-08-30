@@ -74,12 +74,16 @@ const TIME_ZONE_NOTE =
 const TREND_SECTION_TITLE = 'Every week in the range, for context.';
 const DAY_COMPARISON_TITLE = 'Today against yesterday';
 const DAY_COMPARISON_CAPTION =
-  "Today from midnight to now, against the same hours yesterday. This stays on today when another week is selected. A percentage is shown only when yesterday's count is at least 5; below that the change is given as a count.";
+  'Created Dev Fixing or Dev Done tickets today from midnight to now, against the same hours ' +
+  'yesterday. This stays on today when another week is selected. A percentage is shown only when ' +
+  `yesterday's count is at least ${PERCENT_BASELINE_FLOOR}; below that the change is given as a count.`;
 const DAY_COMPARISON_UNAVAILABLE =
   'The mirror has no comparable earlier period for today.';
 const RANGE_COMPARISON_TITLE = 'Selected range against the preceding range';
 const RANGE_COMPARISON_CAPTION =
-  'The selected range up to now, against the same number of weeks immediately before it. A percentage is shown only when the earlier count is at least 5; below that the change is given as a count.';
+  'Created Dev Fixing or Dev Done tickets in the selected range up to now, against the same number ' +
+  'of weeks immediately before it. A percentage is shown only when the earlier count is at least ' +
+  `${PERCENT_BASELINE_FLOOR}; below that the change is given as a count.`;
 const RANGE_COMPARISON_UNAVAILABLE =
   'The mirror has no comparable earlier period for this selected range.';
 const WEEKLY_GROWTH_TITLE = 'Week-on-week created change';
@@ -167,6 +171,14 @@ const IN_PROGRESS_BACKLOG_TITLE = 'Backlog at each week end, and so far this wee
  * renderer: a week still in progress cannot be titled with a week-end figure,
  * and only the server knows which week that is.
  */
+/**
+ * The second figure in the outstanding tile. It names the cohort because the
+ * number beside it counts only the dev-fix tickets, while `openRightNow` on the
+ * same payload counts every open ticket: a bare `open right now` would read as
+ * the larger of the two.
+ */
+const DEV_FIX_OPEN_RIGHT_NOW_LABEL = 'Open Dev Fixing or Dev Done right now:';
+
 const FINISHED_TILE_LABELS = {
   created: 'New this week',
   done: 'Done this week',
@@ -198,13 +210,25 @@ function weeklySpeedCaption(weeks: WeekSummary[]): string {
   return `${scope} Measurable weekly medians range from ${minimum} to ${maximum} days.`;
 }
 
-function weeklyGrowthDirection(weeks: WeekSummary[]): string {
-  const first = weeks[0];
-  const last = weeks.at(-1);
-  if (!first || !last) return 'The selected range contains no named week to compare.';
+/**
+ * Movement across the range, stated between two *whole* weeks.
+ *
+ * The running week is excluded rather than included: its `created` is
+ * week-to-date, so subtracting the first week's whole-week count from it prints
+ * a fall whenever intake is merely flat — the exact misreading this panel
+ * exists to prevent. The running week is not mentioned here because it already
+ * carries its own like-for-like figure in the same panel.
+ */
+export function weeklyGrowthDirection(weeks: WeekSummary[]): string {
+  const finished = weeks.filter((week) => !week.inProgress);
+  const first = finished[0];
+  const last = finished.at(-1);
+  if (!first || !last || first === last) {
+    return 'The selected range does not yet hold two finished weeks, so no change across finished weeks is shown.';
+  }
   return (
-    `Across the selected range, created intake moved from ${first.created} in ${first.label} to ` +
-    `${last.created} in ${last.label} (${signed(last.created - first.created)}).`
+    `Across the finished weeks in the selected range, created intake moved from ${first.created} ` +
+    `in ${first.label} to ${last.created} in ${last.label} (${signed(last.created - first.created)}).`
   );
 }
 
@@ -1087,6 +1111,20 @@ function openByFeature(
     );
   }
 
+  // A feature whose intake fell to nothing has no open ticket and nothing
+  // finished inside the range, so neither seed above reaches it — and its row
+  // would vanish exactly when its decline is the thing worth reading. Seeding
+  // from both comparison spans keeps `5 → 0` on the page. The row carries no
+  // current data, so every other column falls to its own no-value wording.
+  const comparisonStartMs = rangeStartMs - comparisonPeriodMs;
+  for (const ticket of counted) {
+    const { createdMs } = ticket;
+    if (createdMs === null || createdMs < comparisonStartMs || createdMs >= comparisonEndMs) {
+      continue;
+    }
+    featureMetric(metrics, ticket.category);
+  }
+
   const rows = [...metrics.entries()]
     .sort((a, b) => {
       if (a[0] === FALLBACK_CATEGORY) return 1;
@@ -1136,8 +1174,10 @@ function openByFeature(
       'readable created date. Speed uses tickets finished in the selected range with both dates. ' +
       'Medians are shown only with at least 3 finished tickets; the sample appears first and is ' +
       'not a rate. Intake change compares the selected range up to now with the same span immediately ' +
-      'before it. A percentage is shown only when the earlier count is at least 5; below that the ' +
-      `change is given as a count.${undated}`,
+      `before it. A percentage is shown only when the earlier count is at least ${PERCENT_BASELINE_FLOOR}; below that the ` +
+      'change is given as a count. The two floors differ because they hold back different figures: ' +
+      'a median needs enough finished tickets to have a middle, and a percentage needs an earlier ' +
+      `count large enough not to swing on a single ticket.${undated}`,
   };
 }
 
@@ -1501,6 +1541,7 @@ export function aggregateWeeklyReport(
     // mirror, so this figure and the board's own open count keep agreeing.
     openRightNow: open.length,
     devFixOpenRightNow: openBugs.length,
+    devFixOpenRightNowLabel: DEV_FIX_OPEN_RIGHT_NOW_LABEL,
     ghosts: ghostAudit(bugs),
     excluded,
     excludedNote: excludedNote(excluded),

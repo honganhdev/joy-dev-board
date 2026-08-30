@@ -284,6 +284,8 @@ export type WeeklyReport = {
   openRightNow: number;
   /** Open tickets whose HelpDesk status is Dev Fixing or Dev Done. */
   devFixOpenRightNow: number;
+  /** Names that cohort beside the figure, so the client composes no prose. */
+  devFixOpenRightNowLabel: string;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */
   excluded: { deleted: number; unparseableDate: number; undated: number; notDevFix: number };

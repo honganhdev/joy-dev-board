@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { CATEGORIES, FALLBACK_CATEGORY } from '../src/board/categories';
-import { aggregateWeeklyReport, compareCreated } from '../src/board/weekly-report';
+import {
+  aggregateWeeklyReport,
+  compareCreated,
+  weeklyGrowthDirection,
+} from '../src/board/weekly-report';
 import type { WeeklyReport } from '../src/board/report-types';
 import { dayStartMs, weekStartMs } from '../src/board/weeks';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
@@ -295,16 +299,77 @@ describe('week-on-week created change', () => {
     expect(fiftyTwo.weeks.every((week) => week.createdDeltaLabel === null)).toBe(true);
   });
 
-  test('states aggregate movement between the first and last named weeks', () => {
-    const result = report([
-      ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
-      ticket({ ticketId: 'current', createdAt: '2026-08-24T00:00:00.000Z' }),
-    ], 4);
-    const first = result.weeks[0];
-    const last = result.weeks.at(-1);
+  test('states aggregate movement between the first and last FINISHED weeks', () => {
+    const result = report(
+      [
+        ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+        // One in the first finished week, three in the last finished week.
+        ticket({ ticketId: 'first-week', createdAt: '2026-08-04T00:00:00.000Z' }),
+        ...Array.from({ length: 3 }, (_, index) =>
+          ticket({ ticketId: `last-finished-${index}`, createdAt: '2026-08-18T00:00:00.000Z' })
+        ),
+        // The running week is week-to-date and must not end the sentence.
+        ...Array.from({ length: 9 }, (_, index) =>
+          ticket({ ticketId: `running-${index}`, createdAt: '2026-08-24T00:00:00.000Z' })
+        ),
+      ],
+      4
+    );
+    const finished = result.weeks.filter((week) => !week.inProgress);
+    const first = finished[0];
+    const last = finished.at(-1);
+    const running = result.weeks.at(-1);
 
+    expect(running?.inProgress).toBe(true);
+    expect(running?.created).toBe(9);
     expect(result.weeklyGrowth.direction).toContain(`from ${first?.created} in ${first?.label}`);
     expect(result.weeklyGrowth.direction).toContain(`to ${last?.created} in ${last?.label}`);
+    expect(result.weeklyGrowth.direction).toContain('(+2)');
+    // The sentence says which weeks it covers, and leaves the partial one out.
+    expect(result.weeklyGrowth.direction).toContain('finished weeks');
+    expect(result.weeklyGrowth.direction).not.toContain(running?.label ?? 'in progress');
+  });
+
+  /**
+   * The failure the whole panel exists to prevent: the running week's `created`
+   * is week-to-date, so ending the sentence on it subtracts a partial week from
+   * a whole one and prints a fall out of intake that never moved.
+   */
+  test('prints no fall when intake is dead flat across the finished weeks', () => {
+    const flat = [
+      ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+      ...['2026-08-04', '2026-08-11', '2026-08-18'].flatMap((day, week) =>
+        Array.from({ length: 2 }, (_, index) =>
+          ticket({ ticketId: `w${week}-${index}`, createdAt: `${day}T00:00:00.000Z` })
+        )
+      ),
+      // Tuesday of the running week: one so far, on its way to the same two.
+      ticket({ ticketId: 'running', createdAt: '2026-08-24T00:00:00.000Z' }),
+    ];
+    const result = report(flat, 4);
+
+    expect(result.weeks.filter((week) => !week.inProgress).map((week) => week.created)).toEqual([
+      2, 2, 2,
+    ]);
+    expect(result.weeks.at(-1)?.created).toBe(1);
+    expect(result.weeklyGrowth.direction).toContain('(0)');
+    expect(result.weeklyGrowth.direction).not.toContain('(-');
+  });
+
+  test('says there is no second finished week rather than printing a bare figure', () => {
+    const runningOnly = report([
+      ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+    ], 4).weeks.filter((week) => week.inProgress);
+    const oneFinished = report([
+      ticket({ ticketId: 'horizon', createdAt: '2026-06-01T00:00:00.000Z' }),
+    ], 4).weeks.slice(-2);
+
+    for (const weeks of [[], runningOnly, oneFinished]) {
+      const direction = weeklyGrowthDirection(weeks);
+      expect(direction).toContain('two finished weeks');
+      expect(direction).not.toMatch(/\d/);
+      expect(direction).not.toContain('\u2014');
+    }
   });
 });
 
@@ -2248,6 +2313,71 @@ describe('the feature rows at their edges', () => {
     expect(rows).toHaveLength(2);
     expect(rows.length).toBeLessThan(CATEGORIES.length);
     for (const row of rows) expect(CATEGORIES).toContain(row.key as (typeof CATEGORIES)[number]);
+  });
+
+  /**
+   * A feature whose intake fell to nothing has no open ticket and finished
+   * nothing inside the range, so it reached neither original seed — and vanished
+   * from the panel exactly when its `5 → 0` decline was the thing worth reading.
+   */
+  test('keeps a row for a feature whose intake is only in the previous span', () => {
+    const rows = report(
+      [
+        ticket({ ticketId: 'horizon', subject: 'widget broken', createdAt: '2026-06-01T00:00:00.000Z' }),
+        // Created inside the preceding comparison span, closed and done before
+        // the selected range opens: invisible to both original seeds.
+        ...Array.from({ length: 5 }, (_, index) =>
+          ticket({
+            ticketId: `gone-${index}`,
+            subject: 'referral link broken',
+            ticketStatus: 'closed',
+            createdAt: '2026-07-10T00:00:00.000Z',
+            doneAt: '2026-07-20T00:00:00.000Z',
+          })
+        ),
+      ],
+      4
+    ).openByFeature.rows;
+    const declined = rows.find((row) => row.key === 'REFERRAL');
+
+    expect(declined?.comparison).toMatchObject({ current: 0, previous: 5, delta: -5 });
+    expect(declined?.comparison.figure).toContain('5 → 0');
+    // Nothing current, so every current-data column falls to a real zero or the
+    // em dash — never a zero standing in for a value it does not have.
+    expect(declined).toMatchObject({
+      open: 0,
+      openWithCreatedDate: 0,
+      olderThan30: 0,
+      doneSample: 0,
+      medianDaysToDone: null,
+    });
+    expect(declined?.speedNote).toBe('0 finished tickets in range · median —');
+  });
+
+  test('sorts a previous-span-only row on the same key as every other row', () => {
+    const rows = report(
+      [
+        ticket({ ticketId: 'widget-1', subject: 'widget broken' }),
+        ticket({ ticketId: 'widget-2', subject: 'widget layout wrong' }),
+        ticket({ ticketId: 'points', subject: 'point balance wrong' }),
+        ...Array.from({ length: 3 }, (_, index) =>
+          ticket({ ticketId: `other-${index}`, subject: `zzzz no match ${index}` })
+        ),
+        // Zero open, so it sorts below every open row and above the catch-all.
+        ticket({
+          ticketId: 'gone',
+          subject: 'referral link broken',
+          ticketStatus: 'closed',
+          createdAt: '2026-07-10T00:00:00.000Z',
+          doneAt: '2026-07-20T00:00:00.000Z',
+        }),
+      ],
+      4
+    ).openByFeature.rows;
+
+    // Busiest first, the classifier catch-all pinned last however large it is.
+    expect(rows.map((row) => row.key)).toEqual(['WIDGET', 'POINTS', 'REFERRAL', FALLBACK_CATEGORY]);
+    expect(rows.map((row) => row.open)).toEqual([2, 1, 0, 3]);
   });
 
   test('keeps the median hidden one ticket short of the minimum sample', () => {

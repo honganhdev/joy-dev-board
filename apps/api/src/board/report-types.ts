@@ -317,6 +317,8 @@ export type WeeklyReport = {
   openRightNow: number;
   /** Open tickets whose HelpDesk status is Dev Fixing or Dev Done. */
   devFixOpenRightNow: number;
+  /** Names that cohort beside the figure, so the client composes no prose. */
+  devFixOpenRightNowLabel: string;
   /** The measured ghost population, and the caveat naming it. */
   ghosts: GhostAudit;
   /**
