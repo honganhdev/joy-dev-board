@@ -259,7 +259,9 @@ export type WeeklyReport = {
       medianDaysToDone: number | null;
       doneSample: number;
       speedNote: string;
+      comparison: Comparison;
     }>;
+    unavailableNote: string | null;
     caption: string;
   };
   openRightNow: number;

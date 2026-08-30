@@ -283,7 +283,11 @@ export type WeeklyReport = {
       doneSample: number;
       /** Sample-first speed wording rendered verbatim. */
       speedNote: string;
+      /** Created intake in this range against the matching preceding span. */
+      comparison: Comparison;
     }>;
+    /** Why every row lacks an earlier count, or `null` when comparisons are available. */
+    unavailableNote: string | null;
     caption: string;
   };
   /**

@@ -890,6 +890,77 @@ describe('open tickets by feature', () => {
     expect(result.caption.length).toBeGreaterThan(0);
   });
 
+  test('compares each existing row with its own preceding-range count', () => {
+    const copies = (count: number, prefix: string, subject: string, createdAt: string) =>
+      Array.from({ length: count }, (_, index) =>
+        ticket({ ticketId: `${prefix}-${index}`, subject, createdAt })
+      );
+    const result = report(
+      [
+        ticket({
+          ticketId: 'horizon',
+          ticketStatus: 'closed',
+          subject: 'nothing matches',
+          createdAt: '2026-06-01T00:00:00.000Z',
+          doneAt: '2026-06-02T00:00:00.000Z',
+        }),
+        ...copies(5, 'widget-before', 'widget broken', '2026-07-06T00:00:00.000Z'),
+        ...copies(10, 'widget-now', 'widget broken', '2026-08-03T00:00:00.000Z'),
+        ...copies(2, 'points-before', 'point balance wrong', '2026-07-06T00:00:00.000Z'),
+        ...copies(3, 'points-now', 'point balance wrong', '2026-08-03T00:00:00.000Z'),
+        ...copies(4, 'earning-now', 'birthday earning', '2026-08-03T00:00:00.000Z'),
+        ...copies(9, 'email-before', 'email notification', '2026-07-06T00:00:00.000Z'),
+      ],
+      4
+    ).openByFeature;
+    const figures = Object.fromEntries(
+      result.rows.map((row) => [row.key, row.comparison.figure])
+    );
+
+    expect(figures.WIDGET).toBe('5 → 10 · +5 (+100%)');
+    expect(figures.POINTS).toBe('2 → 3 · +1 · —');
+    expect(figures['EARNING RULES']).toBe('0 → 4 · +4');
+    expect(figures['EMAIL / NOTIFY']).toBe('9 → 0 · -9 (-100%)');
+    expect(result.unavailableNote).toBeNull();
+    expect(result.caption).toContain('earlier count is at least 5');
+  });
+
+  test('keeps the existing open-backlog sort instead of sorting by current intake', () => {
+    const result = report(
+      [
+        ...Array.from({ length: 10 }, (_, index) =>
+          ticket({
+            ticketId: `widget-${index}`,
+            subject: 'widget broken',
+            createdAt: '2026-07-06T00:00:00.000Z',
+          })
+        ),
+        ...Array.from({ length: 5 }, (_, index) =>
+          ticket({
+            ticketId: `points-${index}`,
+            subject: 'point balance wrong',
+            createdAt: '2026-08-03T00:00:00.000Z',
+          })
+        ),
+      ],
+      4
+    ).openByFeature;
+
+    expect(result.rows.map((row) => row.key).slice(0, 2)).toEqual(['WIDGET', 'POINTS']);
+    expect(result.rows[0]?.comparison.current).toBe(0);
+    expect(result.rows[1]?.comparison.current).toBe(5);
+  });
+
+  test('explains when every feature lacks a comparable earlier period', () => {
+    const result = report([
+      ticket({ ticketId: 'current', subject: 'widget broken', createdAt: '2026-08-03T00:00:00.000Z' }),
+    ], 4).openByFeature;
+
+    expect(result.rows[0]?.comparison.previous).toBeNull();
+    expect(result.rows[0]?.comparison.figure).toBe('1');
+    expect(result.unavailableNote).toContain('no comparable earlier period');
+  });
+
   test('shows one old open ticket with no speed sample', () => {
     const result = report([
       ticket({ createdAt: new Date(NOW.getTime() - 60 * 86400000).toISOString() }),

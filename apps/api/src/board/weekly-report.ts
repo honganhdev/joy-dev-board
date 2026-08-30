@@ -1030,7 +1030,10 @@ function openByFeature(
   counted: Counted[],
   nowMs: number,
   rangeStartMs: number,
-  rangeEndMs: number
+  rangeEndMs: number,
+  comparisonEndMs: number,
+  comparisonPeriodMs: number,
+  horizon: Horizon
 ): WeeklyReport['openByFeature'] {
   const metrics = new Map<string, FeatureMetric>();
 
@@ -1084,6 +1087,13 @@ function openByFeature(
         speedNote:
           `${doneSample} ${doneSample === 1 ? 'finished ticket' : 'finished tickets'} in range · ` +
           `median ${medianDaysToDone === null ? '—' : `${medianDaysToDone} d`}`,
+        comparison: compareCreated(
+          counted.filter((ticket) => ticket.category === key),
+          rangeStartMs,
+          comparisonEndMs,
+          comparisonPeriodMs,
+          horizon
+        ),
       };
     });
 
@@ -1095,11 +1105,18 @@ function openByFeature(
 
   return {
     rows,
+    unavailableNote:
+      compareCreated([], rangeStartMs, comparisonEndMs, comparisonPeriodMs, horizon).previous ===
+      null
+        ? 'The mirror has no comparable earlier period for the feature comparisons.'
+        : null,
     caption:
       'Open and older-than-30-day figures use open Dev Fixing or Dev Done tickets right now, aged over those with a ' +
       'readable created date. Speed uses tickets finished in the selected range with both dates. ' +
       'Medians are shown only with at least 3 finished tickets; the sample appears first and is ' +
-      `not a rate.${undated}`,
+      'not a rate. Intake change compares the selected range up to now with the same span immediately ' +
+      'before it. A percentage is shown only when the earlier count is at least 5; below that the ' +
+      `change is given as a count.${undated}`,
   };
 }
 
@@ -1407,7 +1424,16 @@ export function aggregateWeeklyReport(
     openSectionTitle: openSectionTitle(open.length, openBugs.length, horizon, options.year),
     openByPlan: openByPlan(openBugs),
     openByMerchant: openByMerchant(openBugs),
-    openByFeature: openByFeature(openBugs, bugs, nowMs, rangeStartMs, rangeEndMs),
+    openByFeature: openByFeature(
+      openBugs,
+      bugs,
+      nowMs,
+      rangeStartMs,
+      rangeEndMs,
+      nowMs,
+      range.selectedWeeks * WEEK_MS,
+      horizon
+    ),
     // Deliberately the same strict test `assembleBoard` uses, over the same whole
     // mirror, so this figure and the board's own open count keep agreeing.
     openRightNow: open.length,

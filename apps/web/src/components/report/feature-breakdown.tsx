@@ -37,10 +37,18 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
               <span className="w-60 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
                 {row.speedNote}
               </span>
+              <span className="w-48 shrink-0 text-right text-[11px] tabular-nums">
+                {row.comparison.figure}
+              </span>
             </li>
           );
         })}
       </ul>
+      {data.unavailableNote && (
+        <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
+          {data.unavailableNote}
+        </p>
+      )}
       <p className="mt-3 text-[10px] leading-snug text-muted-foreground">{data.caption}</p>
     </Panel>
   );
