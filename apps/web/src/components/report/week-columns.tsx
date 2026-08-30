@@ -127,7 +127,12 @@ export function WeekColumns({ weeks, focusedKey, onFocus, growth }: WeekColumnsP
           {growth.horizonNote}
         </p>
       )}
-      <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{growth.caption}</p>
+      {/* The caption explains what each figure in the row compares. With the row
+          withheld there are no figures to explain, so it travels with them —
+          unlike the direction above, which describes the range as a whole. */}
+      {!growth.unavailableNote && (
+        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{growth.caption}</p>
+      )}
     </Panel>
   );
 }
