@@ -8,6 +8,7 @@ import { FeatureBreakdown } from './feature-breakdown';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
 import { OpenBreakdown } from './open-breakdown';
+import { Panel } from './panel';
 import { RangePicker } from './range-picker';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
@@ -146,6 +147,20 @@ export function ReportView({
         devFixOpenRightNow={report.devFixOpenRightNow}
         agingHeadline={report.openBacklog.agingHeadline}
       />
+
+      <Panel title={report.dayComparison.title}>
+        <p className="text-[20px] leading-none font-semibold tabular-nums">
+          {report.dayComparison.figure}
+        </p>
+        {report.dayComparison.unavailableNote && (
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            {report.dayComparison.unavailableNote}
+          </p>
+        )}
+        <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+          {report.dayComparison.caption}
+        </p>
+      </Panel>
 
       <DayColumns week={focused} daySplit={report.daySplit} />
 

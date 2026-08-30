@@ -24,6 +24,7 @@ import type {
 import {
   WEEK_MS,
   dayLabel,
+  dayStartMs,
   dayTickLabel,
   weekKey,
   weekLabel,
@@ -70,6 +71,11 @@ const TIME_ZONE_NOTE =
   'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
 
 const TREND_SECTION_TITLE = 'Every week in the range, for context.';
+const DAY_COMPARISON_TITLE = 'Today against yesterday';
+const DAY_COMPARISON_CAPTION =
+  "Today from midnight to now, against the same hours yesterday. This stays on today when another week is selected. A percentage is shown only when yesterday's count is at least 5; below that the change is given as a count.";
+const DAY_COMPARISON_UNAVAILABLE =
+  'The mirror has no comparable earlier period for today.';
 
 const DAY_SPLIT_NAMED_SLOTS = 5;
 /**
@@ -1166,6 +1172,13 @@ export function aggregateWeeklyReport(
 
   const rangeStartMs = weekStarts[0] ?? latestWeekStart;
   const rangeEndMs = latestWeekStart + WEEK_MS;
+  const dayComparison = compareCreated(
+    bugs,
+    dayStartMs(nowMs),
+    nowMs,
+    DAY_MS,
+    horizon
+  );
   const categoryCounts = new Map<string, number>();
   const statusCounts = new Map<string, number>();
   for (const ticket of bugs) {
@@ -1370,6 +1383,13 @@ export function aggregateWeeklyReport(
       emptyWeeksNote: emptyWeeksNote(weeks),
     },
     timeToFirstDone: timeToFirstDone(bugs, rangeStartMs, rangeEndMs),
+    dayComparison: {
+      ...dayComparison,
+      title: DAY_COMPARISON_TITLE,
+      caption: DAY_COMPARISON_CAPTION,
+      unavailableNote:
+        dayComparison.previous === null ? DAY_COMPARISON_UNAVAILABLE : null,
+    },
     daySplit: {
       categories: categoryVocabulary.map(({ key: category, label }) => ({ category, label })),
       statuses: statusVocabulary.map(({ key: status, label }) => ({ status, label })),

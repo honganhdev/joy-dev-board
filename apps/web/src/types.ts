@@ -204,6 +204,12 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;
+  /** About the current day, independent of the focused week. */
+  dayComparison: Comparison & {
+    title: string;
+    caption: string;
+    unavailableNote: string | null;
+  };
   /** Range-wide vocabularies and every server-owned word used by the day split. */
   daySplit: {
     categories: Array<{ category: string; label: string }>;

@@ -199,6 +199,12 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. See its own caption. */
   timeToFirstDone: TimeToFirstDone;
+  /** About the current day, independent of the focused week. */
+  dayComparison: Comparison & {
+    title: string;
+    caption: string;
+    unavailableNote: string | null;
+  };
   /**
    * Everything the day panel's split needs that does not vary by week.
    * Vocabularies are range-wide, ranked by pooled volume, with a remainder slot

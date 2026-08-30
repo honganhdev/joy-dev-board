@@ -121,6 +121,31 @@ describe('day starts in Vietnam time', () => {
   });
 });
 
+describe('today against yesterday', () => {
+  test('compares the same hours of the two days, not the elapsed hours before midnight', () => {
+    const result = report([
+      ticket({ ticketId: 'anchor', createdAt: '2026-08-20T09:00:00.000Z' }),
+      ticket({ ticketId: 'previous', createdAt: '2026-08-24T18:00:00.000Z' }),
+      ticket({ ticketId: 'wrong-window', createdAt: '2026-08-25T10:00:00.000Z' }),
+      ticket({ ticketId: 'current', createdAt: '2026-08-25T18:00:00.000Z' }),
+    ]).dayComparison;
+
+    expect(result).toMatchObject({ current: 1, previous: 1, delta: 0, figure: '1 → 1 · 0 · —' });
+    expect(result.caption).toContain('This stays on today when another week is selected.');
+    expect(result.caption).toContain("yesterday's count is at least 5");
+    expect(result.unavailableNote).toBeNull();
+  });
+
+  test('prints only today with an explanation when the mirror has no earlier day', () => {
+    const result = report([
+      ticket({ ticketId: 'today', createdAt: '2026-08-25T18:00:00.000Z' }),
+    ]).dayComparison;
+
+    expect(result).toMatchObject({ current: 1, previous: null, delta: null, figure: '1' });
+    expect(result.unavailableNote).toContain('no comparable earlier period');
+  });
+});
+
 describe('week boundaries', () => {
   test('splits two adjacent minutes across the Monday boundary in Vietnam time', () => {
     // Sun 23:59 and Mon 00:00 in +07:00 — the whole timezone decision, in two minutes.
