@@ -76,6 +76,11 @@ const DAY_COMPARISON_CAPTION =
   "Today from midnight to now, against the same hours yesterday. This stays on today when another week is selected. A percentage is shown only when yesterday's count is at least 5; below that the change is given as a count.";
 const DAY_COMPARISON_UNAVAILABLE =
   'The mirror has no comparable earlier period for today.';
+const RANGE_COMPARISON_TITLE = 'Selected range against the preceding range';
+const RANGE_COMPARISON_CAPTION =
+  'The selected range up to now, against the same number of weeks immediately before it. A percentage is shown only when the earlier count is at least 5; below that the change is given as a count.';
+const RANGE_COMPARISON_UNAVAILABLE =
+  'The mirror has no comparable earlier period for this selected range.';
 
 const DAY_SPLIT_NAMED_SLOTS = 5;
 /**
@@ -1196,6 +1201,13 @@ export function aggregateWeeklyReport(
     DAY_MS,
     horizon
   );
+  const rangeComparison = compareCreated(
+    bugs,
+    rangeStartMs,
+    nowMs,
+    range.selectedWeeks * WEEK_MS,
+    horizon
+  );
   const categoryCounts = new Map<string, number>();
   const statusCounts = new Map<string, number>();
   for (const ticket of bugs) {
@@ -1406,6 +1418,13 @@ export function aggregateWeeklyReport(
       caption: DAY_COMPARISON_CAPTION,
       unavailableNote:
         dayComparison.previous === null ? DAY_COMPARISON_UNAVAILABLE : null,
+    },
+    rangeComparison: {
+      ...rangeComparison,
+      title: RANGE_COMPARISON_TITLE,
+      caption: RANGE_COMPARISON_CAPTION,
+      unavailableNote:
+        rangeComparison.previous === null ? RANGE_COMPARISON_UNAVAILABLE : null,
     },
     daySplit: {
       categories: categoryVocabulary.map(({ key: category, label }) => ({ category, label })),

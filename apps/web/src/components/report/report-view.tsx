@@ -176,6 +176,20 @@ export function ReportView({
         <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
       </div>
 
+      <Panel title={report.rangeComparison.title}>
+        <p className="text-[20px] leading-none font-semibold tabular-nums">
+          {report.rangeComparison.figure}
+        </p>
+        {report.rangeComparison.unavailableNote && (
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            {report.rangeComparison.unavailableNote}
+          </p>
+        )}
+        <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+          {report.rangeComparison.caption}
+        </p>
+      </Panel>
+
       <WeekColumns weeks={weeks} focusedKey={focused.key} onFocus={focusWeekFromTrend} />
 
       <BacklogColumns

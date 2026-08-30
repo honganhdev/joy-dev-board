@@ -210,6 +210,12 @@ export type WeeklyReport = {
     caption: string;
     unavailableNote: string | null;
   };
+  /** Selected range up to now against the equally long preceding range. */
+  rangeComparison: Comparison & {
+    title: string;
+    caption: string;
+    unavailableNote: string | null;
+  };
   /** Range-wide vocabularies and every server-owned word used by the day split. */
   daySplit: {
     categories: Array<{ category: string; label: string }>;

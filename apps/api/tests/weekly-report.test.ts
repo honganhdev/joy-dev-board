@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { CATEGORIES, FALLBACK_CATEGORY } from '../src/board/categories';
 import { aggregateWeeklyReport, compareCreated } from '../src/board/weekly-report';
 import type { WeeklyReport } from '../src/board/report-types';
-import { dayStartMs } from '../src/board/weeks';
+import { dayStartMs, weekStartMs } from '../src/board/weeks';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { loadFixtureTickets } from './fixtures';
 
@@ -143,6 +143,76 @@ describe('today against yesterday', () => {
 
     expect(result).toMatchObject({ current: 1, previous: null, delta: null, figure: '1' });
     expect(result.unavailableNote).toContain('no comparable earlier period');
+  });
+});
+
+describe('the selected range against its preceding range', () => {
+  test('uses the selected number of whole weeks at every preset and stops at now', () => {
+    const latestWeekStart = weekStartMs(NOW.getTime());
+
+    for (const selectedWeeks of [4, 12, 26, 52]) {
+      const periodMs = selectedWeeks * WEEK;
+      const rangeStartMs = latestWeekStart - (selectedWeeks - 1) * WEEK;
+      const previousStartMs = rangeStartMs - periodMs;
+      const result = report(
+        [
+          ticket({
+            ticketId: `horizon-${selectedWeeks}`,
+            tsStatus: 'doing',
+            createdAt: new Date(previousStartMs).toISOString(),
+          }),
+          ticket({
+            ticketId: `previous-${selectedWeeks}`,
+            createdAt: new Date(previousStartMs + 1).toISOString(),
+          }),
+          ticket({
+            ticketId: `current-${selectedWeeks}`,
+            createdAt: new Date(rangeStartMs + 1).toISOString(),
+          }),
+          ticket({
+            ticketId: `future-${selectedWeeks}`,
+            createdAt: new Date(NOW.getTime() + 60 * 60 * 1000).toISOString(),
+          }),
+        ],
+        selectedWeeks
+      );
+
+      expect(result.range.selectedWeeks).toBe(selectedWeeks);
+      expect(result.rangeComparison).toMatchObject({
+        current: 1,
+        previous: 1,
+        delta: 0,
+        figure: '1 → 1 · 0 · —',
+        unavailableNote: null,
+      });
+    }
+  });
+
+  test('suppresses only when the preceding span starts before the mirror horizon', () => {
+    const latestWeekStart = weekStartMs(NOW.getTime());
+    const comparison = (selectedWeeks: number, horizonWeeks: number) =>
+      report(
+        [
+          ticket({
+            ticketId: `horizon-${selectedWeeks}`,
+            tsStatus: 'doing',
+            createdAt: new Date(latestWeekStart - (horizonWeeks - 1) * WEEK).toISOString(),
+          }),
+          ticket({
+            ticketId: `current-${selectedWeeks}`,
+            createdAt: new Date(
+              latestWeekStart - (selectedWeeks - 1) * WEEK + 1
+            ).toISOString(),
+          }),
+        ],
+        selectedWeeks
+      ).rangeComparison;
+
+    expect(comparison(4, 34).previous).toBe(0);
+    expect(comparison(12, 34).previous).toBe(0);
+    expect(comparison(26, 34).previous).toBeNull();
+    expect(comparison(52, 55).previous).toBeNull();
+    expect(comparison(26, 34).unavailableNote).toContain('no comparable earlier period');
   });
 });
 

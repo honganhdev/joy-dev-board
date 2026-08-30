@@ -205,6 +205,12 @@ export type WeeklyReport = {
     caption: string;
     unavailableNote: string | null;
   };
+  /** Selected range up to now against the equally long preceding range. */
+  rangeComparison: Comparison & {
+    title: string;
+    caption: string;
+    unavailableNote: string | null;
+  };
   /**
    * Everything the day panel's split needs that does not vary by week.
    * Vocabularies are range-wide, ranked by pooled volume, with a remainder slot
