@@ -21,38 +21,43 @@ export function WeeklySpeed({
 }: WeeklySpeedProps) {
   return (
     <Panel title="Resolution speed per week">
+      {/* Both notes describe the series: the caption explains each week's n, and
+          the empty-weeks note counts weeks against the ones on screen. With the
+          series withheld they describe nothing, so they travel with it. */}
       {unavailableLabel ? (
         <p className="text-[11px] leading-snug text-muted-foreground">{unavailableLabel}</p>
       ) : (
-        <div className="flex items-end" style={{ gap: COLUMN_GEOMETRY.gap }}>
-          {weeks.map((week) => (
-            <div
-              key={week.key}
-              style={SLOT_STYLE}
-              title={week.label}
-              className="flex min-w-0 flex-col items-center border-t border-stone-200 pt-2"
-            >
-              <span
-                className="text-[15px] font-semibold tabular-nums"
-                style={{ height: 22.5 }}
+        <>
+          <div className="flex items-end" style={{ gap: COLUMN_GEOMETRY.gap }}>
+            {weeks.map((week) => (
+              <div
+                key={week.key}
+                style={SLOT_STYLE}
+                title={week.label}
+                className="flex min-w-0 flex-col items-center border-t border-stone-200 pt-2"
               >
-                {week.medianDaysToDone ?? ''}
-              </span>
-              {/* The sample the figure stands on, so a one-ticket week cannot read
-                  as the same kind of measurement as a forty-ticket one. */}
-              <span className="mt-0.5 w-full truncate text-center text-[10px] tabular-nums text-muted-foreground">
-                {week.doneSampleLabel}
-              </span>
-              <span className="mt-1 w-full truncate text-center text-[10px] tabular-nums text-muted-foreground">
-                {week.shortLabel}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      <p className="mt-2 text-[10px] leading-snug text-muted-foreground">{caption}</p>
-      {emptyWeeksNote && (
-        <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{emptyWeeksNote}</p>
+                <span
+                  className="text-[15px] font-semibold tabular-nums"
+                  style={{ height: 22.5 }}
+                >
+                  {week.medianDaysToDone ?? ''}
+                </span>
+                {/* The sample the figure stands on, so a one-ticket week cannot read
+                    as the same kind of measurement as a forty-ticket one. */}
+                <span className="mt-0.5 w-full truncate text-center text-[10px] tabular-nums text-muted-foreground">
+                  {week.doneSampleLabel}
+                </span>
+                <span className="mt-1 w-full truncate text-center text-[10px] tabular-nums text-muted-foreground">
+                  {week.shortLabel}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">{caption}</p>
+          {emptyWeeksNote && (
+            <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{emptyWeeksNote}</p>
+          )}
+        </>
       )}
     </Panel>
   );

@@ -312,6 +312,13 @@ describe('week-on-week created change', () => {
     expect(result.weeklyGrowth.horizonNote).toContain('no comparable earlier period');
   });
 
+  // The row of figures shares a panel with the created and done bars, whose
+  // legend names only those two. Without a name of its own nothing on the panel
+  // says these figures track created only.
+  test('names the row of figures', () => {
+    expect(report(weeklyHistory(12), 12).weeklyGrowth.title).toBe('Week-on-week created change');
+  });
+
   test('ships figures through 26 weeks and withholds them at 52', () => {
     const twentySix = report(weeklyHistory(24), 26);
     const fiftyTwo = report(weeklyHistory(48), 52);

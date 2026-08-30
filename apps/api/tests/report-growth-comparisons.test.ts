@@ -230,6 +230,31 @@ describe('the selected range is anchored on the range start', () => {
     expect(widget?.comparison).toMatchObject({ current: 1, previous: 1 });
     expect(result.rangeComparison).toMatchObject({ current: 1, previous: 1 });
   });
+
+  // The row prints its direction as a glyph, which carries no text at all. The
+  // words have to come from here, or a reader who is not looking at the glyph
+  // gets a magnitude with no direction attached to it.
+  test('names each feature row direction in words', () => {
+    const rangeStart = weekStartMs(NOW.getTime()) - 11 * WEEK;
+    const previousStart = rangeStart - 12 * WEEK;
+    const result = report([
+      ticket({ ticketId: 'horizon', createdAt: new Date(previousStart - WEEK).toISOString() }),
+      at(previousStart + 1, { ticketId: 'w-prev', subject: 'widget broken' }),
+      at(rangeStart + 1, { ticketId: 'w-now', subject: 'widget broken' }),
+      at(rangeStart + 2, { ticketId: 'w-now-2', subject: 'widget broken' }),
+      at(previousStart + 2, { ticketId: 'r-prev', subject: 'referral link not tracking' }),
+      at(previousStart + 3, { ticketId: 'r-prev-2', subject: 'referral link not tracking' }),
+      at(rangeStart + 3, { ticketId: 'r-now', subject: 'referral link not tracking' }),
+      at(previousStart + 4, { ticketId: 'p-prev', subject: 'points not awarded' }),
+      at(rangeStart + 4, { ticketId: 'p-now', subject: 'points not awarded' }),
+    ]);
+    const label = (key: string) =>
+      result.openByFeature.rows.find((row) => row.key === key)?.changeLabel;
+
+    expect(label('WIDGET')).toBe('more than the preceding range');
+    expect(label('REFERRAL')).toBe('fewer than the preceding range');
+    expect(label('POINTS')).toBe('same as the preceding range');
+  });
 });
 
 describe('a suppressed comparison carries no count at all', () => {
@@ -268,6 +293,7 @@ describe('a suppressed comparison carries no count at all', () => {
       expect(comparison.unavailableNote).not.toBeNull();
     }
     expect(result.openByFeature.rows[0]?.comparison.previous).toBeNull();
+    expect(result.openByFeature.rows[0]?.changeLabel).toBeNull();
     expect(result.openByFeature.unavailableNote).not.toBeNull();
   });
 });

@@ -84,6 +84,7 @@ const RANGE_COMPARISON_CAPTION =
   'Created Dev Fixing or Dev Done tickets in the selected range up to now, against the same number ' +
   'of weeks immediately before it.';
 const RANGE_COMPARISON_UNAVAILABLE = 'no earlier range to compare';
+const WEEKLY_GROWTH_TITLE = 'Week-on-week created change';
 const WEEKLY_GROWTH_CAPTION =
   'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier.';
 const WEEKLY_GROWTH_HORIZON_NOTE =
@@ -1078,6 +1079,9 @@ function featureMetric(metrics: Map<string, FeatureMetric>, key: string): Featur
   return created;
 }
 
+/** What a feature row's intake is compared against, in the words the row reads out. */
+const FEATURE_COMPARISON_NOUN = 'the preceding range';
+
 function openByFeature(
   open: HelpDeskTicket[],
   counted: Counted[],
@@ -1143,6 +1147,13 @@ function openByFeature(
       const doneSample = metric.daysToDone.length;
       const medianDaysToDone =
         doneSample < 3 ? null : median(metric.daysToDone.sort((a, b) => a - b));
+      const comparison = compareCreated(
+        counted.filter((ticket) => ticket.category === key),
+        rangeStartMs,
+        comparisonEndMs,
+        comparisonPeriodMs,
+        horizon
+      );
       return {
         key,
         label: key,
@@ -1154,13 +1165,10 @@ function openByFeature(
         speedNote:
           `${doneSample} ${doneSample === 1 ? 'finished ticket' : 'finished tickets'} in range · ` +
           (medianDaysToDone === null ? NO_MEDIAN_LABEL : `median ${medianDaysToDone} d`),
-        comparison: compareCreated(
-          counted.filter((ticket) => ticket.category === key),
-          rangeStartMs,
-          comparisonEndMs,
-          comparisonPeriodMs,
-          horizon
-        ),
+        comparison,
+        // The row prints its direction as a glyph, which carries no text. This
+        // is the same direction in words, for a reader who is not looking at it.
+        changeLabel: changePhrase(comparison.delta, FEATURE_COMPARISON_NOUN),
       };
     });
 
@@ -1497,6 +1505,7 @@ export function aggregateWeeklyReport(
         : `A range of ${range.selectedWeeks} weeks leaves each week too narrow to print a figure, so the weekly median is shown for ranges up to ${GROWTH_SERIES_MAX_WEEKS} weeks.`,
     },
     weeklyGrowth: {
+      title: WEEKLY_GROWTH_TITLE,
       caption: WEEKLY_GROWTH_CAPTION,
       direction: weeklyGrowthDirection(weeks),
       horizonNote:

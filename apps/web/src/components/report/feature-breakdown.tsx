@@ -14,19 +14,18 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
       <ul className="space-y-1.5">
         {data.rows.map((row) => {
           const marker = categoryDotClass(row.key);
-          const comparisonLabel =
-            row.comparison.previous === null
-              ? String(row.comparison.current)
-              : [
-                  directionGlyph(row.comparison.delta),
-                  row.comparison.magnitudeLabel,
-                  `(${row.comparison.previous} → ${row.comparison.current})`,
-                ]
-                  .filter(Boolean)
-                  .join(' ') +
-                (row.comparison.percentLabel === null
-                  ? ''
-                  : ` · ${row.comparison.percentLabel}`);
+          const detail =
+            `(${row.comparison.previous} → ${row.comparison.current})` +
+            (row.comparison.percentLabel === null ? '' : ` · ${row.comparison.percentLabel}`);
+          // The glyph is the only thing carrying direction on screen, and it reads
+          // as a triangle or as nothing at all. `heard` is the same change in the
+          // server's words, so direction survives for a reader who cannot see it.
+          const seen = [directionGlyph(row.comparison.delta), row.comparison.magnitudeLabel]
+            .filter(Boolean)
+            .join(' ');
+          const heard = [row.comparison.magnitudeLabel, row.changeLabel]
+            .filter(Boolean)
+            .join(' ');
           return (
             <li key={row.key} className="flex items-center gap-2">
               <span className={`size-2 shrink-0 rounded-full ${marker}`} />
@@ -52,7 +51,14 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
                 {row.speedNote}
               </span>
               <span className="w-48 shrink-0 text-right text-[11px] tabular-nums">
-                {comparisonLabel}
+                {row.comparison.previous === null ? (
+                  row.comparison.current
+                ) : (
+                  <>
+                    <span aria-hidden="true">{seen}</span>
+                    <span className="sr-only">{heard}</span> {detail}
+                  </>
+                )}
               </span>
             </li>
           );

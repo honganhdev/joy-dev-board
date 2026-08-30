@@ -79,31 +79,47 @@ export function WeekColumns({ weeks, focusedKey, onFocus, growth }: WeekColumnsP
           {growth.unavailableNote}
         </p>
       ) : (
-        <div className="mt-2 flex items-end" style={{ gap: COLUMN_GEOMETRY.gap }}>
-          {weeks.map((week) => (
-            <div
-              key={week.key}
-              style={SLOT_STYLE}
-              title={week.label}
-              className="flex min-w-0 flex-col items-center border-t border-stone-200 pt-2"
-            >
-              {/* Glyph plus unsigned magnitude, the same vocabulary as the
-                  comparison cards: the glyph already says which way, so a signed
-                  figure beside it would state the direction twice. A week with no
-                  earlier week to compare against prints its bare count instead. */}
-              <span className="text-[10px] font-semibold tabular-nums">
-                {[
-                  directionGlyph(week.createdComparison.delta),
-                  week.createdComparison.previous === null
-                    ? week.createdDeltaLabel
-                    : week.createdComparison.magnitudeLabel,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              </span>
-            </div>
-          ))}
-        </div>
+        <>
+          {/* The row shares its panel with the created and done bars, whose legend
+              names only those two, so nothing else says these figures track
+              created only. Set in the page's label idiom rather than as prose:
+              the panel's sentence budget below the chart is for explanation. */}
+          <h3 className="mt-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+            {growth.title}
+          </h3>
+          <div className="mt-1 flex items-end" style={{ gap: COLUMN_GEOMETRY.gap }}>
+            {weeks.map((week) => {
+              // Glyph plus unsigned magnitude, the same vocabulary as the
+              // comparison cards: the glyph already says which way, so a signed
+              // figure beside it would state the direction twice. A week with no
+              // earlier week to compare against prints its bare count instead.
+              const magnitude =
+                week.createdComparison.previous === null
+                  ? week.createdDeltaLabel
+                  : week.createdComparison.magnitudeLabel;
+              const seen = [directionGlyph(week.createdComparison.delta), magnitude]
+                .filter(Boolean)
+                .join(' ');
+              // The glyph is the only thing carrying direction on screen, and it
+              // reads as a triangle or as nothing at all. The same figure in the
+              // server's words goes to assistive technology instead.
+              const heard = [magnitude, week.createdChangeLabel].filter(Boolean).join(' ');
+              return (
+                <div
+                  key={week.key}
+                  style={SLOT_STYLE}
+                  title={week.label}
+                  className="flex min-w-0 flex-col items-center border-t border-stone-200 pt-2"
+                >
+                  <span className="text-[10px] font-semibold tabular-nums">
+                    <span aria-hidden="true">{seen}</span>
+                    <span className="sr-only">{heard}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
       <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{growth.direction}</p>
       {growth.horizonNote && (

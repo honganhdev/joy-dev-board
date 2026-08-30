@@ -212,6 +212,8 @@ export type WeeklyReport = {
     unavailableLabel: string | null;
   };
   weeklyGrowth: {
+    /** Names the row of figures, rendered verbatim above it. */
+    title: string;
     caption: string;
     direction: string;
     horizonNote: string | null;
@@ -285,6 +287,8 @@ export type WeeklyReport = {
       doneSample: number;
       speedNote: string;
       comparison: Comparison;
+      /** Server wording for the intake change; `null` with no earlier range. */
+      changeLabel: string | null;
     }>;
     unavailableNote: string | null;
     caption: string;

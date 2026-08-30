@@ -212,6 +212,11 @@ export type WeeklyReport = {
   };
   /** Range-scoped week-on-week created-intake figures and wording. */
   weeklyGrowth: {
+    /**
+     * Names the row of figures. The row shares a panel with the created and
+     * done bars, and nothing else on it says the figures track created only.
+     */
+    title: string;
     caption: string;
     direction: string;
     horizonNote: string | null;
@@ -315,6 +320,11 @@ export type WeeklyReport = {
       speedNote: string;
       /** Created intake in this range against the matching preceding span. */
       comparison: Comparison;
+      /**
+       * That change in words, so the row's direction reaches a reader who gets
+       * no meaning from the glyph. `null` when there is no earlier span.
+       */
+      changeLabel: string | null;
     }>;
     /** Why every row lacks an earlier count, or `null` when comparisons are available. */
     unavailableNote: string | null;
