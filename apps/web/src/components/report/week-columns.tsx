@@ -87,8 +87,17 @@ export function WeekColumns({ weeks, focusedKey, onFocus, growth }: WeekColumnsP
               title={week.label}
               className="flex min-w-0 flex-col items-center border-t border-stone-200 pt-2"
             >
+              {/* Glyph plus unsigned magnitude, the same vocabulary as the
+                  comparison cards: the glyph already says which way, so a signed
+                  figure beside it would state the direction twice. A week with no
+                  earlier week to compare against prints its bare count instead. */}
               <span className="text-[10px] font-semibold tabular-nums">
-                {[directionGlyph(week.createdComparison.delta), week.createdDeltaLabel]
+                {[
+                  directionGlyph(week.createdComparison.delta),
+                  week.createdComparison.previous === null
+                    ? week.createdDeltaLabel
+                    : week.createdComparison.magnitudeLabel,
+                ]
                   .filter(Boolean)
                   .join(' ')}
               </span>

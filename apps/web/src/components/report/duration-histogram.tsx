@@ -12,7 +12,6 @@ export function DurationHistogram({ data }: { data: TimeToFirstDone }) {
   return (
     <Panel
       title="Time to first done"
-      className="min-w-0 flex-1"
       aside={
         <span className="shrink-0 text-[11px] text-muted-foreground">
           {data.medianDays === null ? (

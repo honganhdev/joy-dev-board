@@ -20,7 +20,7 @@ export function WeeklySpeed({
   unavailableLabel,
 }: WeeklySpeedProps) {
   return (
-    <Panel title="Resolution speed per week" className="min-w-0 flex-1">
+    <Panel title="Resolution speed per week">
       {unavailableLabel ? (
         <p className="text-[11px] leading-snug text-muted-foreground">{unavailableLabel}</p>
       ) : (

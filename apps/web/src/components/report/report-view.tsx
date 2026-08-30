@@ -196,16 +196,14 @@ export function ReportView({
         ghostCaveat={report.ghosts.caveat}
       />
 
-      <div className="flex gap-3">
-        <WeeklySpeed
-          weeks={weeks}
-          caption={report.weeklySpeed.caption}
-          emptyWeeksNote={report.weeklySpeed.emptyWeeksNote}
-          unavailableLabel={report.weeklySpeed.unavailableLabel}
-        />
+      <WeeklySpeed
+        weeks={weeks}
+        caption={report.weeklySpeed.caption}
+        emptyWeeksNote={report.weeklySpeed.emptyWeeksNote}
+        unavailableLabel={report.weeklySpeed.unavailableLabel}
+      />
 
-        <DurationHistogram data={report.timeToFirstDone} />
-      </div>
+      <DurationHistogram data={report.timeToFirstDone} />
 
       <SectionDivider title={report.openSectionTitle} />
 
