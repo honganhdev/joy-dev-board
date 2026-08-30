@@ -28,7 +28,7 @@ export type WeekSummary = {
    */
   tileLabels: { created: string; done: string; outstanding: string };
   /**
-   * Why this week's outstanding figure and `openRightNow` differ. Week-scoped
+   * Why this week's outstanding figure and `devFixOpenRightNow` differ. Week-scoped
    * for the same reason as `tileLabels`: the sentence for a finished week calls
    * the figure historical, which is untrue of the week still running.
    */
@@ -212,9 +212,9 @@ export type WeeklyReport = {
     /** A resolvable reading date for screenshots. */
     asOfLabel: string;
   };
-  /** Every open ticket right now over the whole mirror, independent of the selected range. */
+  /** Open Dev Fixing or Dev Done tickets right now, independent of the selected range. */
   openBacklog: {
-    /** Equals `openRightNow`; both are derived from the same array. */
+    /** Equals `devFixOpenRightNow`; both are derived from the same array. */
     total: number;
     /** Server-worded age headline, or `null` when there are no open tickets. */
     agingHeadline: string | null;
@@ -237,13 +237,13 @@ export type WeeklyReport = {
   };
   /** Server-worded heading for the absolute all-open section. */
   openSectionTitle: string;
-  /** Open tickets by every service-plan value present; absent values are a named row. */
+  /** Open Dev Fixing or Dev Done tickets by plan; absent values are a named row. */
   openByPlan: {
     rows: Array<{ key: string; label: string; count: number }>;
     /** Names the literal `free` row, or `null` when it is absent. */
     freeNote: string | null;
   };
-  /** The five busiest named merchants plus a separate absent-value row. */
+  /** Open Dev Fixing or Dev Done tickets for the busiest named merchants. */
   openByMerchant: {
     rows: Array<{ key: string; label: string; count: number }>;
     concentrationNote: string;
@@ -275,6 +275,8 @@ export type WeeklyReport = {
    * and not derivable from any week — see each week's `outstandingCaption`.
    */
   openRightNow: number;
+  /** Open tickets whose HelpDesk status is Dev Fixing or Dev Done. */
+  devFixOpenRightNow: number;
   /** The measured ghost population, and the caveat naming it. */
   ghosts: GhostAudit;
   /**
@@ -282,7 +284,7 @@ export type WeeklyReport = {
    * is a ticket with neither a created nor a done date: it can be placed in no
    * week, so no total and no breakdown row can hold it.
    */
-  excluded: { deleted: number; unparseableDate: number; undated: number };
+  excluded: { deleted: number; unparseableDate: number; undated: number; notDevFix: number };
   /**
    * The same exclusions in words, or `null` when there are none. The counts
    * above stay on the wire for anything that wants to do arithmetic with them;

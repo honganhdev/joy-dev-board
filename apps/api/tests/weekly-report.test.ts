@@ -110,6 +110,31 @@ describe('cohorts', () => {
     }
   });
 
+  test('keeps a non-dev ticket out of every figure and names that exclusion', () => {
+    const result = report([
+      ticket({ ticketId: 'not-dev', tsStatus: 'doing', createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]);
+
+    expect(result.openRightNow).toBe(1);
+    expect(result.devFixOpenRightNow).toBe(0);
+    expect(result.excluded.notDevFix).toBe(1);
+    expect(result.openBacklog.total).toBe(0);
+    expect(result.weeks.reduce((total, week) => total + week.created + week.done, 0)).toBe(0);
+  });
+
+  test('counts a deleted non-dev ticket only as deleted', () => {
+    const result = report([
+      ticket({
+        ticketId: 'deleted-not-dev',
+        tsStatus: 'doing',
+        deletedAt: '2026-08-20T00:00:00+07:00',
+      }),
+    ]);
+
+    expect(result.excluded.deleted).toBe(1);
+    expect(result.excluded.notDevFix).toBe(0);
+  });
+
   test('counts a closed ticket with no done date as outstanding and as a ghost', () => {
     const result = report([
       ticket({
@@ -307,19 +332,17 @@ describe('unknown values', () => {
     ]);
   });
 
-  test('renders a status label in sentence case, known column or not', () => {
+  test('renders the two dev-fix status labels in sentence case', () => {
     const result = report([
-      ticket({ ticketId: 'speed', tsStatus: 'done_speed_up', doneAt: '2026-08-18T09:00:00+07:00' }),
-      ticket({ ticketId: 'new', tsStatus: 'some_new_state', doneAt: '2026-08-19T09:00:00+07:00' }),
-      ticket({ ticketId: 'known', tsStatus: 'dev_done', doneAt: '2026-08-20T09:00:00+07:00' }),
+      ticket({ ticketId: 'fixing', tsStatus: 'dev_fixing', doneAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'done', tsStatus: 'dev_done', doneAt: '2026-08-20T09:00:00+07:00' }),
     ]);
 
     const week = weekByKey(result, '2026-W34');
     const labels = Object.fromEntries(week.doneByStatus.map((row) => [row.status, row.label]));
-    expect(labels.done_speed_up).toBe('Done speed up');
-    expect(labels.some_new_state).toBe('Some new state');
+    expect(labels.dev_fixing).toBe('Dev fixing');
     expect(labels.dev_done).toBe('Dev done');
-    expect(week.done).toBe(3);
+    expect(week.done).toBe(2);
   });
 
   test('gives every classified ticket a category row carrying a printable label', () => {
@@ -569,7 +592,7 @@ describe('the open backlog', () => {
     expect(result.oldest).toHaveLength(1);
     expect(result.oldest[0]).toMatchObject({ ageDays: 200, ageLabel: '200 days' });
     expect(result.agingHeadline).toContain(
-      '100% of the 1 open ticket with a readable created date is older than 30 days.'
+      '100% of the 1 open Dev Fixing or Dev Done ticket with a readable created date is older than 30 days.'
     );
   });
 
@@ -616,7 +639,7 @@ describe('the open backlog', () => {
     ]).openBacklog;
 
     expect(result.agingHeadline).toBe(
-      '100% of the 1 open ticket with a readable created date is older than 30 days. ' +
+      '100% of the 1 open Dev Fixing or Dev Done ticket with a readable created date is older than 30 days. ' +
         '1 more has no readable created date.'
     );
     expect(result.total).toBe(2);
@@ -629,7 +652,7 @@ describe('the open backlog', () => {
     ]).openBacklog;
 
     expect(result.agingHeadline).toBe(
-      'No open ticket has a readable created date, so no age share can be measured.'
+      'No open Dev Fixing or Dev Done ticket has a readable created date, so no age share can be measured.'
     );
   });
 
@@ -675,7 +698,7 @@ describe('open tickets by plan', () => {
   test('names a single free row with singular grammar', () => {
     const result = report([ticket({ appPlan: 'free' })]).openByPlan;
     expect(result.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
-    expect(result.freeNote).toContain('1 of 1 open ticket');
+    expect(result.freeNote).toContain('1 of 1 open Dev Fixing or Dev Done ticket');
   });
 
   test('pins the absent plan last even when it is the largest row', () => {
@@ -708,7 +731,9 @@ describe('open tickets by merchant', () => {
       { key: 'hegen', label: 'Hegen', count: 2 },
       { key: 'hegen store', label: 'hegen  store', count: 2 },
     ]);
-    expect(result.concentrationNote).toContain('4 of 4 open tickets right now (100%)');
+    expect(result.concentrationNote).toContain(
+      '4 of 4 open Dev Fixing or Dev Done tickets right now (100%)'
+    );
   });
 
 
@@ -723,7 +748,9 @@ describe('open tickets by merchant', () => {
   test('words a single named merchant and no tail', () => {
     const result = report([ticket({ store: [{ shopName: 'Only Shop' }] })]).openByMerchant;
     expect(result.rows).toEqual([{ key: 'only shop', label: 'Only Shop', count: 1 }]);
-    expect(result.concentrationNote).toContain('The busiest merchant holds 1 of 1 open ticket');
+    expect(result.concentrationNote).toContain(
+      'The busiest merchant holds 1 of 1 open Dev Fixing or Dev Done ticket'
+    );
     expect(result.tailNote).toBeNull();
   });
 
@@ -891,6 +918,18 @@ function weeklyHistory(weeks: number): HelpDeskTicket[] {
 }
 
 describe('the horizon the mirror can answer for', () => {
+  test('keeps preset availability independent of dev-fix membership', () => {
+    const old = '2026-01-05T09:00:00+07:00';
+    const devFix = report([ticket({ ticketId: 'anchor', createdAt: old })]).range;
+    const notDevFix = report([
+      ticket({ ticketId: 'anchor', tsStatus: 'doing', createdAt: old }),
+    ]).range;
+
+    expect(notDevFix.presets).toEqual(devFix.presets);
+    expect(notDevFix.selectedWeeks).toBe(devFix.selectedWeeks);
+    expect(notDevFix.coverageNote).toBe(devFix.coverageNote);
+  });
+
   test('withholds a preset the history cannot nearly fill, and keeps one it can', () => {
     // 24 weeks of unbroken history: 26 weeks is three columns short and fills
     // itself within a month, 52 weeks is half empty and never would.
@@ -1033,7 +1072,9 @@ describe('range and fixed strings', () => {
     expect(result.doneRule).toContain('reached a done state in HelpDesk at any point');
     expect(result.doneRule).not.toContain('Dev Done');
     expect(result.timeToFirstDone.caption).toContain('not time to customer delivery');
-    for (const week of result.weeks) expect(week.outstandingCaption).toContain('open right now');
+    for (const week of result.weeks) {
+      expect(week.outstandingCaption).toContain('open Dev Fixing or Dev Done right now');
+    }
   });
 
   test('counts open tickets live, over the whole mirror rather than a week', () => {
@@ -1044,6 +1085,7 @@ describe('range and fixed strings', () => {
     ]);
 
     expect(result.openRightNow).toBe(2);
+    expect(result.devFixOpenRightNow).toBe(2);
   });
 });
 
@@ -1061,15 +1103,28 @@ describe('the fixture', () => {
     const deleted = fixture.filter((t) => typeof t.deletedAt === 'string' && t.deletedAt.trim() !== '');
     expect(result.excluded.deleted).toBe(deleted.length);
     expect(result.openRightNow).toBe(fixture.filter((t) => t.ticketStatus === 'open').length);
+    expect(result.devFixOpenRightNow).toBe(
+      fixture.filter(
+        (t) =>
+          t.ticketStatus === 'open' &&
+          typeof t.tsStatus === 'string' &&
+          ['dev_fixing', 'dev_done'].includes(t.tsStatus.trim())
+      ).length
+    );
 
     const inRange = fixture.filter((t) => {
       const created = t.createdAt ? Date.parse(t.createdAt) : Number.NaN;
-      return !Number.isNaN(created) && created >= Date.parse('2025-09-01T00:00:00Z');
+      return (
+        !Number.isNaN(created) &&
+        created >= Date.parse('2025-09-01T00:00:00Z') &&
+        typeof t.tsStatus === 'string' &&
+        ['dev_fixing', 'dev_done'].includes(t.tsStatus.trim())
+      );
     });
     // Every in-window ticket reaches a cohort: it was created in some week of the
     // range, so it is counted there and nowhere lost.
     expect(result.weeks.reduce((total, week) => total + week.created, 0)).toBe(
-      inRange.length - result.excluded.deleted - result.excluded.unparseableDate
+      inRange.length
     );
 
     for (const week of result.weeks) {
@@ -1345,7 +1400,12 @@ describe('a ticket that belongs to no week', () => {
       ticket({ ticketId: 'fine', createdAt: '2026-08-18T09:00:00+07:00' }),
     ]);
 
-    expect(result.excluded).toEqual({ deleted: 1, unparseableDate: 1, undated: 1 });
+    expect(result.excluded).toEqual({
+      deleted: 1,
+      unparseableDate: 1,
+      undated: 1,
+      notDevFix: 0,
+    });
     // A ticket with a done date but no created date still belongs to a week.
     const dated = report([
       ticket({ ticketId: 'done-only', createdAt: null, doneAt: '2026-08-18T09:00:00+07:00' }),
@@ -1565,7 +1625,12 @@ describe('the strings the page prints', () => {
   test('has no exclusion footnote at all when nothing was excluded', () => {
     const result = report([ticket({ createdAt: '2026-08-18T09:00:00+07:00' })]);
 
-    expect(result.excluded).toEqual({ deleted: 0, unparseableDate: 0, undated: 0 });
+    expect(result.excluded).toEqual({
+      deleted: 0,
+      unparseableDate: 0,
+      undated: 0,
+      notDevFix: 0,
+    });
     expect(result.excludedNote).toBeNull();
   });
 
@@ -1763,7 +1828,7 @@ describe('the all-open panels at their edges', () => {
     ).openBacklog;
     expect(seven.oldest).toHaveLength(5);
     expect(seven.oldestCaption).toBe(
-      'The 5 oldest of 7 open tickets with a readable created date, oldest first.'
+      'The 5 oldest of 7 open Dev Fixing or Dev Done tickets with a readable created date, oldest first.'
     );
 
     const two = report(
@@ -1775,17 +1840,17 @@ describe('the all-open panels at their edges', () => {
       )
     ).openBacklog;
     expect(two.oldestCaption).toBe(
-      'All 2 open tickets with a readable created date are listed below, oldest first.'
+      'All 2 open Dev Fixing or Dev Done tickets with a readable created date are listed below, oldest first.'
     );
 
     expect(report([ticket({ ticketId: 'one' })]).openBacklog.oldestCaption).toBe(
-      'The 1 open ticket with a readable created date is listed below.'
+      'The 1 open Dev Fixing or Dev Done ticket with a readable created date is listed below.'
     );
     expect(report([]).openBacklog.oldestCaption).toBe(
-      'No open ticket has a readable created date, so none is listed here.'
+      'No open Dev Fixing or Dev Done ticket has a readable created date, so none is listed here.'
     );
     expect(report([ticket({ ticketId: 'undated', createdAt: null })]).openBacklog.oldestCaption).toBe(
-      'No open ticket has a readable created date, so none is listed here.'
+      'No open Dev Fixing or Dev Done ticket has a readable created date, so none is listed here.'
     );
   });
 
@@ -1874,7 +1939,7 @@ describe('the all-open panels over the real fixture', () => {
     // Derived from the fixture, never hardcoded: `bun run fixture:pull` replaces
     // it with whichever tickets were open that day.
     const result = aggregateWeeklyReport(loadFixtureTickets(), { weeks: 52, now: NOW, year: YEAR });
-    const open = result.openRightNow;
+    const open = result.devFixOpenRightNow;
 
     expect(result.openBacklog.total).toBe(open);
     expect(
@@ -1959,13 +2024,13 @@ describe('the day breakdown inside a week', () => {
 
   test('keeps range-wide split vocabularies stable and every positional count accounted for', () => {
     const result = report([
-      ticket({ ticketId: 'widget', subject: 'widget', tsStatus: 'done', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'widget', subject: 'widget', tsStatus: 'dev_fixing', createdAt: MON_17, doneAt: TUE_18 }),
       ticket({ ticketId: 'reward', subject: 'reward', tsStatus: 'dev_done', createdAt: MON_17, doneAt: WED_19 }),
-      ticket({ ticketId: 'points', subject: 'points', tsStatus: 'done_for_you', createdAt: TUE_18, doneAt: THU_20 }),
-      ticket({ ticketId: 'earning', subject: 'birthday earning', tsStatus: 'feature_request', createdAt: WED_19, doneAt: FRI_21 }),
-      ticket({ ticketId: 'tiers', subject: 'vip tier', tsStatus: 'sale_request', createdAt: THU_20, doneAt: FRI_21 }),
-      ticket({ ticketId: 'integration', subject: 'integration', tsStatus: 'doing', createdAt: FRI_21, doneAt: FRI_21 }),
-      ticket({ ticketId: 'email', subject: 'email', tsStatus: 'pending', createdAt: FRI_21, doneAt: FRI_21 }),
+      ticket({ ticketId: 'points', subject: 'points', tsStatus: 'dev_fixing', createdAt: TUE_18, doneAt: THU_20 }),
+      ticket({ ticketId: 'earning', subject: 'birthday earning', tsStatus: 'dev_done', createdAt: WED_19, doneAt: FRI_21 }),
+      ticket({ ticketId: 'tiers', subject: 'vip tier', tsStatus: 'dev_fixing', createdAt: THU_20, doneAt: FRI_21 }),
+      ticket({ ticketId: 'integration', subject: 'integration', tsStatus: 'dev_done', createdAt: FRI_21, doneAt: FRI_21 }),
+      ticket({ ticketId: 'email', subject: 'email', tsStatus: 'dev_fixing', createdAt: FRI_21, doneAt: FRI_21 }),
       ticket({
         ticketId: 'ghost',
         subject: 'coupon',
@@ -1979,7 +2044,10 @@ describe('the day breakdown inside a week', () => {
     expect(result.daySplit.categories.length).toBeLessThanOrEqual(6);
     expect(result.daySplit.statuses.length).toBeLessThanOrEqual(6);
     expect(result.daySplit.categories.at(-1)?.category).toBe('(remaining areas)');
-    expect(result.daySplit.statuses.at(-1)?.status).toBe('(remaining statuses)');
+    expect(result.daySplit.statuses.map((row) => row.status).sort()).toEqual([
+      'dev_done',
+      'dev_fixing',
+    ]);
     expect(new Set(result.daySplit.categories.map((row) => row.category)).size).toBe(
       result.daySplit.categories.length
     );
@@ -1993,7 +2061,7 @@ describe('the day breakdown inside a week', () => {
       result.daySplit.statuses.length
     );
 
-    const drawnStatuses = new Set(result.daySplit.statuses.slice(0, -1).map((row) => row.status));
+    const drawnStatuses = new Set(result.daySplit.statuses.map((row) => row.status));
     for (const week of result.weeks) {
       let statusCreated = 0;
       for (const day of week.days) {
@@ -2033,30 +2101,30 @@ describe('the day breakdown inside a week', () => {
 
       const statusTotals = new Map(week.doneByStatus.map((row) => [row.status, row.count]));
       const splitDone = week.daySplitTotals.status.done;
-      result.daySplit.statuses.slice(0, -1).forEach((row, index) => {
+      result.daySplit.statuses.forEach((row, index) => {
         expect(splitDone[index]).toBe(statusTotals.get(row.status) ?? 0);
       });
-      expect(splitDone.at(-1)).toBe(
+      expect(
         week.doneByStatus
           .filter((row) => !drawnStatuses.has(row.status))
           .reduce((sum, row) => sum + row.count, 0)
-      );
+      ).toBe(0);
     }
   });
 
-  test('folds statuses with the same printable label before ranking and counting', () => {
+  test('keeps the two accepted statuses distinct in the split', () => {
     const result = report([
-      ticket({ ticketId: 'lower', tsStatus: 'done', createdAt: MON_17, doneAt: TUE_18 }),
-      ticket({ ticketId: 'title', tsStatus: 'Done', createdAt: MON_17, doneAt: TUE_18 }),
-      ticket({ ticketId: 'upper', tsStatus: 'DONE', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'fixing', tsStatus: 'dev_fixing', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'done', tsStatus: 'dev_done', createdAt: MON_17, doneAt: TUE_18 }),
     ]);
-    const doneRows = result.daySplit.statuses.filter((row) => row.label === 'Done');
-    const doneIndex = result.daySplit.statuses.findIndex((row) => row.label === 'Done');
     const week = weekByKey(result, '2026-W34');
 
-    expect(doneRows).toEqual([{ status: 'done', label: 'Done' }]);
-    expect(week.daySplitTotals.status.created[doneIndex]).toBe(3);
-    expect(week.daySplitTotals.status.done[doneIndex]).toBe(3);
+    expect(result.daySplit.statuses).toEqual([
+      { status: 'dev_done', label: 'Dev done' },
+      { status: 'dev_fixing', label: 'Dev fixing' },
+    ]);
+    expect(week.daySplitTotals.status.created).toEqual([1, 1]);
+    expect(week.daySplitTotals.status.done).toEqual([1, 1]);
   });
 
   test('carries the server-owned split wording and names the created-bar gap', () => {
@@ -2144,8 +2212,8 @@ describe('the day breakdown inside a week', () => {
   });
 
   test('keeps tickets closed with no done date out of the status ranking, not just its counts', () => {
-    // Eight ghosts all carrying `vanished` — enough to top the ranking outright
-    // if they were counted. They are left out of the created split because such
+    // Eight Dev Done ghosts — enough to top that status outright if they were
+    // counted. They are left out of the created split because such
     // a ticket can appear in no done bar in any week, and the exclusion has to
     // happen before the vocabulary is ranked: a named slot for a status no bar
     // can ever draw is a legend entry that is permanently zero.
@@ -2154,7 +2222,7 @@ describe('the day breakdown inside a week', () => {
         ticket({
           ticketId: `vanished-${index}`,
           ticketStatus: 'closed',
-          tsStatus: 'vanished',
+          tsStatus: 'dev_done',
           createdAt: MON_17,
           doneAt: null,
         })
@@ -2164,8 +2232,8 @@ describe('the day breakdown inside a week', () => {
     ]);
     const week = weekByKey(result, '2026-W34');
 
-    expect(result.daySplit.statuses.map((row) => row.status)).not.toContain('vanished');
-    expect(result.daySplit.statuses.map((row) => row.label)).not.toContain('Vanished');
+    const doneIndex = result.daySplit.statuses.findIndex((row) => row.status === 'dev_done');
+    expect(week.daySplitTotals.status.created[doneIndex]).toBe(1);
     // Nothing was quietly swept into a remainder either: the eight are absent
     // from the created split entirely, which is what the week note explains.
     expect(week.daySplitTotals.status.created.reduce((sum, count) => sum + count, 0)).toBe(

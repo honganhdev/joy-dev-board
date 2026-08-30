@@ -107,7 +107,7 @@ export type WeekSummary = {
   inProgress: boolean;
   /** Titles for the three headline tiles; the week still running is worded differently. */
   tileLabels: { created: string; done: string; outstanding: string };
-  /** Why this week's outstanding figure and `openRightNow` differ. */
+  /** Why this week's outstanding figure and `devFixOpenRightNow` differ. */
   outstandingCaption: string;
   created: number;
   done: number;
@@ -250,9 +250,11 @@ export type WeeklyReport = {
     caption: string;
   };
   openRightNow: number;
+  /** Open tickets whose HelpDesk status is Dev Fixing or Dev Done. */
+  devFixOpenRightNow: number;
   ghosts: GhostAudit;
   /** `undated` is a ticket with neither a created nor a done date: it fits in no week. */
-  excluded: { deleted: number; unparseableDate: number; undated: number };
+  excluded: { deleted: number; unparseableDate: number; undated: number; notDevFix: number };
   /** The same exclusions in words, or `null` when there are none. Rendered verbatim. */
   excludedNote: string | null;
   doneRule: string;

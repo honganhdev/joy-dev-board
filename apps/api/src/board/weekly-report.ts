@@ -45,6 +45,8 @@ const DEFAULT_WEEKS = 12;
  */
 const PRESET_GRACE_WEEKS = 4;
 
+const DEV_FIX_STATUSES = new Set(['dev_fixing', 'dev_done']);
+
 const NO_PRIORITY = '(no priority)';
 const NO_STATUS = '(no status)';
 const NO_MERCHANT = '(no merchant)';
@@ -117,8 +119,8 @@ function categoryCaption(vocabulary: SplitVocabularyRow[]): string {
 }
 
 const OUTSTANDING_CAPTION =
-  'Outstanding at week end is historical, counted from the mirror; open right now is ' +
-  "today's live count of tickets whose status is open.";
+  'Outstanding at week end is historical, counted from the mirror; open Dev Fixing or Dev Done ' +
+  "right now is today's live count of those tickets whose status is open.";
 
 /**
  * The same caption for the week that is still running. Its Sunday has not
@@ -126,8 +128,8 @@ const OUTSTANDING_CAPTION =
  */
 const IN_PROGRESS_OUTSTANDING_CAPTION =
   'This week has not finished, so every figure here is week-to-date rather than final. ' +
-  'Outstanding counts tickets created and not yet done; open right now is ' +
-  "today's live count of tickets whose status is open.";
+  'Outstanding counts tickets created and not yet done; open Dev Fixing or Dev Done right now is ' +
+  "today's live count of those tickets whose status is open.";
 
 /**
  * The backlog panel's heading. Every column but the last is an end-of-week
@@ -470,6 +472,10 @@ function isPresent(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+function isDevFix(ticket: HelpDeskTicket): boolean {
+  return isPresent(ticket.tsStatus) && DEV_FIX_STATUSES.has(ticket.tsStatus.trim());
+}
+
 /**
  * `null` when absent, `NaN` when present and unparseable. The two are different
  * outcomes: an absent `doneAt` means "not done", a present one that will not
@@ -497,6 +503,7 @@ type Counted = {
   createdMs: number | null;
   doneMs: number | null;
   isGhost: boolean;
+  isDevFix: boolean;
   category: string;
   priority: string;
   status: string;
@@ -820,13 +827,13 @@ function agingHeadline(olderThan30: number, dated: number, noCreatedDate: number
         : ` ${noCreatedDate} more have no readable created date.`;
 
   if (dated === 0) {
-    return 'No open ticket has a readable created date, so no age share can be measured.';
+    return 'No open Dev Fixing or Dev Done ticket has a readable created date, so no age share can be measured.';
   }
 
   const percentage = Math.round((olderThan30 / dated) * 100);
   return dated === 1
-    ? `${percentage}% of the 1 open ticket with a readable created date is older than 30 days.${excluded}`
-    : `${percentage}% of the ${dated} open tickets with a readable created date are older than 30 days.${excluded}`;
+    ? `${percentage}% of the 1 open Dev Fixing or Dev Done ticket with a readable created date is older than 30 days.${excluded}`
+    : `${percentage}% of the ${dated} open Dev Fixing or Dev Done tickets with a readable created date are older than 30 days.${excluded}`;
 }
 
 /**
@@ -835,15 +842,15 @@ function agingHeadline(olderThan30: number, dated: number, noCreatedDate: number
  */
 function oldestCaption(dated: number): string {
   if (dated === 0) {
-    return 'No open ticket has a readable created date, so none is listed here.';
+    return 'No open Dev Fixing or Dev Done ticket has a readable created date, so none is listed here.';
   }
   if (dated === 1) {
-    return 'The 1 open ticket with a readable created date is listed below.';
+    return 'The 1 open Dev Fixing or Dev Done ticket with a readable created date is listed below.';
   }
   if (dated <= OLDEST_ROWS) {
-    return `All ${dated} open tickets with a readable created date are listed below, oldest first.`;
+    return `All ${dated} open Dev Fixing or Dev Done tickets with a readable created date are listed below, oldest first.`;
   }
-  return `The ${OLDEST_ROWS} oldest of ${dated} open tickets with a readable created date, oldest first.`;
+  return `The ${OLDEST_ROWS} oldest of ${dated} open Dev Fixing or Dev Done tickets with a readable created date, oldest first.`;
 }
 
 /**
@@ -880,7 +887,7 @@ function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
   return {
     rows,
     freeNote: free
-      ? `Free accounts hold ${free.count} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'} right now.`
+      ? `Free accounts hold ${free.count} of ${open.length} open Dev Fixing or Dev Done ${open.length === 1 ? 'ticket' : 'tickets'} right now.`
       : null,
   };
 }
@@ -911,11 +918,11 @@ function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] 
 
   let concentrationNote: string;
   if (busiest.length === 0) {
-    concentrationNote = 'No named merchant holds an open ticket right now.';
+    concentrationNote = 'No named merchant holds an open Dev Fixing or Dev Done ticket right now.';
   } else if (busiest.length === 1) {
-    concentrationNote = `The busiest merchant holds ${busiestCount} of ${open.length} open ${open.length === 1 ? 'ticket' : 'tickets'} right now (${percentage}%).`;
+    concentrationNote = `The busiest merchant holds ${busiestCount} of ${open.length} open Dev Fixing or Dev Done ${open.length === 1 ? 'ticket' : 'tickets'} right now (${percentage}%).`;
   } else {
-    concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${open.length} open tickets right now (${percentage}%).`;
+    concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${open.length} open Dev Fixing or Dev Done tickets right now (${percentage}%).`;
   }
 
   return {
@@ -1016,7 +1023,7 @@ function openByFeature(
   return {
     rows,
     caption:
-      'Open and older-than-30-day figures use all open tickets right now, aged over those with a ' +
+      'Open and older-than-30-day figures use open Dev Fixing or Dev Done tickets right now, aged over those with a ' +
       'readable created date. Speed uses tickets finished in the selected range with both dates. ' +
       'Medians are shown only with at least 3 finished tickets; the sample appears first and is ' +
       `not a rate.${undated}`,
@@ -1037,7 +1044,8 @@ export function aggregateWeeklyReport(
 ): WeeklyReport {
   const nowMs = options.now.getTime();
   const open = tickets.filter((ticket) => ticket.ticketStatus === 'open');
-  const excluded = { deleted: 0, unparseableDate: 0, undated: 0 };
+  const openBugs = open.filter(isDevFix);
+  const excluded = { deleted: 0, unparseableDate: 0, undated: 0, notDevFix: 0 };
   const counted: Counted[] = [];
 
   for (const ticket of tickets) {
@@ -1069,6 +1077,7 @@ export function aggregateWeeklyReport(
       createdMs,
       doneMs,
       isGhost: isClosed && doneMs === null,
+      isDevFix: isDevFix(ticket),
       category: classify(ticket),
       priority: isPresent(ticket.priority) ? ticket.priority.trim() : NO_PRIORITY,
       status: isPresent(ticket.tsStatus) ? ticket.tsStatus.trim() : NO_STATUS,
@@ -1079,6 +1088,8 @@ export function aggregateWeeklyReport(
   // mirror can answer for is a property of the mirror.
   const horizon = historyHorizon(counted, nowMs, options.year);
   const range = resolveRange(options.weeks, horizon, options.year);
+  const bugs = counted.filter((ticket) => ticket.isDevFix);
+  excluded.notDevFix = counted.length - bugs.length;
 
   const latestWeekStart = weekStartMs(nowMs);
   const weekStarts = Array.from(
@@ -1090,7 +1101,7 @@ export function aggregateWeeklyReport(
   const rangeEndMs = latestWeekStart + WEEK_MS;
   const categoryCounts = new Map<string, number>();
   const statusCounts = new Map<string, number>();
-  for (const ticket of counted) {
+  for (const ticket of bugs) {
     if (ticket.createdMs !== null && ticket.createdMs >= rangeStartMs && ticket.createdMs < rangeEndMs) {
       increment(categoryCounts, ticket.category);
       if (!ticket.isGhost) increment(statusCounts, ticket.status);
@@ -1136,7 +1147,7 @@ export function aggregateWeeklyReport(
     let closedWithoutDoneAt = 0;
     let createdClosedWithoutDoneAt = 0;
 
-    for (const ticket of counted) {
+    for (const ticket of bugs) {
       const { createdMs, doneMs } = ticket;
 
       if (createdMs !== null && createdMs >= startMs && createdMs < endMs) {
@@ -1291,7 +1302,7 @@ export function aggregateWeeklyReport(
       caption: weeklySpeedCaption(weeks),
       emptyWeeksNote: emptyWeeksNote(weeks),
     },
-    timeToFirstDone: timeToFirstDone(counted, rangeStartMs, rangeEndMs),
+    timeToFirstDone: timeToFirstDone(bugs, rangeStartMs, rangeEndMs),
     daySplit: {
       categories: categoryVocabulary.map(({ key: category, label }) => ({ category, label })),
       statuses: statusVocabulary.map(({ key: status, label }) => ({ status, label })),
@@ -1305,15 +1316,16 @@ export function aggregateWeeklyReport(
       unavailableNotes: DAY_SPLIT_UNAVAILABLE_NOTES,
       asOfLabel: `Read at ${dayLabel(nowMs)}`,
     },
-    openBacklog: openBacklog(open, nowMs),
+    openBacklog: openBacklog(openBugs, nowMs),
     openSectionTitle: openSectionTitle(open.length, horizon, options.year),
-    openByPlan: openByPlan(open),
-    openByMerchant: openByMerchant(open),
-    openByFeature: openByFeature(open, counted, nowMs, rangeStartMs, rangeEndMs),
-    // Deliberately the same strict test `assembleBoard` uses, over the same
-    // whole mirror, so this figure and the board's own open count agree.
+    openByPlan: openByPlan(openBugs),
+    openByMerchant: openByMerchant(openBugs),
+    openByFeature: openByFeature(openBugs, bugs, nowMs, rangeStartMs, rangeEndMs),
+    // Deliberately the same strict test `assembleBoard` uses, over the same whole
+    // mirror, so this figure and the board's own open count keep agreeing.
     openRightNow: open.length,
-    ghosts: ghostAudit(counted),
+    devFixOpenRightNow: openBugs.length,
+    ghosts: ghostAudit(bugs),
     excluded,
     excludedNote: excludedNote(excluded),
     doneRule: DONE_RULE,
