@@ -19,7 +19,7 @@ function ticket(overrides: Partial<HelpDeskTicket>): HelpDeskTicket {
     ticketId: 'JOY-260101-aaaaaa',
     subject: 'widget broken',
     ticketStatus: 'open',
-    tsStatus: 'doing',
+    tsStatus: 'dev_fixing',
     createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   };
@@ -114,7 +114,7 @@ describe('cohorts', () => {
     const result = report([
       ticket({
         ticketStatus: 'closed',
-        tsStatus: 'done',
+        tsStatus: 'dev_done',
         createdAt: '2026-08-01T00:00:00+07:00',
         doneAt: null,
       }),
@@ -229,7 +229,7 @@ describe('accounting identities', () => {
       subject: 'widget css broken',
       createdAt: '2026-08-10T09:00:00+07:00',
       doneAt: '2026-08-18T09:00:00+07:00',
-      tsStatus: 'done',
+      tsStatus: 'dev_done',
       priority: 'low',
     }),
     ticket({
@@ -1928,7 +1928,7 @@ describe('the day breakdown inside a week', () => {
   }
 
   function cleared(id: string, at: string): HelpDeskTicket {
-    return ticket({ ticketId: id, createdAt: PRIOR_WEEK, doneAt: at, tsStatus: 'done' });
+    return ticket({ ticketId: id, createdAt: PRIOR_WEEK, doneAt: at, tsStatus: 'dev_done' });
   }
 
   test('names the seven days Monday first, in Vietnam time', () => {
@@ -1970,7 +1970,7 @@ describe('the day breakdown inside a week', () => {
         ticketId: 'ghost',
         subject: 'coupon',
         ticketStatus: 'closed',
-        tsStatus: 'done',
+        tsStatus: 'dev_done',
         createdAt: FRI_21,
         doneAt: null,
       }),
@@ -2159,8 +2159,8 @@ describe('the day breakdown inside a week', () => {
           doneAt: null,
         })
       ),
-      ticket({ ticketId: 'real-done', tsStatus: 'done', createdAt: MON_17, doneAt: TUE_18 }),
-      ticket({ ticketId: 'real-doing', tsStatus: 'doing', createdAt: TUE_18, doneAt: WED_19 }),
+      ticket({ ticketId: 'real-done', tsStatus: 'dev_done', createdAt: MON_17, doneAt: TUE_18 }),
+      ticket({ ticketId: 'real-doing', tsStatus: 'dev_fixing', createdAt: TUE_18, doneAt: WED_19 }),
     ]);
     const week = weekByKey(result, '2026-W34');
 
@@ -2182,7 +2182,7 @@ describe('the day breakdown inside a week', () => {
         ticket({ ticketId: 'mon', ticketStatus: 'closed', createdAt: MON_17, doneAt: null }),
         ticket({ ticketId: 'wed-a', ticketStatus: 'closed', createdAt: WED_19, doneAt: null }),
         ticket({ ticketId: 'wed-b', ticketStatus: 'closed', createdAt: WED_19, doneAt: null }),
-        ticket({ ticketId: 'real', tsStatus: 'done', createdAt: WED_19, doneAt: THU_20 }),
+        ticket({ ticketId: 'real', tsStatus: 'dev_done', createdAt: WED_19, doneAt: THU_20 }),
       ]),
       '2026-W34'
     );
@@ -2409,7 +2409,7 @@ describe('the day breakdown inside a week', () => {
           ticketId: 'monday',
           createdAt: '2026-08-24T09:00:00+07:00',
           doneAt: '2026-08-25T09:00:00+07:00',
-          tsStatus: 'done',
+          tsStatus: 'dev_done',
         }),
       ]),
       '2026-W35'
