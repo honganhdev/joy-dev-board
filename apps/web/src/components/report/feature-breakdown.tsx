@@ -11,6 +11,17 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
 
   return (
     <Panel title="By feature — backlog age and resolution speed">
+      <div
+        aria-hidden="true"
+        className="mb-2 flex items-center gap-2 text-[10px] tracking-wider whitespace-nowrap text-muted-foreground uppercase"
+      >
+        <span className="size-2 shrink-0" />
+        <span className="w-44 shrink-0">Feature</span>
+        <span className="min-w-0 flex-1" />
+        <span className="w-20 shrink-0 text-right">Aged now</span>
+        <span className="w-60 shrink-0 text-right">Speed in range</span>
+        <span className="w-48 shrink-0 text-right">Change vs preceding range</span>
+      </div>
       <ul className="space-y-1.5">
         {data.rows.map((row) => {
           const marker = categoryDotClass(row.key);

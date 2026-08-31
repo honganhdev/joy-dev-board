@@ -4,9 +4,6 @@ import type { WeekSummary } from '@/types';
 
 type HeadlineTilesProps = {
   week: WeekSummary;
-  devFixOpenRightNow: number;
-  devFixOpenRightNowLabel: string;
-  agingHeadline: string | null;
   doneRule: string;
 };
 
@@ -33,11 +30,6 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  * values come off the wire, so this does no arithmetic — and the `+N` sentence
  * is the server's, worded for the week on screen and absent when it is zero.
  *
- * The live figure under it is labelled by the server too. It counts only the
- * dev-fix tickets, which is not what the payload's `openRightNow` counts, so the
- * label has to name its cohort — and naming it here would be the browser
- * composing prose about a number it did not decide.
- *
  * The three tile titles and the caption under the outstanding figure come off
  * the wire too. The week holding today has not finished, so `Outstanding at week
  * end` would name a Sunday that has not happened; the server words that week
@@ -45,9 +37,6 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  */
 export function HeadlineTiles({
   week,
-  devFixOpenRightNow,
-  devFixOpenRightNowLabel,
-  agingHeadline,
   doneRule,
 }: HeadlineTilesProps) {
   const doneMax = Math.max(1, week.done);
@@ -111,12 +100,6 @@ export function HeadlineTiles({
           <p className="mt-1 text-[11px] leading-snug tabular-nums text-muted-foreground">
             {week.outstandingCaveat}
           </p>
-        )}
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {devFixOpenRightNowLabel} <span className="tabular-nums">{devFixOpenRightNow}</span>
-        </p>
-        {agingHeadline && (
-          <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{agingHeadline}</p>
         )}
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{week.outstandingCaption}</p>
       </Tile>

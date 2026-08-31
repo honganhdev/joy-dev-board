@@ -151,7 +151,7 @@ describe('today against yesterday', () => {
       magnitudeLabel: null,
       percentLabel: null,
     });
-    expect(result.caption).toContain('This stays on today when another week is selected.');
+    expect(result.caption).not.toMatch(/another week/i);
     expect(result.caption).toContain("yesterday's count is at least 5");
     expect(result.unavailableNote).toBeNull();
   });
@@ -1527,8 +1527,29 @@ describe('range and fixed strings', () => {
     expect(result.doneRule).not.toContain('Dev Done');
     expect(result.timeToFirstDone.caption).toContain('not time to customer delivery');
     for (const week of result.weeks) {
-      expect(week.outstandingCaption).toContain('open Dev Fixing or Dev Done right now');
+      expect(week.outstandingCaption).not.toContain('right now');
     }
+  });
+
+  test('keeps each band label and comparison caption scoped to the figures it describes', () => {
+    const fourWeeks = report([], 4);
+    const twentySixWeeks = report([], 26);
+
+    expect(fourWeeks.dayComparison.caption).not.toMatch(/another week|Dev Fixing/i);
+    expect(fourWeeks.rangeComparison.caption).not.toMatch(
+      /Dev Fixing|selected range|number of weeks/i
+    );
+    expect(fourWeeks.trendSectionTitle).toContain(
+      `${fourWeeks.range.selectedWeeks} weeks`
+    );
+    expect(twentySixWeeks.trendSectionTitle).toContain(
+      `${twentySixWeeks.range.selectedWeeks} weeks`
+    );
+    expect(fourWeeks.trendSectionTitle).not.toBe(twentySixWeeks.trendSectionTitle);
+    expect(fourWeeks.openSectionTitle).toMatch(/^Today and right now\b/);
+    expect(fourWeeks.openSectionTitle).not.toMatch(/^All open tickets/);
+    expect(fourWeeks.devFixOpenRightNowLabel).not.toEndWith(':');
+    expect(fourWeeks.weeklyGrowth.caption).toContain('week band above');
   });
 
   test('counts open tickets live, over the whole mirror rather than a week', () => {
@@ -2104,7 +2125,8 @@ describe('the strings the page prints', () => {
     expect(result.excludedNote).toContain(
       '1 dated ticket has another HelpDesk status and sits outside the Dev Fixing and Dev Done figures.'
     );
-    expect(result.openSectionTitle).toContain('All open tickets right now — 2 tickets.');
+    expect(result.openSectionTitle).toMatch(/^Today and right now\b/);
+    expect(result.openSectionTitle).toContain(`${result.openRightNow} tickets`);
     expect(result.openSectionTitle).toContain('1 is marked Dev Fixing or Dev Done');
   });
 
@@ -3036,7 +3058,7 @@ describe('the day breakdown inside a week', () => {
     expect(weekByKey(report([created('one', TUE_18)]), '2026-W33').daysHighlight).toBeNull();
   });
 
-  test('states the timezone and the trend heading in the approved words', () => {
+  test('states the timezone exactly and gives the trend heading its range and reset rule', () => {
     // A reworded timezone statement is a silent correctness change: the whole
     // day breakdown means something else if the frame it is read in moves.
     const result = report([]);
@@ -3045,7 +3067,8 @@ describe('the day breakdown inside a week', () => {
       'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to ' +
         'the following Monday 00:00, and a day is midnight to midnight in that same zone.'
     );
-    expect(result.trendSectionTitle).toBe('Every week in the range, for context.');
+    expect(result.trendSectionTitle).toContain(`${result.range.selectedWeeks} weeks`);
+    expect(result.trendSectionTitle).toContain('running week');
   });
 
   test('scopes the trend heading to what the charts under it are handed', () => {

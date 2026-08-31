@@ -72,21 +72,21 @@ const BUG_RULE =
 const TIME_ZONE_NOTE =
   'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
 
-const TREND_SECTION_TITLE = 'Every week in the range, for context.';
+function trendSectionTitle(weeks: number): string {
+  return `Last ${weekSpan(weeks)} to now. Changing the range returns the week above to the running week.`;
+}
 const DAY_COMPARISON_TITLE = 'Today against yesterday';
 const DAY_COMPARISON_CAPTION =
-  'Created Dev Fixing or Dev Done tickets today from midnight to now, against the same hours ' +
-  'yesterday. This stays on today when another week is selected. ' +
+  'Created today from midnight to now, against the same hours yesterday. ' +
   `A percentage is shown only when yesterday's count is at least ${PERCENT_BASELINE_FLOOR}.`;
 const DAY_COMPARISON_UNAVAILABLE = 'no earlier day to compare';
 const RANGE_COMPARISON_TITLE = 'Selected range against the preceding range';
 const RANGE_COMPARISON_CAPTION =
-  'Created Dev Fixing or Dev Done tickets in the selected range up to now, against the same number ' +
-  'of weeks immediately before it.';
+  'Created up to now, against the same elapsed span one range earlier.';
 const RANGE_COMPARISON_UNAVAILABLE = 'no earlier range to compare';
 const WEEKLY_GROWTH_TITLE = 'Week-on-week created change';
 const WEEKLY_GROWTH_CAPTION =
-  'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier.';
+  'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier. Choosing a week here updates the subject card, tiles and day panel in the week band above.';
 const WEEKLY_GROWTH_HORIZON_NOTE =
   'A week with no comparable earlier period shows its created count instead of a change.';
 
@@ -143,8 +143,7 @@ function categoryCaption(vocabulary: SplitVocabularyRow[]): string {
 }
 
 const OUTSTANDING_CAPTION =
-  'Outstanding at week end is historical, counted from the mirror; open Dev Fixing or Dev Done ' +
-  "right now is today's live count of those tickets whose status is open.";
+  'Outstanding at week end is historical, counted from the mirror.';
 
 /**
  * The same caption for the week that is still running. Its Sunday has not
@@ -152,8 +151,7 @@ const OUTSTANDING_CAPTION =
  */
 const IN_PROGRESS_OUTSTANDING_CAPTION =
   'This week has not finished, so every figure here is week-to-date rather than final. ' +
-  'Outstanding counts tickets created and not yet done; open Dev Fixing or Dev Done right now is ' +
-  "today's live count of those tickets whose status is open.";
+  'Outstanding counts tickets created and not yet done.';
 
 /**
  * The backlog panel's heading. Every column but the last is an end-of-week
@@ -175,7 +173,7 @@ const IN_PROGRESS_BACKLOG_TITLE = 'Backlog at each week end, and so far this wee
  * same payload counts every open ticket: a bare `open right now` would read as
  * the larger of the two.
  */
-const DEV_FIX_OPEN_RIGHT_NOW_LABEL = 'Open Dev Fixing or Dev Done right now:';
+const DEV_FIX_OPEN_RIGHT_NOW_LABEL = 'Open Dev Fixing or Dev Done right now';
 
 const FINISHED_TILE_LABELS = {
   created: 'New this week',
@@ -972,10 +970,9 @@ function oldestCaption(dated: number): string {
 }
 
 /**
- * The divider names the section's subject and nothing else. It deliberately
- * makes no claim about the week or the range: the feature panel below it is
- * range-scoped on its speed column, so a blanket claim here would contradict
- * that panel's own caption. Each panel carries its own scope.
+ * The divider names both scopes represented in this band: tickets created
+ * today and the live open-ticket figures. The feature panel still names its
+ * range-scoped columns separately, so the divider makes no claim about range.
  */
 function openSectionTitle(
   total: number,
@@ -990,7 +987,7 @@ function openSectionTitle(
       ? `The mirror covers tickets created since 1 Jan ${year}.`
       : `The mirror reaches back to ${dayLabel(horizon.startsAtMs)}.`;
   return (
-    `All open tickets right now — ${count}. ${devFixCount} marked Dev Fixing or Dev Done, and ` +
+    `Today and right now — all open tickets, ${count}. ${devFixCount} marked Dev Fixing or Dev Done, and ` +
     `only those are counted in the report figures below. ${reach}`
   );
 }
@@ -1262,6 +1259,9 @@ export function aggregateWeeklyReport(
   );
 
   const rangeStartMs = weekStarts[0] ?? latestWeekStart;
+  // `rangeEndMs` is next Monday, while the range comparison ends at `nowMs`.
+  // They agree only while this page has no future-dated events and will diverge
+  // if it ever does.
   const rangeEndMs = latestWeekStart + WEEK_MS;
   const dayComparison = compareCreated(
     bugs,
@@ -1577,6 +1577,6 @@ export function aggregateWeeklyReport(
     bugRule: BUG_RULE,
     doneRule: DONE_RULE,
     timeZoneNote: TIME_ZONE_NOTE,
-    trendSectionTitle: TREND_SECTION_TITLE,
+    trendSectionTitle: trendSectionTitle(range.selectedWeeks),
   };
 }

@@ -20,6 +20,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useWeeklyReport } from '@/hooks/use-weekly-report';
 import { categoryDotClass } from '@/lib/category-style';
 
+const WITHHELD_NOTE_ID = 'report-range-withheld-note';
+
 function ReportSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
@@ -98,6 +100,8 @@ export function ReportView({
   const focused = resolveFocusedWeek(weeks, focusedKey);
   const { previous, next } = neighbourKeys(weeks, focused?.key ?? null);
   if (!focused) return null;
+  const withheldNote =
+    report.range.presets.find((preset) => !preset.available)?.unavailableNote ?? null;
 
   const categoryRows: PairedRow[] = focused.categories.map((row) => ({
     key: row.category,
@@ -139,33 +143,7 @@ export function ReportView({
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">{report.bugRule}</p>
       </section>
 
-      <HeadlineTiles
-        week={focused}
-        devFixOpenRightNow={report.devFixOpenRightNow}
-        devFixOpenRightNowLabel={report.devFixOpenRightNowLabel}
-        agingHeadline={report.openBacklog.agingHeadline}
-        doneRule={report.doneRule}
-      />
-
-      <div className="px-1">
-        <RangePicker range={report.range} onSelect={setWeeks} disabled={loading} />
-      </div>
-
-      <div className="flex gap-3">
-        <Panel title={report.dayComparison.title} className="min-w-0 flex-1">
-          <ComparisonFigure {...report.dayComparison} />
-          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
-            {report.dayComparison.caption}
-          </p>
-        </Panel>
-
-        <Panel title={report.rangeComparison.title} className="min-w-0 flex-1">
-          <ComparisonFigure {...report.rangeComparison} />
-          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
-            {report.rangeComparison.caption}
-          </p>
-        </Panel>
-      </div>
+      <HeadlineTiles week={focused} doneRule={report.doneRule} />
 
       <DayColumns
         week={focused}
@@ -179,7 +157,30 @@ export function ReportView({
         emptyMessage="No tickets in either cohort."
       />
 
-      <SectionDivider title={report.trendSectionTitle} />
+      <SectionDivider
+        title={report.trendSectionTitle}
+        aside={
+          <RangePicker
+            range={report.range}
+            onSelect={(next) => {
+              setFocusedKey(null);
+              setWeeks(next);
+            }}
+            disabled={loading}
+            describedById={withheldNote ? WITHHELD_NOTE_ID : undefined}
+          />
+        }
+        note={
+          withheldNote ? <span id={WITHHELD_NOTE_ID}>{withheldNote}</span> : undefined
+        }
+      />
+
+      <Panel title={report.rangeComparison.title}>
+        <ComparisonFigure {...report.rangeComparison} />
+        <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+          {report.rangeComparison.caption}
+        </p>
+      </Panel>
 
       <WeekColumns
         weeks={weeks}
@@ -206,6 +207,26 @@ export function ReportView({
       <DurationHistogram data={report.timeToFirstDone} />
 
       <SectionDivider title={report.openSectionTitle} />
+
+      <div className="flex gap-3">
+        <Panel title={report.dayComparison.title} className="min-w-0 flex-1">
+          <ComparisonFigure {...report.dayComparison} />
+          <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+            {report.dayComparison.caption}
+          </p>
+        </Panel>
+
+        <Panel title={report.devFixOpenRightNowLabel} className="min-w-0 flex-1">
+          <p className="text-[32px] leading-none font-semibold tabular-nums">
+            {report.devFixOpenRightNow}
+          </p>
+          {report.openBacklog.agingHeadline && (
+            <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+              {report.openBacklog.agingHeadline}
+            </p>
+          )}
+        </Panel>
+      </div>
 
       <BacklogAge data={report.openBacklog} />
 
