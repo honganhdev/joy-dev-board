@@ -1552,6 +1552,51 @@ describe('range and fixed strings', () => {
     expect(fourWeeks.weeklyGrowth.caption).toContain('week band above');
   });
 
+
+  test('says what each reworded caption is scoped to, not only what it dropped', () => {
+    // The assertions the rewording replaced were all negative: they pin what the
+    // captions no longer say. A caption trimmed to nothing satisfies every one of
+    // them, so the scope each one still has to carry is pinned here.
+    const result = report([]);
+
+    expect(result.dayComparison.caption).toContain('today from midnight to now');
+    expect(result.dayComparison.caption).toContain('same hours yesterday');
+    expect(result.rangeComparison.caption).toContain('up to now');
+    expect(result.rangeComparison.caption).toContain('one range earlier');
+    expect(result.devFixOpenRightNowLabel).toContain('Dev Fixing or Dev Done');
+    expect(result.devFixOpenRightNowLabel).toContain('right now');
+    for (const week of result.weeks) {
+      expect(week.outstandingCaption).toMatch(/counted from the mirror|created and not yet done/);
+    }
+  });
+
+  test('names in the trend heading the same span the charts under it are handed', () => {
+    // The heading is the only thing on the page naming the range in words. It is
+    // built from the requested span, and the columns are built from the resolved
+    // one, so it is the heading that goes quietly wrong if those ever diverge.
+    for (const weeks of [4, 12, 26]) {
+      const result = report([], weeks);
+
+      expect(result.weeks).toHaveLength(weeks);
+      expect(result.trendSectionTitle).toContain(`Last ${result.weeks.length} weeks to now`);
+    }
+  });
+
+  test('gives every withheld preset its own reason, naming its own span', () => {
+    // More than one preset is withheld for most of a year: a mirror holding only
+    // the current year cannot reach 26 weeks until midsummer. Each reason names
+    // the span it belongs to, so no reason can stand in for another.
+    const withheld = report(weeklyHistory(6), 12).range.presets.filter(
+      (preset) => !preset.available
+    );
+
+    expect(withheld.map((preset) => preset.weeks)).toEqual([12, 26, 52]);
+    for (const preset of withheld) {
+      expect(preset.unavailableNote).toContain(`range of ${preset.weeks} weeks`);
+    }
+    expect(new Set(withheld.map((preset) => preset.unavailableNote)).size).toBe(withheld.length);
+  });
+
   test('counts open tickets live, over the whole mirror rather than a week', () => {
     const result = report([
       ticket({ ticketId: 'open-1' }),
@@ -1910,6 +1955,37 @@ describe('the strings the page prints', () => {
     });
 
     for (const payload of [report([]), populated, fixture]) {
+      expect(
+        serverWordedStrings(payload).filter((value) => FORBIDDEN_LANGUAGE.test(value))
+      ).toEqual([]);
+    }
+  });
+
+  test('keeps that language out of payloads built without the fixture too', () => {
+    // The walk above loads the uncommitted fixture, so in any checkout that has
+    // not pulled it the whole-payload guard does not run at all — it fails on
+    // the missing file before it reads a single string. These payloads are built
+    // here, so the rule still holds where the fixture is absent.
+    const populated = report([
+      ticket({ ticketId: 'open', createdAt: '2026-08-18T09:00:00+07:00', doneAt: null }),
+      ticket({
+        ticketId: 'done',
+        createdAt: '2026-08-17T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]);
+
+    // A mirror holding only today reaches the notes that stand in for a
+    // comparison, which no fully populated payload carries.
+    const shallow = report([ticket({ ticketId: 'today', createdAt: '2026-08-25T18:00:00.000Z' })]);
+
+    for (const payload of [
+      report([]),
+      populated,
+      shallow,
+      report(weeklyHistory(6), 12),
+      report([], 4),
+    ]) {
       expect(
         serverWordedStrings(payload).filter((value) => FORBIDDEN_LANGUAGE.test(value))
       ).toEqual([]);
