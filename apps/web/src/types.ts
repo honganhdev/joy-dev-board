@@ -117,7 +117,7 @@ export type WeekSummary = {
   currentDayLabel: string | null;
   /** Titles for the three headline tiles; the week still running is worded differently. */
   tileLabels: { created: string; done: string; outstanding: string };
-  /** Why this week's outstanding figure and `devFixOpenRightNow` differ. */
+  /** What this week's outstanding figure counts; the running week is worded differently. */
   outstandingCaption: string;
   created: number;
   createdComparison: Comparison;

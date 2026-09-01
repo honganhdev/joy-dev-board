@@ -30,6 +30,10 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
  * values come off the wire, so this does no arithmetic — and the `+N` sentence
  * is the server's, worded for the week on screen and absent when it is zero.
  *
+ * The outstanding figure keeps the larger 32px the two beside it give up: it
+ * is the level standing at the end of the week, while created and done count
+ * what moved during it, and one size for both reads as three of a kind.
+ *
  * The three tile titles and the caption under the outstanding figure come off
  * the wire too. The week holding today has not finished, so `Outstanding at week
  * end` would name a Sunday that has not happened; the server words that week
@@ -58,7 +62,7 @@ export function HeadlineTiles({
   return (
     <div className="flex gap-3">
       <Tile label={week.tileLabels.created}>
-        <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.created}</p>
+        <p className="mt-1 text-[26px] leading-none font-semibold tabular-nums">{week.created}</p>
         {createdChange && (
           <p className="mt-1 inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-[11px] leading-snug tabular-nums text-stone-700">
             {createdChange}
@@ -67,7 +71,7 @@ export function HeadlineTiles({
       </Tile>
 
       <Tile label={week.tileLabels.done}>
-        <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.done}</p>
+        <p className="mt-1 text-[26px] leading-none font-semibold tabular-nums">{week.done}</p>
         <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{doneRule}</p>
         {week.doneByStatus.length > 0 && (
           <>

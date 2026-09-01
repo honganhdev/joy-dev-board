@@ -50,10 +50,12 @@ describe('resolveFocusedWeek', () => {
     expect(resolveFocusedWeek(weeks, null)?.key).toBe('W35');
   });
 
-  test('keeps a week the viewer chose when the new range still holds it', () => {
-    // A wider range restores what was being looked at rather than snapping back
-    // to that range's own default — including the running week, which the
-    // default also picks but which remains an explicit stored choice.
+  test('prefers a stored key the array still holds over that array\'s default', () => {
+    // The page clears the stored key whenever the range changes, so on screen
+    // this path is reached from the week arrows rather than from re-ranging: a
+    // week stepped to stays focused for as long as the payload carries it —
+    // including the running week, which the default also picks but which
+    // remains an explicit stored choice.
     const wider = [week('W28', false), week('W29', false), ...weeks];
 
     expect(resolveFocusedWeek(wider, 'W33')?.key).toBe('W33');

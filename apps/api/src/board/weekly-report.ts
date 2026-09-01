@@ -86,7 +86,7 @@ const RANGE_COMPARISON_CAPTION =
 const RANGE_COMPARISON_UNAVAILABLE = 'no earlier range to compare';
 const WEEKLY_GROWTH_TITLE = 'Week-on-week created change';
 const WEEKLY_GROWTH_CAPTION =
-  'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier. Choosing a week here updates the subject card, tiles and day panel in the week band above.';
+  'Each figure compares created Dev Fixing or Dev Done tickets with the same span one week earlier. A finished week uses the whole week; the running week uses Monday to now against Monday to the same time one week earlier. Choosing a week here moves the whole week band above: the week card, the three tiles, the per-day chart and the category split.';
 const WEEKLY_GROWTH_HORIZON_NOTE =
   'A week with no comparable earlier period shows its created count instead of a change.';
 
@@ -168,10 +168,10 @@ const IN_PROGRESS_BACKLOG_TITLE = 'Backlog at each week end, and so far this wee
  * and only the server knows which week that is.
  */
 /**
- * The second figure in the outstanding tile. It names the cohort because the
- * number beside it counts only the dev-fix tickets, while `openRightNow` on the
- * same payload counts every open ticket: a bare `open right now` would read as
- * the larger of the two.
+ * The title of the live open panel, which stands on its own in the today-and-
+ * right-now band. It names the cohort because the number under it counts only
+ * the dev-fix tickets, while `openRightNow` on the same payload counts every
+ * open ticket: a bare `open right now` would read as the larger of the two.
  */
 const DEV_FIX_OPEN_RIGHT_NOW_LABEL = 'Open Dev Fixing or Dev Done right now';
 

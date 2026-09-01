@@ -5,22 +5,55 @@ import type { WeeklyReport } from '@/types';
 
 type FeatureBreakdownData = WeeklyReport['openByFeature'];
 
-export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
+/**
+ * What each column answers to, worded once for both the strip that heads it and
+ * the sentence a screen reader hears on every row. This panel sits under a band
+ * head naming today and right now, and two of its columns answer to the
+ * selected range instead — so the heading is the only thing on screen saying
+ * which stretch of time they cover, and "in range" alone never says which range
+ * that is.
+ *
+ * Composed here rather than on the wire: these are column nouns, the one place
+ * the plan lets the browser write words.
+ */
+export function columnHeads(weeks: number) {
+  const span = `${weeks} weeks`;
+  return {
+    feature: 'Feature',
+    aged: 'Aged now',
+    speed: `Speed in the last ${span}`,
+    change: `Change vs the preceding ${span}`,
+  };
+}
+
+export function FeatureBreakdown({
+  data,
+  weeks,
+}: {
+  data: FeatureBreakdownData;
+  weeks: number;
+}) {
   const max = data.rows.reduce((tallest, row) => Math.max(tallest, row.open), 0);
   const scale = Math.max(1, max);
+  const heads = columnHeads(weeks);
 
   return (
     <Panel title="By feature — backlog age and resolution speed">
+      {/*
+        Hidden from assistive technology because a strip of five loose nouns
+        read out before the list says nothing about which cell each one belongs
+        to. Every row carries the same words against its own figures instead.
+      */}
       <div
         aria-hidden="true"
         className="mb-2 flex items-center gap-2 text-[10px] tracking-wider whitespace-nowrap text-muted-foreground uppercase"
       >
         <span className="size-2 shrink-0" />
-        <span className="w-44 shrink-0">Feature</span>
+        <span className="w-44 shrink-0">{heads.feature}</span>
         <span className="min-w-0 flex-1" />
-        <span className="w-20 shrink-0 text-right">Aged now</span>
-        <span className="w-60 shrink-0 text-right">Speed in range</span>
-        <span className="w-48 shrink-0 text-right">Change vs preceding range</span>
+        <span className="w-20 shrink-0 text-right">{heads.aged}</span>
+        <span className="w-60 shrink-0 text-right">{heads.speed}</span>
+        <span className="w-56 shrink-0 text-right">{heads.change}</span>
       </div>
       <ul className="space-y-1.5">
         {data.rows.map((row) => {
@@ -56,12 +89,15 @@ export function FeatureBreakdown({ data }: { data: FeatureBreakdownData }) {
               {/* Aged over the tickets whose date can be read, not over every
                   open ticket — an undated one is not a ticket that is not old. */}
               <span className="w-20 shrink-0 text-right text-[11px] tabular-nums">
+                <span className="sr-only">{heads.aged}: </span>
                 {row.olderThan30} of {row.openWithCreatedDate}
               </span>
               <span className="w-60 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                <span className="sr-only">{heads.speed}: </span>
                 {row.speedNote}
               </span>
-              <span className="w-48 shrink-0 text-right text-[11px] tabular-nums">
+              <span className="w-56 shrink-0 text-right text-[11px] tabular-nums">
+                <span className="sr-only">{heads.change}: </span>
                 {row.comparison.previous === null ? (
                   row.comparison.current
                 ) : (

@@ -406,7 +406,7 @@ describe('the dev-fix narrowing reaches every panel at once', () => {
     const result = report(tickets);
 
     expect(result.openSectionTitle).toMatch(/^Today and right now\b/);
-    expect(result.openSectionTitle).toContain(`${result.openRightNow} tickets`);
+    expect(result.openSectionTitle).toContain('2 tickets');
     expect(result.openSectionTitle).toContain('1 is marked Dev Fixing or Dev Done');
     expect(result.excludedNote).toContain('outside the Dev Fixing and Dev Done figures');
     expect(result.bugRule).toContain('Dev Fixing or Dev Done');

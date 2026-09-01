@@ -1565,6 +1565,19 @@ describe('range and fixed strings', () => {
     expect(result.rangeComparison.caption).toContain('one range earlier');
     expect(result.devFixOpenRightNowLabel).toContain('Dev Fixing or Dev Done');
     expect(result.devFixOpenRightNowLabel).toContain('right now');
+    // A trend click moves every panel in the week band, the category split
+    // included. Naming them is what keeps the sentence off the panel titled for
+    // today, which sits in the live band and stays where it is.
+    const movers = [
+      'the whole week band above',
+      'week card',
+      'three tiles',
+      'per-day chart',
+      'category split',
+    ];
+    for (const mover of movers) {
+      expect(result.weeklyGrowth.caption).toContain(mover);
+    }
     for (const week of result.weeks) {
       expect(week.outstandingCaption).toMatch(/counted from the mirror|created and not yet done/);
     }

@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { useState, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { BacklogColumns } from './backlog-columns';
 import { BacklogAge } from './backlog-age';
 import { ComparisonFigure } from './comparison-figure';
@@ -10,7 +10,7 @@ import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
 import { OpenBreakdown } from './open-breakdown';
 import { Panel } from './panel';
-import { RangePicker } from './range-picker';
+import { RangePicker, withheldNoteId } from './range-picker';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
 import { WeeklySpeed } from './weekly-speed';
@@ -19,8 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useWeeklyReport } from '@/hooks/use-weekly-report';
 import { categoryDotClass } from '@/lib/category-style';
-
-const WITHHELD_NOTE_ID = 'report-range-withheld-note';
 
 function ReportSkeleton() {
   return (
@@ -79,6 +77,21 @@ export function ReportView({
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
   /**
+   * Where the reader was when they clicked a range. The skeleton is shorter
+   * than the report, so the container clamps `scrollTop` while it is up and
+   * never gets it back: the picker sits below the whole week band, and a click
+   * there would otherwise land the reader two screens above it. Only a range
+   * click sets this, so a pull still refreshes from wherever the reader is.
+   */
+  const scrollTopBeforeRerange = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (loading || scrollTopBeforeRerange.current === null) return;
+    scrollRef.current?.scrollTo({ top: scrollTopBeforeRerange.current });
+    scrollTopBeforeRerange.current = null;
+  }, [loading, scrollRef]);
+
+  /**
    * The trend chart sits below everything it changes. Clicking a week there
    * rewrites the subject card, the tiles and the day panel, all of which are
    * several screens up: without this the only visible effect is the highlight
@@ -100,8 +113,9 @@ export function ReportView({
   const focused = resolveFocusedWeek(weeks, focusedKey);
   const { previous, next } = neighbourKeys(weeks, focused?.key ?? null);
   if (!focused) return null;
-  const withheldNote =
-    report.range.presets.find((preset) => !preset.available)?.unavailableNote ?? null;
+  const withheldPresets = report.range.presets.filter(
+    (preset) => preset.unavailableNote !== null
+  );
 
   const categoryRows: PairedRow[] = focused.categories.map((row) => ({
     key: row.category,
@@ -163,15 +177,21 @@ export function ReportView({
           <RangePicker
             range={report.range}
             onSelect={(next) => {
+              scrollTopBeforeRerange.current = scrollRef.current?.scrollTop ?? null;
               setFocusedKey(null);
               setWeeks(next);
             }}
             disabled={loading}
-            describedById={withheldNote ? WITHHELD_NOTE_ID : undefined}
           />
         }
         note={
-          withheldNote ? <span id={WITHHELD_NOTE_ID}>{withheldNote}</span> : undefined
+          withheldPresets.length === 0
+            ? undefined
+            : withheldPresets.map((preset) => (
+                <p key={preset.weeks} id={withheldNoteId(preset.weeks)}>
+                  {preset.unavailableNote}
+                </p>
+              ))
         }
       />
 
@@ -217,6 +237,8 @@ export function ReportView({
         </Panel>
 
         <Panel title={report.devFixOpenRightNowLabel} className="min-w-0 flex-1">
+          {/* A level, not a count of arrivals: it stays at the larger size the
+              flow figures beside and above it have given up. */}
           <p className="text-[32px] leading-none font-semibold tabular-nums">
             {report.devFixOpenRightNow}
           </p>
@@ -243,7 +265,7 @@ export function ReportView({
         />
       </div>
 
-      <FeatureBreakdown data={report.openByFeature} />
+      <FeatureBreakdown data={report.openByFeature} weeks={report.range.selectedWeeks} />
 
       {/*
         What reached no week, named so nothing vanishes silently — in the

@@ -42,9 +42,9 @@ export type WeekSummary = {
    */
   tileLabels: { created: string; done: string; outstanding: string };
   /**
-   * Why this week's outstanding figure and `devFixOpenRightNow` differ. Week-scoped
-   * for the same reason as `tileLabels`: the sentence for a finished week calls
-   * the figure historical, which is untrue of the week still running.
+   * What this week's outstanding figure counts. Week-scoped for the same reason
+   * as `tileLabels`: the sentence for a finished week calls the figure
+   * historical, which is untrue of the week still running.
    */
   outstandingCaption: string;
   created: number;

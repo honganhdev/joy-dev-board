@@ -26,7 +26,14 @@ export function ComparisonFigure({
 
   return (
     <div>
-      <p className="text-[32px] leading-none font-semibold tabular-nums">{current}</p>
+      {/*
+        A count of what arrived over a stretch of time, so it is deliberately a
+        step below the 32px the live and week-end levels keep. The two sit side
+        by side in the live band — tickets created today beside every ticket
+        open right now — and at one size a flow of 1 and a level of 47 read as
+        the same kind of number.
+      */}
+      <p className="text-[26px] leading-none font-semibold tabular-nums">{current}</p>
       <p className="text-[10px] text-muted-foreground">{currentLabel}</p>
       <p className="mt-1 text-[11px] tabular-nums">
         {previous === null ? (
