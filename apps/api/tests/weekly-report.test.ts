@@ -1605,7 +1605,10 @@ describe('range and fixed strings', () => {
 
     expect(withheld.map((preset) => preset.weeks)).toEqual([12, 26, 52]);
     for (const preset of withheld) {
-      expect(preset.unavailableNote).toContain(`range of ${preset.weeks} weeks`);
+      // The withheld span leads the sentence, which is what makes each button's
+      // own description true when three of them are stacked under the control.
+      expect(preset.unavailableNote).toStartWith(`${preset.weeks} weeks —`);
+      expect(preset.unavailableNote).toContain("the mirror's 6 weeks");
     }
     expect(new Set(withheld.map((preset) => preset.unavailableNote)).size).toBe(withheld.length);
   });
@@ -2226,9 +2229,11 @@ describe('the strings the page prints', () => {
 
     expect(presets[0]?.unavailableNote).toBeNull();
     expect(presets[1]?.unavailableNote).toBe(
-      'The mirror spans 6 weeks, which is not enough for a range of 12 weeks: most of it would be empty.'
+      "12 weeks — needs more history than the mirror's 6 weeks."
     );
-    expect(presets[3]?.unavailableNote).toContain('range of 52 weeks');
+    expect(presets[3]?.unavailableNote).toBe(
+      "52 weeks — needs more history than the mirror's 6 weeks."
+    );
     for (const preset of presets) {
       expect(preset.unavailableNote ?? '').not.toContain('continuous');
     }

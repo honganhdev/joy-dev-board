@@ -230,15 +230,16 @@ export function ReportView({
 
       <div className="flex gap-3">
         <Panel title={report.dayComparison.title} className="min-w-0 flex-1">
-          <ComparisonFigure {...report.dayComparison} />
+          <ComparisonFigure {...report.dayComparison} size="againstLevel" />
           <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
             {report.dayComparison.caption}
           </p>
         </Panel>
 
         <Panel title={report.devFixOpenRightNowLabel} className="min-w-0 flex-1">
-          {/* A level, not a count of arrivals: it stays at the larger size the
-              flow figures beside and above it have given up. */}
+          {/* A level, and the page's one size. Only the card beside it steps
+              down — a third of a step, so a flow and a level stop reading
+              alike; everything else on the page is written at this size. */}
           <p className="text-[32px] leading-none font-semibold tabular-nums">
             {report.devFixOpenRightNow}
           </p>

@@ -73,7 +73,7 @@ const TIME_ZONE_NOTE =
   'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
 
 function trendSectionTitle(weeks: number): string {
-  return `Last ${weekSpan(weeks)} to now. Changing the range returns the week above to the running week.`;
+  return `Last ${weekSpan(weeks)} to now. A new range resets the week above to the running week.`;
 }
 const DAY_COMPARISON_TITLE = 'Today against yesterday';
 const DAY_COMPARISON_CAPTION =
@@ -739,12 +739,14 @@ function weekSpan(weeks: number): string {
  * The reason is the span, and only the span: a gap inside the history is not
  * missing data — the coverage note says so on the same screen — so a sentence
  * blaming discontinuity would contradict it.
+ *
+ * Three presets are withheld at once for most of a year, and each keeps its own
+ * sentence because each disabled button points at its own. So the withheld span
+ * leads and the half they share is as short as it can be: three stacked lines
+ * differing only in a number is what the long wording read as.
  */
 function unavailableNote(preset: number, horizon: Horizon): string {
-  return (
-    `The mirror spans ${weekSpan(horizon.weeks)}, which is not enough for a range of ` +
-    `${weekSpan(preset)}: most of it would be empty.`
-  );
+  return `${weekSpan(preset)} — needs more history than the mirror's ${weekSpan(horizon.weeks)}.`;
 }
 
 /**
