@@ -45,6 +45,34 @@ function walkRuntimeGraph(): Set<string> {
   return reached;
 }
 
+
+/** Packages the reviewed graph may pull in. A new one is a review decision. */
+const ALLOWED_PACKAGES = new Set([
+  '@modelcontextprotocol/sdk/server/mcp.js',
+  '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js',
+  'zod',
+]);
+
+function packageImports(source: string): string[] {
+  const imports: string[] = [];
+  const pattern = /import\s+(?!type\b)[\s\S]*?\sfrom\s+['"]([^.'"][^'"]*)['"]/g;
+  for (const match of source.matchAll(pattern)) {
+    if (match[1]) imports.push(match[1]);
+  }
+  return imports;
+}
+
+/** The exact dependency surface tools may reach. Adding one is a review decision. */
+const EXPECTED_DEPS = [
+  'readTickets',
+  'readTicket',
+  'readStatusHistory',
+  'readLastPull',
+  'readLastSuccessfulPull',
+  'countTickets',
+  'resolveTags',
+];
+
 describe('MCP read-only import boundary', () => {
   test('both the server and tools stay inside the reviewed runtime graph', () => {
     const reached = [...walkRuntimeGraph()].map((path) => relative(SRC, path));
@@ -87,6 +115,27 @@ describe('MCP read-only import boundary', () => {
     ]) {
       expect(source).toContain(`${dependency}:`);
     }
+  });
+
+
+  test('the graph pulls in no package outside the reviewed set', () => {
+    for (const path of walkRuntimeGraph()) {
+      const source = readFileSync(path, 'utf8');
+      for (const specifier of packageImports(source)) {
+        expect(
+          ALLOWED_PACKAGES.has(specifier),
+          `${relative(SRC, path)} imports unreviewed package ${specifier}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  test('McpToolDeps declares exactly the seven read dependencies', () => {
+    const source = readFileSync(resolve(SRC, 'mcp/tools.ts'), 'utf8');
+    const block = /export type McpToolDeps = \{([\s\S]*?)\n\};/.exec(source)?.[1];
+    expect(block).toBeTruthy();
+    const declared = [...block!.matchAll(/^\s{2}(\w+)\s*:/gm)].map((match) => match[1]);
+    expect(declared.sort()).toEqual([...EXPECTED_DEPS].sort());
   });
 
   test('the server uses only the Web-standard Bun transport', () => {
