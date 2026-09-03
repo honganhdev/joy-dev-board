@@ -1,6 +1,8 @@
-import { createAuthHandlers, unauthorized, type ClientAddress } from './auth/handlers';
+import { clientIp, createAuthHandlers, unauthorized, type ClientAddress } from './auth/handlers';
+import { MCP_AUTH_FAILURE, mcpPublicId, verifyMcpToken } from './auth/mcp-token';
 import { LoginThrottle, type ThrottleOptions } from './auth/throttle';
 import { assembleBoard, toTicketDetail } from './board/assemble';
+import { resolveTags } from './board/tags';
 import type { BoardResponse, PullSummary } from './board/types';
 import { aggregateWeeklyReport } from './board/weekly-report';
 import type { TtlCache } from './cache';
@@ -31,6 +33,9 @@ import type { PullRunner } from './pull-service';
 import { createStaticHandler, type StaticHandler } from './static';
 import { createWebhookHandler } from './webhook-handler';
 import type { WebhookProcessor } from './webhook-service';
+import { sanitizeForLog } from './webhook-verify';
+import { handleMcpRequest } from './mcp/server';
+import type { McpToolDeps } from './mcp/tools';
 
 // Bounds drift from deletions, bulk closes and silent updates that emit no webhook.
 const STALE_PULL_MS = 30 * 60 * 1000;
@@ -55,32 +60,6 @@ function errorResponse(cause: unknown): Response {
   const message = cause instanceof Error ? cause.message : String(cause);
   console.error('[api]', message);
   return json({ error: 'internal_error', message }, 500);
-}
-
-/**
- * Resolves a ticket's opaque `tagIds` into `{id, name, color}`. Tags are a
- * nicety on the detail view, so a failing tag directory degrades to raw ids
- * rather than failing the whole request.
- */
-async function resolveTags(
-  tagsCache: TtlCache<HelpDeskTag[]>,
-  tagIds: string[] | null | undefined
-): Promise<Array<{ id: string; name: string; color: string | null }>> {
-  if (!tagIds?.length) return [];
-
-  let directory: HelpDeskTag[] = [];
-  try {
-    directory = (await tagsCache.get()).value;
-  } catch (cause) {
-    console.error('[helpdesk] tag directory unavailable:', cause);
-  }
-
-  const byId = new Map(directory.map((tag) => [tag.id, tag]));
-  return tagIds.map((id) => ({
-    id,
-    name: byId.get(id)?.name ?? id,
-    color: byId.get(id)?.color ?? null,
-  }));
 }
 
 function toPullSummary(row: PullRow | null): PullSummary | null {
@@ -147,7 +126,8 @@ export function createRouter({
   webDistPath,
   throttle,
 }: RouterDeps) {
-  const authHandlers = createAuthHandlers({ db, auth, throttle: new LoginThrottle(throttle) });
+  const loginThrottle = new LoginThrottle(throttle);
+  const authHandlers = createAuthHandlers({ db, auth, throttle: loginThrottle });
   const serveStatic: StaticHandler = createStaticHandler(webDistPath ?? null);
   const handleWebhook = createWebhookHandler({
     secret: webhookSecret,
@@ -155,6 +135,15 @@ export function createRouter({
       reserveDelivery(db, key, undefined, ticketId, createdAt),
     webhooks,
   });
+  const mcpTools: McpToolDeps = {
+    readTickets: () => readTickets(db),
+    readTicket: (ticketId) => readTicket(db, ticketId),
+    readStatusHistory: (ticketId) => readStatusHistory(db, ticketId),
+    readLastPull: () => readLastPull(db),
+    readLastSuccessfulPull: () => readLastSuccessfulPull(db),
+    countTickets: () => countTickets(db),
+    resolveTags: (tagIds) => resolveTags(tags, tagIds),
+  };
 
   /** Starts a pull without holding the request. The runner records its own failure. */
   function kickPull(): void {
@@ -185,6 +174,56 @@ export function createRouter({
   return async function handle(request: Request, server: ClientAddress = null): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
+
+    // Bearer credentials must never inherit the cookie surface's permissive
+    // CORS headers. This branch owns every method and its own error boundary.
+    if (pathname === '/api/mcp') {
+      if (request.method !== 'POST') {
+        return Response.json(
+          { error: 'method_not_allowed', message: 'Use POST for MCP requests.' },
+          { status: 405, headers: { Allow: 'POST' } }
+        );
+      }
+
+      try {
+        const authorization = request.headers.get('authorization') ?? '';
+        const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] ?? '';
+        const publicId = mcpPublicId(bearer);
+        const ip = clientIp(request, server, auth.trustProxy);
+        const keys = [`mcp-token:${publicId ?? '(invalid)'}`];
+        if (auth.trustProxy) keys.push(`mcp-ip:${ip}`);
+
+        const verdict = loginThrottle.check(keys);
+        const verification = verdict.locked
+          ? { ok: false as const, error: MCP_AUTH_FAILURE }
+          : verifyMcpToken(db, auth, bearer);
+        if (!verification.ok) {
+          if (!verdict.locked) loginThrottle.recordFailure(keys);
+          console.warn(
+            `[mcp] rejected ${sanitizeForLog(publicId)} (ip ${sanitizeForLog(ip)})`
+          );
+          return Response.json(
+            { error: 'unauthorized', message: MCP_AUTH_FAILURE },
+            { status: 401 }
+          );
+        }
+
+        loginThrottle.reset(keys);
+        console.log(
+          `[mcp] accepted ${sanitizeForLog(verification.token.publicId)} ` +
+            `(user ${sanitizeForLog(verification.token.username)}, ip ${sanitizeForLog(ip)})`
+        );
+        return await handleMcpRequest(request, mcpTools);
+      } catch (cause) {
+        console.error(
+          `[mcp] request failed: ${sanitizeForLog(cause instanceof Error ? cause.message : String(cause))}`
+        );
+        return Response.json(
+          { error: 'internal_error', message: 'MCP request failed.' },
+          { status: 500 }
+        );
+      }
+    }
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });

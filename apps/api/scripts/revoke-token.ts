@@ -52,7 +52,13 @@ if (username) {
     console.log('publicId\tusername\tlabel\tcreatedAt\tlastUsedAt');
     for (const token of tokens) {
       console.log(
-        [token.publicId, token.username, token.label, token.createdAt, token.lastUsedAt ?? 'never'].join('\t')
+        [
+          token.publicId,
+          token.username,
+          token.label,
+          token.createdAt,
+          token.lastUsedAt ?? 'never',
+        ].join('\t')
       );
     }
   }

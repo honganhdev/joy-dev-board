@@ -108,9 +108,11 @@ bun run build        # production build of the web app
 | `POST /api/auth/login` | `{username, password}` → sets the session cookie, returns `{username}`. |
 | `POST /api/auth/logout` | Deletes the session row and clears the cookie. |
 | `GET /api/auth/me` | `{username}`, or `401` when there is no session. |
+| `POST /api/mcp` | Stateless Streamable HTTP MCP endpoint. Requires a personal bearer token and emits no CORS headers. |
 
-Everything else under `/api/` returns `401` without a valid session. In the container the API also
-serves the built web app on the same port, with a client-side-routing fallback to `index.html`.
+The MCP path uses only its bearer token; the remaining protected `/api/` routes use only a valid
+session. In the container the API also serves the built web app on the same port, with a
+client-side-routing fallback to `index.html`.
 
 Reads never touch HelpDesk. A failed pull is reported by `GET /api/pull/status` as a `200` summary
 with `status: "error"` and a real message — the `POST` answered `202` long before it failed — and the
@@ -163,6 +165,87 @@ The `Access-Control-Allow-Origin: *` on the API is deliberate and safe here: wit
 `Allow-Credentials` a browser will not attach the session cookie to a cross-origin request, so a
 third-party page gets a `401` and nothing else.
 
+## MCP access
+
+The API serves a stateless, read-only MCP endpoint at `https://issue.anhth.cc/api/mcp`. It uses a
+personal bearer token, not the browser session cookie, and exposes four tools:
+
+- `find_ticket` searches open tickets using the board's id, link, text, and Vietnamese-diacritic
+  matching. It cannot enumerate closed tickets.
+- `get_ticket` reads a ticket by exact id, including a closed ticket, matching the existing detail
+  route.
+- `get_ticket_history` reads that ticket's observed status changes.
+- `list_open` returns complete status/category counts plus a filtered, paged open-ticket list.
+
+Every tool result includes the last successful mirror timestamp, latest pull status, and stored
+ticket count. `find_ticket` and `list_open` currently parse the complete mirror on every call. At
+this board's size that is acceptable; measure after deploy and revisit if a call exceeds 150 ms or
+agent use visibly stalls the board.
+
+Issue and revoke tokens from inside the running container (the VPS host has no Bun):
+
+```bash
+bun run mcp:issue -- --user teammate --label "claude code"
+bun run mcp:revoke                    # list live token metadata, never secrets
+bun run mcp:revoke -- --id <public-id>
+bun run mcp:revoke -- --user teammate # revoke all of one person's tokens
+```
+
+`mcp:issue` prints the credential once; only its SHA-256 digest is stored. Deliver that one line out
+of band and never put it in a ticket, report, shell transcript, or repository. Tokens have no default
+expiry: this small, stable team uses explicit revocation and the offboarding procedure instead of
+surprising client outages. `expiresAt` remains nullable for deliberately time-bounded credentials;
+revisit a 90-day default before a token is kept on a device without full-disk encryption or in a
+cloud-synced config directory.
+
+Configure a client with a placeholder—not a real token—like this:
+
+```json
+{
+  "mcpServers": {
+    "issue-board": {
+      "type": "http",
+      "url": "https://issue.anhth.cc/api/mcp",
+      "headers": { "Authorization": "Bearer jbmcp_<public-id>.<secret>" }
+    }
+  }
+}
+```
+
+The protocol implementation is pinned exactly to `@modelcontextprotocol/sdk@1.30.0` (with its
+already-resolved `zod@4.5.4` peer pinned for Bun workspace resolution). Review the pin by
+2026-12-03, whenever the real-client check stops negotiating successfully, or before deliberately
+upgrading teammate MCP clients. Upgrades are reviewed lockfile changes, never floating deploy-time
+updates.
+
+The MCP bearer surface is weaker than the board cookie surface in five specific ways:
+
+1. Possession is authorization. Anyone holding the token is authenticated; it is not bound to a
+   browser or device.
+2. Tokens are long-lived until expiry or revocation, while browser sessions slide for seven days
+   and die on logout.
+3. A token sits in plaintext in a local client config that may be backed up, synced, or committed by
+   mistake; a cookie stays in the browser jar.
+4. Bearer tokens are replayable. TLS at Caddy is the only protection in flight; there is no in-app
+   equivalent of `COOKIE_SECURE` for an authorization header.
+5. `lastUsedAt` identifies use, not whether the owner or a thief used it. The API therefore also logs
+   sanitized public token ids, usernames, and client IPs on success, and sanitized ids/IPs on
+   rejection. It never logs the token or secret.
+
+Bearer tokens are immune to CSRF. A stolen token can read the complete open-ticket corpus and fetch
+any known ticket id, including merchant names, subjects, and Slack/Crisp links. It cannot write to
+HelpDesk, change the board, create a browser session, read a password, or read `.env`.
+
+Everyone with a token sees the same open-ticket corpus as the board, and the initial teammates are
+the same people who already share its password. Visibility scoping is therefore deferred, but not
+forgotten: revisit it for the first person who should not see all merchants (for example a
+contractor, agency, partner, or probationary hire). The retrofit must thread a viewer through the
+four read functions and every web/report/MCP caller; one missed call site would leak silently, so it
+belongs in a deliberate access-control change rather than this rollout.
+
+The endpoint adds no environment variable. Deployment, offboarding, rollback ordering, and the
+required real-client gate are in [`docs/mcp-deploy.md`](docs/mcp-deploy.md).
+
 ### Content-Security-Policy
 
 The served documents carry `default-src 'self'; script-src 'self'` with no `unsafe-inline` and no
@@ -181,7 +264,7 @@ SQLite through `bun:sqlite`, with [Drizzle](https://orm.drizzle.team) for the sc
 The database is opened with `journal_mode = WAL` (the board keeps reading while a pull writes) and
 `foreign_keys = ON` (off by default in SQLite, and set per connection).
 
-Four tables:
+Six tables:
 
 - **`sessions`** — one row per signed-in session. On disk rather than in memory so a restart of the
   API does not sign everyone out, and deletable so logout is a real revocation.
@@ -195,6 +278,9 @@ Four tables:
   written as `running` when the pull starts and flipped to `ok` only once the sync commits. Any row
   still `running` at the next boot is swept to `error`, so a killed process still leaves an honest
   record instead of a phantom success.
+- **`board_column_settings`** — the shared enabled-column preference and its optimistic-lock version.
+- **`mcp_tokens`** — personal MCP token metadata and SHA-256 secret digests. Plaintext bearer
+  secrets are never stored.
 
 Ticket upserts and their history rows are written in one transaction: a crash mid-pull cannot leave
 tickets updated with their history missing.

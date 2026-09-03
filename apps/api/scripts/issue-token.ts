@@ -35,6 +35,9 @@ if (!config.auth.users.some((user) => user.username === username)) {
 const { db, sqlite } = openDatabase(config.databasePath);
 sqlite.exec('PRAGMA busy_timeout = 5000;');
 const issued = issueMcpToken(db, { username, label });
-console.error(`Issued MCP token ${issued.row.publicId} for "${username}". Copy the next line now; it cannot be recovered.`);
+console.error(
+  `Issued MCP token ${issued.row.publicId} for "${username}". ` +
+    'Copy the next line now; it cannot be recovered.'
+);
 console.log(issued.token);
 sqlite.close();

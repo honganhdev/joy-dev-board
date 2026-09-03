@@ -30,6 +30,11 @@ function parseToken(value: string): { publicId: string; secret: string } | null 
   return match?.[1] && match[2] ? { publicId: match[1], secret: match[2] } : null;
 }
 
+/** Non-secret token identifier, when the caller supplied a well-formed token. */
+export function mcpPublicId(value: string): string | null {
+  return parseToken(value)?.publicId ?? null;
+}
+
 function secretsMatch(received: string, storedHash: string): boolean {
   const receivedBytes = Buffer.from(hashSecret(received));
   const storedBytes = Buffer.from(storedHash);
@@ -78,11 +83,13 @@ export function verifyMcpToken(
     .where(eq(mcpTokens.publicId, parsed.publicId))
     .limit(1)
     .all();
+  const expiresAt =
+    row?.expiresAt === null || row?.expiresAt === undefined ? null : Date.parse(row.expiresAt);
   if (
     !row ||
     !secretsMatch(parsed.secret, row.secretHash) ||
     row.revokedAt !== null ||
-    (row.expiresAt !== null && Date.parse(row.expiresAt) <= now.getTime()) ||
+    (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= now.getTime())) ||
     !auth.users.some((user) => user.username === row.username)
   ) {
     return { ok: false, error: MCP_AUTH_FAILURE };

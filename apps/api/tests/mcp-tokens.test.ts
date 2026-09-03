@@ -109,6 +109,11 @@ describe('mcp token lifecycle', () => {
       label: 'expired',
       expiresAt: '2026-09-02T00:00:00.000Z',
     });
+    const invalidExpiry = issueMcpToken(db, {
+      username: USERNAME,
+      label: 'invalid expiry',
+      expiresAt: 'not-a-timestamp',
+    });
     const offboarded = issueMcpToken(db, { username: USERNAME, label: 'offboarded' });
     revokeMcpToken(db, revoked.row.publicId, new Date('2026-09-03T00:00:00.000Z'));
 
@@ -120,6 +125,7 @@ describe('mcp token lifecycle', () => {
       verifyMcpToken(db, AUTH, unknownId, now),
       verifyMcpToken(db, AUTH, revoked.token, now),
       verifyMcpToken(db, AUTH, expired.token, now),
+      verifyMcpToken(db, AUTH, invalidExpiry.token, now),
       verifyMcpToken(db, { ...AUTH, users: [] }, offboarded.token, now),
     ];
 
