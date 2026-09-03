@@ -253,10 +253,9 @@ per-token counter: the public id is printed in those log lines and by `mcp:revok
 keyed on it let anyone who had read a log refuse the owner's own token for fifteen minutes at a
 time. The secret is 32 CSPRNG bytes — entropy, not a counter, is what makes it unguessable.
 
-Bearer tokens are immune to CSRF. A stolen token can enumerate the whole mirror, including the
-1,666 closed tickets in the measured mirror, and read merchant names, subjects, and Slack/Crisp
-links. It cannot write to HelpDesk, change the board, create a browser session, read a password, or
-read `.env`.
+Bearer tokens are immune to CSRF. A stolen token can enumerate the whole mirror, including closed
+tickets, and read merchant names, subjects, and Slack/Crisp links. It cannot write to HelpDesk,
+change the board, create a browser session, read a password, or read `.env`.
 
 Everyone with a token sees the whole mirror, independently of the board's visible columns. Visibility
 scoping is deferred because the initial token holders are the same teammates who already share the

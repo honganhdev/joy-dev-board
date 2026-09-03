@@ -253,7 +253,7 @@ describe('protected routes', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { blocks: Array<{ kind: string }> };
     expect(body.blocks.length).toBeGreaterThan(0);
-    const kinds = new Set(['h2', 'h3', 'p', 'ul', 'code', 'table']);
+    const kinds = new Set(['h2', 'h3', 'p', 'code', 'table']);
     expect(body.blocks.every((block) => kinds.has(block.kind))).toBe(true);
   });
 

@@ -7,7 +7,7 @@ import type { DocsBlock } from '@/types';
 
 function DocsLoading() {
   return (
-    <div className="mx-auto max-w-4xl space-y-4" aria-busy="true" aria-label="Loading MCP guide">
+    <div className="mx-auto max-w-4xl space-y-4" aria-busy="true" aria-label="Đang tải hướng dẫn MCP">
       <Skeleton className="h-10 w-72 rounded-md" />
       <Skeleton className="h-24 w-full rounded-lg" />
       <Skeleton className="h-56 w-full rounded-lg" />
@@ -21,11 +21,11 @@ function DocsError({ message, onRetry }: { message: string; onRetry: () => void 
     <div className="flex h-full items-center justify-center">
       <div className="max-w-md rounded-lg border border-destructive/30 bg-white p-6 text-center">
         <AlertTriangle className="mx-auto size-6 text-destructive" />
-        <h2 className="mt-3 text-[15px] font-semibold">Could not load the MCP guide</h2>
+        <h2 className="mt-3 text-[15px] font-semibold">Không thể tải hướng dẫn MCP</h2>
         <p className="mt-1.5 text-[13px] break-words text-muted-foreground">{message}</p>
         <Button className="mt-4" size="sm" onClick={onRetry}>
           <RefreshCw />
-          Try again
+          Thử lại
         </Button>
       </div>
     </div>
@@ -44,14 +44,6 @@ function Block({ block }: { block: DocsBlock }) {
       return <h3 className="mt-8 text-lg font-semibold tracking-tight">{block.text}</h3>;
     case 'p':
       return <p className="mt-3 text-[15px] leading-7 text-stone-700">{block.text}</p>;
-    case 'ul':
-      return (
-        <ul className="mt-3 list-disc space-y-2 pl-6 text-[15px] leading-7 text-stone-700">
-          {block.items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      );
     case 'code':
       return (
         <div className="mt-4 max-w-full overflow-x-auto rounded-lg bg-stone-950 p-4 text-stone-100">

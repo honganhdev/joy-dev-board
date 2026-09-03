@@ -71,7 +71,10 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
     }
   }, []);
 
-  const { board, loading, pulling, error, reload, applyBoard, pull } = useBoard(reportPull);
+  const { board, loading, pulling, error, reload, applyBoard, pull } = useBoard(
+    reportPull,
+    view !== 'docs'
+  );
 
   const enabledColumns = useMemo(
     () => board?.extraColumns.map((column) => column.status) ?? [],

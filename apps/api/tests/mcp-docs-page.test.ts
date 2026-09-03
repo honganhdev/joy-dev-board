@@ -63,8 +63,6 @@ function guideProse(): string[] {
 function blockStrings(): string[] {
   return MCP_GUIDE_BLOCKS.flatMap((block) => {
     switch (block.kind) {
-      case 'ul':
-        return [...block.items];
       case 'table':
         return [...block.headers, ...block.rows.flat()];
       default:

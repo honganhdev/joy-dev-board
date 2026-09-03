@@ -19,7 +19,10 @@ function messageFor(cause: unknown): string {
  * a stop, from either path, so a pull that was already running when the page
  * loaded is reported exactly like one the button started.
  */
-export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) {
+export function useBoard(
+  onPullSettled?: (settled: PullSummary | null) => void,
+  active = true
+) {
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
   const [pulling, setPulling] = useState(false);
@@ -29,6 +32,11 @@ export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) 
   // once, whatever the caller does with its callback between renders.
   const reportSettled = useRef(onPullSettled);
   reportSettled.current = onPullSettled;
+
+  // The hook stays mounted while the app shows Docs. Remember a load already
+  // started so returning to Board or Report does not change their refresh
+  // behaviour by fetching a second time.
+  const loadStarted = useRef(false);
 
   /**
    * Writes a board the caller fetched itself.
@@ -90,8 +98,10 @@ export function useBoard(onPullSettled?: (settled: PullSummary | null) => void) 
   }, [refreshBoard]);
 
   useEffect(() => {
+    if (!active || loadStarted.current) return;
+    loadStarted.current = true;
     void load();
-  }, [load]);
+  }, [active, load]);
 
   /** Starts a pull, follows it to a stop, then re-reads the board it wrote. */
   const pull = useCallback(async (): Promise<PullSummary | null> => {
