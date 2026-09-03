@@ -1244,14 +1244,14 @@ describe('range-scoped breakdown readings', () => {
       ticket({ ticketId: 'undated', createdAt: null, doneAt: '2026-08-20T09:00:00+07:00' }),
     ]);
 
-    expect(result.openByPlan.stillOpen.scopeNote).toContain('1 with no readable created date');
-    // Asserted in two fragments on purpose. The joined sentence reads
-    // "1 ticket have ... and are in no reading", whose verbs stay plural in the
-    // singular branch; that wording is production's to settle, so this test
-    // pins the count and the clause without blessing the agreement between them.
-    expect(result.openByPlan.createdInRange.scopeNote).toContain('1 ticket');
+    expect(result.openByPlan.stillOpen.scopeNote).toContain(
+      'Tickets outside this reading include 1 with no readable created date.'
+    );
+    // Asserted as the whole sentence: the singular branch has to read as English,
+    // and the sentence has to stay a partial list ("include") rather than claim
+    // it names everything the reading leaves out.
     expect(result.openByPlan.createdInRange.scopeNote).toContain(
-      'no readable created date'
+      'Tickets in no reading include 1 with no readable created date.'
     );
     expect(result.openByPlan.createdInRange.rows.reduce((total, row) => total + row.count, 0)).toBe(
       1

@@ -1049,7 +1049,7 @@ function openByPlan(
     'Counts Dev Fixing or Dev Done tickets created in the selected range, whatever their status now.' +
     (noCreatedDate === 0
       ? ''
-      : ` ${noCreatedDate} ${noCreatedDate === 1 ? 'ticket' : 'tickets'} have no readable created date and are in no reading.`);
+      : ` Tickets in no reading include ${noCreatedDate} with no readable created date.`);
   const outside = [
     openCreatedBeforeRange === 0
       ? null
@@ -1060,7 +1060,9 @@ function openByPlan(
   ].filter(Boolean);
   const openScopeNote =
     'Counts Dev Fixing or Dev Done tickets created in the selected range that are still open.' +
-    (outside.length === 0 ? '' : ` ${outside.join(' and ')} sit outside this reading.`);
+    (outside.length === 0
+      ? ''
+      : ` Tickets outside this reading include ${outside.join(' and ')}.`);
 
   return {
     createdInRange: reading(
@@ -1147,7 +1149,7 @@ function openByMerchant(
     'Counts Dev Fixing or Dev Done tickets created in the selected range, whatever their status now.' +
     (noCreatedDate === 0
       ? ''
-      : ` ${noCreatedDate} ${noCreatedDate === 1 ? 'ticket' : 'tickets'} have no readable created date and are in no reading.`);
+      : ` Tickets in no reading include ${noCreatedDate} with no readable created date.`);
   const outside = [
     openCreatedBeforeRange === 0
       ? null
@@ -1158,7 +1160,9 @@ function openByMerchant(
   ].filter(Boolean);
   const openScopeNote =
     'Counts Dev Fixing or Dev Done tickets created in the selected range that are still open.' +
-    (outside.length === 0 ? '' : ` ${outside.join(' and ')} sit outside this reading.`);
+    (outside.length === 0
+      ? ''
+      : ` Tickets outside this reading include ${outside.join(' and ')}.`);
 
   return {
     createdInRange: reading(

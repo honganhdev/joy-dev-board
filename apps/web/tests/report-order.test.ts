@@ -15,7 +15,6 @@ test('keeps report panels inside their approved time-scope bands', () => {
     'title={report.rangeComparison.title}',
     '<WeekColumns',
     '<DurationHistogram',
-    '\n        <OpenBreakdown',
     'title={report.openSectionTitle}',
     'title={report.dayComparison.title}',
     'title={report.devFixOpenRightNowLabel}',
@@ -23,8 +22,28 @@ test('keeps report panels inside their approved time-scope bands', () => {
   ];
   const positions = markers.map((marker) => source.indexOf(marker));
 
-  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(markers.filter((_, index) => positions[index] < 0)).toEqual([]);
   expect(positions).toEqual([...positions].sort((a, b) => a - b));
+
+  // A single ordered marker would only ever pin the first panel, so the merchant
+  // one could slide below the live divider alone and leave the order intact.
+  // Both have to sit between the histogram and the divider that opens the live
+  // band. The lookahead keeps the `OpenBreakdownScope` type argument, which sits
+  // far above in the state hook, from being read as a third panel.
+  const panels = ['plan panel', 'merchant panel'];
+  const openings = [...source.matchAll(/<OpenBreakdown(?![A-Za-z])/g)].map(
+    (match) => match.index ?? -1
+  );
+  const rangeBandStart = source.indexOf('<DurationHistogram');
+  const liveBandStart = source.indexOf('title={report.openSectionTitle}');
+
+  expect(openings).toHaveLength(panels.length);
+  expect(
+    openings
+      .map((position, index) => ({ panel: panels[index] ?? `panel ${index + 1}`, position }))
+      .filter(({ position }) => position < rangeBandStart || position > liveBandStart)
+      .map(({ panel }) => panel)
+  ).toEqual([]);
   expect(source.match(/<RangePicker/g)).toHaveLength(1);
   expect(source).not.toMatch(/<div className="px-1">\s*<RangePicker/);
   expect(source.match(/scope=\{openScope\}/g)).toHaveLength(2);
