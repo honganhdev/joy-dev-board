@@ -1,4 +1,4 @@
-import { directionGlyph } from './direction';
+import { directionGlyph, valenceTextClass } from './direction';
 
 /**
  * Every figure on the page is 32px. The one exception is the live band's pair —
@@ -22,6 +22,7 @@ type ComparisonFigureProps = {
   magnitudeLabel: string | null;
   changeLabel: string | null;
   percentLabel: string | null;
+  valence?: 'riseIsBad' | 'riseIsGood';
   unavailableNote: string | null;
   /** `againstLevel` only where a level sits beside this card — the live band. */
   size?: keyof typeof FIGURE_SIZE;
@@ -35,6 +36,7 @@ export function ComparisonFigure({
   magnitudeLabel,
   changeLabel,
   percentLabel,
+  valence,
   unavailableNote,
   size = 'page',
 }: ComparisonFigureProps) {
@@ -59,7 +61,14 @@ export function ComparisonFigure({
           unavailableNote
         ) : (
           <>
-            {emphasis && <span className="font-semibold">{emphasis}</span>}
+            {/* The standalone figure colours glyph and magnitude only. Its
+                muted percentage tail remains a supporting number rather than
+                competing with the figure for the reader's eye. */}
+            {emphasis && (
+              <span className={`font-semibold ${valenceTextClass(delta, valence)}`}>
+                {emphasis}
+              </span>
+            )}
             {emphasis && detail && ' '}
             {detail}
             {percentLabel !== null && (

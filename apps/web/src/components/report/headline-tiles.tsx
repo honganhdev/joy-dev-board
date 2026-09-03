@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { directionGlyph } from './direction';
+import { directionGlyph, valencePillClass } from './direction';
 import type { WeekSummary } from '@/types';
 
 type HeadlineTilesProps = {
@@ -64,7 +64,16 @@ export function HeadlineTiles({
       <Tile label={week.tileLabels.created}>
         <p className="mt-1 text-[32px] leading-none font-semibold tabular-nums">{week.created}</p>
         {createdChange && (
-          <p className="mt-1 inline-flex rounded-full bg-stone-100 px-2 py-0.5 text-[11px] leading-snug tabular-nums text-stone-700">
+          // `brief.md` done-mean #1 was amended by the user: a delta that stands
+          // alone is coloured; one repeated down a column stays grey. This pill
+          // tints whole because `createdChange` is one joined phrase. Splitting
+          // it to tint half would rewrite the phrase, not decide its colour.
+          <p
+            className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] leading-snug tabular-nums ${valencePillClass(
+              week.createdComparison.delta,
+              week.createdComparison.valence
+            )}`}
+          >
             {createdChange}
           </p>
         )}
