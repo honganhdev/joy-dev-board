@@ -11,7 +11,7 @@ import { PairedBars, type PairedRow } from './paired-bars';
 import { OpenBreakdown, type OpenBreakdownScope } from './open-breakdown';
 import { Panel } from './panel';
 import { RangePicker, withheldNoteId } from './range-picker';
-import { ResolutionClocks } from './resolution-clocks';
+import { ResolutionClocks, type ResolutionClock } from './resolution-clocks';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
 import { WeeklySpeed } from './weekly-speed';
@@ -77,6 +77,7 @@ export function ReportView({
   const { report, loading, error, setWeeks, reload } = useWeeklyReport(pullToken);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [openScope, setOpenScope] = useState<OpenBreakdownScope>('createdInRange');
+  const [resolutionClock, setResolutionClock] = useState<ResolutionClock>('csReply');
 
   /**
    * Where the reader was when they clicked a range. The skeleton is shorter
@@ -297,7 +298,11 @@ export function ReportView({
         note={<p>{report.resolutionClocks.scopeRule}</p>}
       />
 
-      <ResolutionClocks data={report.resolutionClocks} />
+      <ResolutionClocks
+        data={report.resolutionClocks}
+        clock={resolutionClock}
+        onClockChange={setResolutionClock}
+      />
     </div>
   );
 }

@@ -218,6 +218,8 @@ export type ResolutionClockGroup = {
   sampleNote: string;
   /** One count per `bucketLabels` entry — same length, same order. */
   buckets: number[];
+  /** 0–100 widths from bucket shares against the largest share across both cohorts. */
+  barWidths: number[];
 };
 
 export type ResolutionClockPanel = {

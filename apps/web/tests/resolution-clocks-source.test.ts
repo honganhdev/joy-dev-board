@@ -5,17 +5,40 @@ const source = readFileSync(
   new URL('../src/components/report/resolution-clocks.tsx', import.meta.url),
   'utf8'
 );
+const reportViewSource = readFileSync(
+  new URL('../src/components/report/report-view.tsx', import.meta.url),
+  'utf8'
+);
 
 test('builds no Tailwind class name at runtime', () => {
   expect(source).not.toMatch(/-\[[^\]]*\$\{/);
   expect(source).not.toMatch(/[a-z]-\$\{/);
 });
 
-test('draws both cohorts off one shared scale', () => {
-  expect(source.match(/const scale =/g)).toHaveLength(1);
+test('draws both cohorts from the server-computed shared scale', () => {
+  expect(source).not.toContain('const scale =');
   const widths = source.match(/style=\{\{ width: `\$\{[^`]*\}%` \}\}/g) ?? [];
   expect(widths).toHaveLength(2);
-  expect(widths.every((width) => width.includes('/ scale'))).toBe(true);
+  expect(widths[0]).toContain('doneWidth');
+  expect(widths[1]).toContain('devDoneWidth');
+  expect(source).toContain('panel.done.barWidths[index]');
+  expect(source).toContain('panel.devDone.barWidths[index]');
+  expect(widths.every((width) => !width.includes('/'))).toBe(true);
+});
+
+test('keeps the selected clock above the range-remounted band', () => {
+  expect(reportViewSource).toContain(
+    "const [resolutionClock, setResolutionClock] = useState<ResolutionClock>('csReply')"
+  );
+  expect(reportViewSource).toMatch(
+    /<ResolutionClocks\s+data=\{report\.resolutionClocks\}\s+clock=\{resolutionClock\}\s+onClockChange=\{setResolutionClock\}\s+\/>/
+  );
+  expect(source).not.toContain('useState');
+  expect(source).toMatch(/onClick=\{\(\) => onClockChange\(option\)\}/);
+});
+
+test('caps the percentage label gutter at a static width', () => {
+  expect(source).toContain('className="w-[24%] max-w-40 shrink-0 text-[12px]"');
 });
 
 test('scores nothing', () => {

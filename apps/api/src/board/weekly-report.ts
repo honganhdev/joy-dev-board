@@ -629,9 +629,16 @@ function percentOf(part: number, whole: number): number {
 /** The two lifetime issue-resolution clocks, over every dated ticket. */
 function resolutionClocks(counted: Counted[]): ResolutionClocks {
   const doneCount = counted.filter((ticket) => ticket.doneMs !== null).length;
-  const sampleNote = (sampleSize: number, medianHours: number | null) =>
+  const sampleNote = (
+    sampleSize: number,
+    medianHours: number | null,
+    smallSample = false
+  ) =>
     `${sampleSize} ${sampleSize === 1 ? 'ticket' : 'tickets'} · ` +
-    (medianHours === null ? NO_MEDIAN_LABEL : `median ${medianHours} h`);
+    (medianHours === null ? NO_MEDIAN_LABEL : `median ${medianHours} h`) +
+    (smallSample
+      ? ' · small sample within the dated mirror; read this distribution cautiously.'
+      : '');
 
   const panel = (
     key: 'csReplyMs' | 'customerOkMs',
@@ -660,14 +667,30 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
         const index = CLOCK_BUCKETS.findIndex((bucket) => duration <= bucket.maxMs);
         if (index >= 0) buckets[index] = (buckets[index] ?? 0) + 1;
       }
+      const smallSample =
+        values.length > 0 &&
+        values.length * 100 < counted.length * PERCENT_BASELINE_FLOOR;
       return {
         label,
         sampleSize: values.length,
         medianHours: groupMedianHours,
-        sampleNote: sampleNote(values.length, groupMedianHours),
+        sampleNote: sampleNote(values.length, groupMedianHours, smallSample),
         buckets,
       };
     };
+    const done = group('done', 'Done');
+    const devDone = group('dev_done', 'Dev Done');
+    const shares = (cohort: typeof done) =>
+      cohort.buckets.map((count) =>
+        cohort.sampleSize === 0 ? 0 : count / cohort.sampleSize
+      );
+    const doneShares = shares(done);
+    const devDoneShares = shares(devDone);
+    const sharedMaxShare = Math.max(0, ...doneShares, ...devDoneShares);
+    const barWidths = (bucketShares: number[]) =>
+      bucketShares.map((share) =>
+        sharedMaxShare === 0 ? 0 : (share / sharedMaxShare) * 100
+      );
     const otherStatusCount = measured.filter(
       (ticket) => ticket.status !== 'done' && ticket.status !== 'dev_done'
     ).length;
@@ -691,8 +714,8 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
         otherStatusCount === 0
           ? null
           : `${otherStatusCount} measured ${otherStatusCount === 1 ? 'ticket carries' : 'tickets carry'} another HelpDesk status and ${otherStatusCount === 1 ? 'is' : 'are'} in neither row above.`,
-      done: group('done', 'Done'),
-      devDone: group('dev_done', 'Dev Done'),
+      done: { ...done, barWidths: barWidths(doneShares) },
+      devDone: { ...devDone, barWidths: barWidths(devDoneShares) },
     };
   };
 
@@ -702,7 +725,7 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
     scopeRule:
       'HelpDesk computes these two clocks over each ticket\'s whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.',
     scaleNote:
-      "The two rows share one scale, so a bar's length compares how many tickets landed in that row. How fast each cohort was is in the median beside its name, not in the bar lengths.",
+      "Each bar shows that bucket's percentage share of its own cohort. The largest share across both cohorts fills the track and every bar uses that same scale; ticket counts stay beside the bars.",
     bucketLabels: CLOCK_BUCKETS.map((bucket) => bucket.label),
     clockLabels: { csReply: 'CS reply', customerOk: 'Customer OK' },
     csReply: panel(

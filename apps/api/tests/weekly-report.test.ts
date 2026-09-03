@@ -2717,6 +2717,64 @@ describe('the resolution clocks', () => {
     expect(three.sampleNote).toBe('3 tickets · median 2 h');
   });
 
+  test('gives equal shares equal bar widths across very different cohort sizes', () => {
+    const panel = report([
+      ...Array.from({ length: 60 }, (_, index) =>
+        measured(`done-early-${index}`, 'done', HOUR, HOUR)
+      ),
+      ...Array.from({ length: 20 }, (_, index) =>
+        measured(`done-middle-${index}`, 'done', 2 * HOUR, 2 * HOUR)
+      ),
+      ...Array.from({ length: 20 }, (_, index) =>
+        measured(`done-later-${index}`, 'done', 8 * HOUR, 8 * HOUR)
+      ),
+      ...Array.from({ length: 2 }, (_, index) =>
+        measured(`dev-middle-${index}`, 'dev_done', 2 * HOUR, 2 * HOUR)
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        measured(`dev-later-${index}`, 'dev_done', 8 * HOUR, 8 * HOUR)
+      ),
+      ...Array.from({ length: 5 }, (_, index) =>
+        measured(`dev-latest-${index}`, 'dev_done', 24 * HOUR, 24 * HOUR)
+      ),
+    ]).resolutionClocks.csReply;
+
+    expect(panel.done.sampleSize).toBe(100);
+    expect(panel.devDone.sampleSize).toBe(10);
+    expect(panel.done.barWidths[1]).toBe(panel.devDone.barWidths[1]);
+    expect(Math.max(...panel.done.barWidths)).toBe(100);
+    expect(Math.max(...panel.devDone.barWidths)).toBeCloseTo(83.33, 2);
+  });
+
+  test('draws an empty cohort at zero without dividing by zero', () => {
+    const panel = report([
+      measured('done-a', 'done', HOUR, HOUR),
+      measured('done-b', 'done', 2 * HOUR, 2 * HOUR),
+      measured('done-c', 'done', 3 * HOUR, 3 * HOUR),
+    ]).resolutionClocks.csReply;
+
+    expect(panel.devDone.sampleSize).toBe(0);
+    expect(panel.devDone.barWidths).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect(panel.devDone.barWidths.every(Number.isFinite)).toBe(true);
+  });
+
+  test('cautions only a cohort below the existing five-percent floor', () => {
+    const panel = report([
+      measured('done-a', 'done', HOUR, HOUR),
+      measured('done-b', 'done', 2 * HOUR, 2 * HOUR),
+      measured('done-c', 'done', 3 * HOUR, 3 * HOUR),
+      measured('thin-dev', 'dev_done', 4 * HOUR, 4 * HOUR),
+      ...Array.from({ length: 20 }, (_, index) =>
+        ticket({ ticketId: `unmeasured-${index}` })
+      ),
+    ]).resolutionClocks.csReply;
+
+    expect(panel.done.sampleNote).toBe('3 tickets · median 2 h');
+    expect(panel.devDone.sampleNote).toBe(
+      '1 ticket · no median · small sample within the dated mirror; read this distribution cautiously.'
+    );
+  });
+
   test('returns every clock key and safe zero percentages for an empty mirror', () => {
     const emptyGroup = {
       label: 'Done',
@@ -2724,6 +2782,7 @@ describe('the resolution clocks', () => {
       medianHours: null,
       sampleNote: '0 tickets · no median',
       buckets: [0, 0, 0, 0, 0, 0, 0],
+      barWidths: [0, 0, 0, 0, 0, 0, 0],
     };
     const panel = (caption: string) => ({
       caption,
@@ -2746,7 +2805,7 @@ describe('the resolution clocks', () => {
       scopeRule:
         "HelpDesk computes these two clocks over each ticket's whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.",
       scaleNote:
-        "The two rows share one scale, so a bar's length compares how many tickets landed in that row. How fast each cohort was is in the median beside its name, not in the bar lengths.",
+        "Each bar shows that bucket's percentage share of its own cohort. The largest share across both cohorts fills the track and every bar uses that same scale; ticket counts stay beside the bars.",
       bucketLabels: [
         '≤ 1h',
         '> 1h, ≤ 4h',

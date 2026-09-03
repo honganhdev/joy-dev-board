@@ -1,12 +1,18 @@
-import { useState } from 'react';
 import type { ResolutionClocks as ResolutionClocksData } from '../../types';
 import { Legend, Panel } from './panel';
 
-export function ResolutionClocks({ data }: { data: ResolutionClocksData }) {
-  // Local state is enough because no other panel consumes this choice.
-  const [clock, setClock] = useState<'csReply' | 'customerOk'>('csReply');
+export type ResolutionClock = keyof ResolutionClocksData['clockLabels'];
+
+export function ResolutionClocks({
+  data,
+  clock,
+  onClockChange,
+}: {
+  data: ResolutionClocksData;
+  clock: ResolutionClock;
+  onClockChange: (clock: ResolutionClock) => void;
+}) {
   const panel = data[clock];
-  const scale = Math.max(1, ...panel.done.buckets, ...panel.devDone.buckets);
   const buttonClass = (selected: boolean) =>
     `rounded-md border px-2 py-1 text-[10px] focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:outline-none ${
       selected
@@ -24,7 +30,7 @@ export function ResolutionClocks({ data }: { data: ResolutionClocksData }) {
               key={option}
               type="button"
               aria-pressed={clock === option}
-              onClick={() => setClock(option)}
+              onClick={() => onClockChange(option)}
               className={buttonClass(clock === option)}
             >
               {data.clockLabels[option]}
@@ -52,15 +58,17 @@ export function ResolutionClocks({ data }: { data: ResolutionClocksData }) {
         {data.bucketLabels.map((label, index) => {
           const doneCount = panel.done.buckets[index] ?? 0;
           const devDoneCount = panel.devDone.buckets[index] ?? 0;
+          const doneWidth = panel.done.barWidths[index] ?? 0;
+          const devDoneWidth = panel.devDone.barWidths[index] ?? 0;
           return (
             <li key={label} className="flex items-center gap-2">
-              <span className="w-[24%] shrink-0 text-[12px]">{label}</span>
+              <span className="w-[24%] max-w-40 shrink-0 text-[12px]">{label}</span>
 
               <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 <span className="h-2.5 min-w-0 flex-1">
                   <span
                     className="block h-full rounded-[2px] bg-stone-500"
-                    style={{ width: `${(doneCount / scale) * 100}%` }}
+                    style={{ width: `${doneWidth}%` }}
                   />
                 </span>
                 <span className="w-7 shrink-0 text-right text-[11px] tabular-nums">
@@ -72,7 +80,7 @@ export function ResolutionClocks({ data }: { data: ResolutionClocksData }) {
                 <span className="h-2.5 min-w-0 flex-1">
                   <span
                     className="block h-full rounded-[2px] bg-stone-500 opacity-40"
-                    style={{ width: `${(devDoneCount / scale) * 100}%` }}
+                    style={{ width: `${devDoneWidth}%` }}
                   />
                 </span>
                 <span className="w-7 shrink-0 text-right text-[11px] tabular-nums">
