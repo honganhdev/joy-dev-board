@@ -1146,13 +1146,16 @@ function openByFeature(
       const doneSample = metric.daysToDone.length;
       const medianDaysToDone =
         doneSample < 3 ? null : median(metric.daysToDone.sort((a, b) => a - b));
-      const comparison = compareCreated(
-        counted.filter((ticket) => ticket.category === key),
-        rangeStartMs,
-        comparisonEndMs,
-        comparisonPeriodMs,
-        horizon
-      );
+      const comparison = {
+        ...compareCreated(
+          counted.filter((ticket) => ticket.category === key),
+          rangeStartMs,
+          comparisonEndMs,
+          comparisonPeriodMs,
+          horizon
+        ),
+        valence: 'riseIsBad' as const,
+      };
       return {
         key,
         label: key,
@@ -1412,13 +1415,10 @@ export function aggregateWeeklyReport(
     });
     const daysHighlight = inProgress ? null : describeDays(days, created, done);
     const elapsedDay = inProgress ? Math.min(6, Math.floor((nowMs - startMs) / DAY_MS)) : null;
-    const createdComparison = compareCreated(
-      bugs,
-      startMs,
-      Math.min(endMs, nowMs),
-      WEEK_MS,
-      horizon
-    );
+    const createdComparison = {
+      ...compareCreated(bugs, startMs, Math.min(endMs, nowMs), WEEK_MS, horizon),
+      valence: 'riseIsBad' as const,
+    };
     const daysNote = (() => {
       if (!inProgress) return null;
 
@@ -1522,6 +1522,7 @@ export function aggregateWeeklyReport(
     timeToFirstDone: timeToFirstDone(bugs, rangeStartMs, rangeEndMs),
     dayComparison: {
       ...dayComparison,
+      valence: 'riseIsBad',
       title: DAY_COMPARISON_TITLE,
       caption: DAY_COMPARISON_CAPTION,
       currentLabel: 'created today',
@@ -1531,6 +1532,7 @@ export function aggregateWeeklyReport(
     },
     rangeComparison: {
       ...rangeComparison,
+      valence: 'riseIsBad',
       title: RANGE_COMPARISON_TITLE,
       caption: RANGE_COMPARISON_CAPTION,
       currentLabel: 'created in this range',

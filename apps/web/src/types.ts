@@ -102,6 +102,12 @@ export type Comparison = {
   delta: number | null;
   magnitudeLabel: string | null;
   percentLabel: string | null;
+  /**
+   * What a rise in this measure means, so the page can colour direction rather
+   * than sign. Absent renders neutral: a comparison added without a decision
+   * looks exactly as this page looks today.
+   */
+  valence?: 'riseIsBad' | 'riseIsGood';
 };
 
 export type WeekSummary = {

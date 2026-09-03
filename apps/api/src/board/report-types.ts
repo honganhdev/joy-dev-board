@@ -18,6 +18,12 @@ export type Comparison = {
   magnitudeLabel: string | null;
   /** e.g. `+29%`; `null` whenever the percentage is not earned and when delta is 0. */
   percentLabel: string | null;
+  /**
+   * What a rise in this measure means, so the page can colour direction rather
+   * than sign. Absent renders neutral: a comparison added without a decision
+   * looks exactly as this page looks today.
+   */
+  valence?: 'riseIsBad' | 'riseIsGood';
 };
 
 export type WeekSummary = {
