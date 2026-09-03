@@ -2594,6 +2594,26 @@ describe('what the weekly speed sample leaves out', () => {
   });
 });
 
+describe('comparison direction declarations', () => {
+  test('declares the direction on all four comparison paths', () => {
+    const result = aggregateWeeklyReport(loadFixtureTickets(), { weeks: 52, now: NOW, year: YEAR });
+
+    // Four paths, listed rather than walked. A structural walk earns its keep
+    // the first time a fifth comparison path is added to this payload — at that
+    // moment this list stops being an inventory and starts being a thing someone
+    // forgets to extend. Until then it catches the same regression on every site
+    // that exists, for four lines.
+    expect(result.rangeComparison.valence).toBe('riseIsBad');
+    expect(result.dayComparison.valence).toBe('riseIsBad');
+    expect(result.weeks.length).toBeGreaterThan(0);
+    expect(result.weeks.every((week) => week.createdComparison.valence === 'riseIsBad')).toBe(true);
+    expect(result.openByFeature.rows.length).toBeGreaterThan(0);
+    expect(result.openByFeature.rows.every((row) => row.comparison.valence === 'riseIsBad')).toBe(
+      true
+    );
+  });
+});
+
 describe('the all-open panels over the real fixture', () => {
   test('accounts for every open ticket in every panel', () => {
     // Derived from the fixture, never hardcoded: `bun run fixture:pull` replaces
