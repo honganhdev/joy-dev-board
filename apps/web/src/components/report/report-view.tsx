@@ -8,7 +8,7 @@ import { DurationHistogram } from './duration-histogram';
 import { FeatureBreakdown } from './feature-breakdown';
 import { HeadlineTiles } from './headline-tiles';
 import { PairedBars, type PairedRow } from './paired-bars';
-import { OpenBreakdown } from './open-breakdown';
+import { OpenBreakdown, type OpenBreakdownScope } from './open-breakdown';
 import { Panel } from './panel';
 import { RangePicker, withheldNoteId } from './range-picker';
 import { SectionDivider } from './section-divider';
@@ -75,6 +75,7 @@ export function ReportView({
 }) {
   const { report, loading, error, setWeeks, reload } = useWeeklyReport(pullToken);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [openScope, setOpenScope] = useState<OpenBreakdownScope>('createdInRange');
 
   /**
    * Where the reader was when they clicked a range. The skeleton is shorter
@@ -256,13 +257,26 @@ export function ReportView({
       <div className="flex gap-3">
         <OpenBreakdown
           title="By service plan"
-          rows={report.openByPlan.rows}
-          notes={[report.openByPlan.freeNote]}
+          rows={report.openByPlan[openScope].rows}
+          notes={[
+            report.openByPlan[openScope].freeNote,
+            report.openByPlan[openScope].scopeNote,
+          ]}
+          scope={openScope}
+          scopeLabels={report.openBreakdown.scopeLabels}
+          onScopeChange={setOpenScope}
         />
         <OpenBreakdown
           title="By merchant"
-          rows={report.openByMerchant.rows}
-          notes={[report.openByMerchant.concentrationNote, report.openByMerchant.tailNote]}
+          rows={report.openByMerchant[openScope].rows}
+          notes={[
+            report.openByMerchant[openScope].concentrationNote,
+            report.openByMerchant[openScope].tailNote,
+            report.openByMerchant[openScope].scopeNote,
+          ]}
+          scope={openScope}
+          scopeLabels={report.openBreakdown.scopeLabels}
+          onScopeChange={setOpenScope}
         />
       </div>
 
