@@ -197,6 +197,20 @@ export type TimeToFirstDone = {
   caption: string;
 };
 
+export type PlanReading = {
+  rows: Array<{ key: string; label: string; count: number }>;
+  freeNote: string | null;
+  scopeNote: string;
+};
+
+export type MerchantReading = {
+  rows: Array<{ key: string; label: string; count: number }>;
+  concentrationNote: string;
+  tailNote: string | null;
+  tailCount: number;
+  scopeNote: string;
+};
+
 export type WeeklyReport = {
   /** Weeks in the selected range, oldest first. Drives every panel. */
   weeks: WeekSummary[];
@@ -294,19 +308,22 @@ export type WeeklyReport = {
   };
   /** Server-worded heading for the absolute all-open section. */
   openSectionTitle: string;
-  /** Open Dev Fixing or Dev Done tickets by plan; absent values are a named row. */
-  openByPlan: {
-    rows: Array<{ key: string; label: string; count: number }>;
-    /** Names the literal `free` row, or `null` when it is absent. */
-    freeNote: string | null;
+  /**
+   * Both breakdown panels read one population — Dev Fixing or Dev Done tickets
+   * created in the selected range — under two readings, and the control that
+   * chooses between them is shared, so the two panels always answer the same
+   * question.
+   */
+  openBreakdown: {
+    scopeLabels: { createdInRange: string; stillOpen: string };
   };
-  /** Open Dev Fixing or Dev Done tickets for the busiest named merchants. */
+  openByPlan: {
+    createdInRange: PlanReading;
+    stillOpen: PlanReading;
+  };
   openByMerchant: {
-    rows: Array<{ key: string; label: string; count: number }>;
-    concentrationNote: string;
-    tailNote: string | null;
-    /** Tickets held by named merchants outside the five displayed rows. */
-    tailCount: number;
+    createdInRange: MerchantReading;
+    stillOpen: MerchantReading;
   };
   /**
    * One row per feature present in either scope. Open-age figures are absolute;

@@ -106,6 +106,10 @@ const DAY_SPLIT_MODE_LABELS = {
   category: 'By category',
   status: 'By status today',
 };
+const OPEN_BREAKDOWN_SCOPE_LABELS = {
+  createdInRange: 'Created in range',
+  stillOpen: 'Still open',
+} as const;
 /** The two cohorts, named once here so the browser composes neither word. */
 const DAY_SPLIT_COHORT_LABELS = { created: 'created', done: 'done' };
 /** The hatched region under the status split, named for the key beside it. */
@@ -998,71 +1002,175 @@ function openSectionTitle(
   );
 }
 
-function openByPlan(open: HelpDeskTicket[]): WeeklyReport['openByPlan'] {
-  const counts = new Map<string, number>();
-  for (const ticket of open) {
-    const key = isPresent(ticket.appPlan) ? ticket.appPlan.trim() : NO_PLAN;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
+function openByPlan(
+  bugs: Counted[],
+  rangeStartMs: number,
+  nowMs: number
+): WeeklyReport['openByPlan'] {
+  const inRange = (ticket: Counted) =>
+    ticket.createdMs !== null && ticket.createdMs >= rangeStartMs && ticket.createdMs < nowMs;
+  const noCreatedDate = bugs.filter((ticket) => ticket.createdMs === null).length;
+  const openNoCreatedDate = bugs.filter(
+    (ticket) => ticket.isOpen && ticket.createdMs === null
+  ).length;
+  const openCreatedBeforeRange = bugs.filter(
+    (ticket) =>
+      ticket.isOpen && ticket.createdMs !== null && ticket.createdMs < rangeStartMs
+  ).length;
+  const createdInRange = bugs.filter(inRange);
+  const stillOpen = bugs.filter((ticket) => ticket.isOpen && inRange(ticket));
 
-  const rows = [...counts.entries()]
-    .sort((a, b) => {
-      if (a[0] === NO_PLAN) return 1;
-      if (b[0] === NO_PLAN) return -1;
-      return b[1] - a[1] || a[0].localeCompare(b[0]);
-    })
-    .map(([key, count]) => ({ key, label: planLabel(key), count }));
-  const free = rows.find((row) => row.key === 'free');
+  const reading = (
+    tickets: Counted[],
+    scopeClause: string,
+    scopeNote: string
+  ) => {
+    const counts = new Map<string, number>();
+    for (const ticket of tickets) counts.set(ticket.plan, (counts.get(ticket.plan) ?? 0) + 1);
+    const rows = [...counts.entries()]
+      .sort((a, b) => {
+        if (a[0] === NO_PLAN) return 1;
+        if (b[0] === NO_PLAN) return -1;
+        return b[1] - a[1] || a[0].localeCompare(b[0]);
+      })
+      .map(([key, count]) => ({ key, label: planLabel(key), count }));
+    const free = rows.find((row) => row.key === 'free');
+
+    return {
+      rows,
+      freeNote: free
+        ? `Free accounts hold ${free.count} of ${tickets.length} Dev Fixing or Dev Done ${tickets.length === 1 ? 'ticket' : 'tickets'} ${scopeClause}.`
+        : null,
+      scopeNote,
+    };
+  };
+
+  const createdScopeNote =
+    'Counts Dev Fixing or Dev Done tickets created in the selected range, whatever their status now.' +
+    (noCreatedDate === 0
+      ? ''
+      : ` ${noCreatedDate} ${noCreatedDate === 1 ? 'ticket' : 'tickets'} have no readable created date and are in no reading.`);
+  const outside = [
+    openCreatedBeforeRange === 0
+      ? null
+      : `${openCreatedBeforeRange} open ${openCreatedBeforeRange === 1 ? 'ticket' : 'tickets'} created before the range`,
+    openNoCreatedDate === 0
+      ? null
+      : `${openNoCreatedDate} with no readable created date`,
+  ].filter(Boolean);
+  const openScopeNote =
+    'Counts Dev Fixing or Dev Done tickets created in the selected range that are still open.' +
+    (outside.length === 0 ? '' : ` ${outside.join(' and ')} sit outside this reading.`);
 
   return {
-    rows,
-    freeNote: free
-      ? `Free accounts hold ${free.count} of ${open.length} open Dev Fixing or Dev Done ${open.length === 1 ? 'ticket' : 'tickets'} right now.`
-      : null,
+    createdInRange: reading(
+      createdInRange,
+      'created in the selected range',
+      createdScopeNote
+    ),
+    stillOpen: reading(
+      stillOpen,
+      'created in the selected range and still open',
+      openScopeNote
+    ),
   };
 }
 
-function openByMerchant(open: HelpDeskTicket[]): WeeklyReport['openByMerchant'] {
-  const groups = new Map<string, { label: string; count: number }>();
-  for (const ticket of open) {
-    const name = merchantName(ticket);
-    const group = groups.get(merchantKey(name));
-    // The label is the first spelling seen, so the row shows a spelling that
-    // exists in the data rather than a folded key nobody writes.
-    if (group) group.count += 1;
-    else groups.set(merchantKey(name), { label: name, count: 1 });
-  }
+function openByMerchant(
+  bugs: Counted[],
+  rangeStartMs: number,
+  nowMs: number
+): WeeklyReport['openByMerchant'] {
+  const inRange = (ticket: Counted) =>
+    ticket.createdMs !== null && ticket.createdMs >= rangeStartMs && ticket.createdMs < nowMs;
+  const noCreatedDate = bugs.filter((ticket) => ticket.createdMs === null).length;
+  const openNoCreatedDate = bugs.filter(
+    (ticket) => ticket.isOpen && ticket.createdMs === null
+  ).length;
+  const openCreatedBeforeRange = bugs.filter(
+    (ticket) =>
+      ticket.isOpen && ticket.createdMs !== null && ticket.createdMs < rangeStartMs
+  ).length;
+  const createdInRange = bugs.filter(inRange);
+  const stillOpen = bugs.filter((ticket) => ticket.isOpen && inRange(ticket));
 
-  const noMerchantKey = merchantKey(NO_MERCHANT);
-  const noMerchant = groups.get(noMerchantKey)?.count ?? 0;
-  const named = [...groups.entries()]
-    .filter(([key]) => key !== noMerchantKey)
-    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
-  const busiest = named.slice(0, 5);
-  const tail = named.slice(5);
-  const busiestCount = busiest.reduce((total, [, group]) => total + group.count, 0);
-  const tailCount = tail.reduce((total, [, group]) => total + group.count, 0);
-  const percentage = open.length === 0 ? 0 : Math.round((busiestCount / open.length) * 100);
-  const rows = busiest.map(([key, group]) => ({ key, label: group.label, count: group.count }));
-  if (noMerchant > 0) rows.push({ key: NO_MERCHANT, label: NO_MERCHANT, count: noMerchant });
+  const reading = (
+    tickets: Counted[],
+    scopeClause: string,
+    scopeNote: string
+  ) => {
+    const groups = new Map<string, { label: string; count: number }>();
+    for (const ticket of tickets) {
+      const name = ticket.merchant;
+      const group = groups.get(merchantKey(name));
+      // The label is the first spelling seen, so the row shows a spelling that
+      // exists in the scoped data rather than a folded key nobody writes.
+      if (group) group.count += 1;
+      else groups.set(merchantKey(name), { label: name, count: 1 });
+    }
 
-  let concentrationNote: string;
-  if (busiest.length === 0) {
-    concentrationNote = 'No named merchant holds an open Dev Fixing or Dev Done ticket right now.';
-  } else if (busiest.length === 1) {
-    concentrationNote = `The busiest merchant holds ${busiestCount} of ${open.length} open Dev Fixing or Dev Done ${open.length === 1 ? 'ticket' : 'tickets'} right now (${percentage}%).`;
-  } else {
-    concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${open.length} open Dev Fixing or Dev Done tickets right now (${percentage}%).`;
-  }
+    const noMerchantKey = merchantKey(NO_MERCHANT);
+    const noMerchant = groups.get(noMerchantKey)?.count ?? 0;
+    const named = [...groups.entries()]
+      .filter(([key]) => key !== noMerchantKey)
+      .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
+    const busiest = named.slice(0, 5);
+    const tail = named.slice(5);
+    const busiestCount = busiest.reduce((total, [, group]) => total + group.count, 0);
+    const tailCount = tail.reduce((total, [, group]) => total + group.count, 0);
+    const percentage = tickets.length === 0 ? 0 : Math.round((busiestCount / tickets.length) * 100);
+    const rows = busiest.map(([key, group]) => ({ key, label: group.label, count: group.count }));
+    if (noMerchant > 0) rows.push({ key: NO_MERCHANT, label: NO_MERCHANT, count: noMerchant });
+
+    let concentrationNote: string;
+    if (busiest.length === 0) {
+      concentrationNote = `No named merchant holds a Dev Fixing or Dev Done ticket ${scopeClause}.`;
+    } else if (busiest.length === 1) {
+      concentrationNote = `The busiest merchant holds ${busiestCount} of ${tickets.length} Dev Fixing or Dev Done ${tickets.length === 1 ? 'ticket' : 'tickets'} ${scopeClause} (${percentage}%).`;
+    } else {
+      concentrationNote = `The ${busiest.length} busiest merchants hold ${busiestCount} of ${tickets.length} Dev Fixing or Dev Done tickets ${scopeClause} (${percentage}%).`;
+    }
+
+    return {
+      rows,
+      concentrationNote,
+      tailNote:
+        tail.length === 0
+          ? null
+          : `The rest are spread across ${tail.length} ${tail.length === 1 ? 'merchant' : 'merchants'}.`,
+      tailCount,
+      scopeNote,
+    };
+  };
+
+  const createdScopeNote =
+    'Counts Dev Fixing or Dev Done tickets created in the selected range, whatever their status now.' +
+    (noCreatedDate === 0
+      ? ''
+      : ` ${noCreatedDate} ${noCreatedDate === 1 ? 'ticket' : 'tickets'} have no readable created date and are in no reading.`);
+  const outside = [
+    openCreatedBeforeRange === 0
+      ? null
+      : `${openCreatedBeforeRange} open ${openCreatedBeforeRange === 1 ? 'ticket' : 'tickets'} created before the range`,
+    openNoCreatedDate === 0
+      ? null
+      : `${openNoCreatedDate} with no readable created date`,
+  ].filter(Boolean);
+  const openScopeNote =
+    'Counts Dev Fixing or Dev Done tickets created in the selected range that are still open.' +
+    (outside.length === 0 ? '' : ` ${outside.join(' and ')} sit outside this reading.`);
 
   return {
-    rows,
-    concentrationNote,
-    tailNote:
-      tail.length === 0
-        ? null
-        : `The rest are spread across ${tail.length} ${tail.length === 1 ? 'merchant' : 'merchants'}.`,
-    tailCount,
+    createdInRange: reading(
+      createdInRange,
+      'created in the selected range',
+      createdScopeNote
+    ),
+    stillOpen: reading(
+      stillOpen,
+      'created in the selected range and still open',
+      openScopeNote
+    ),
   };
 }
 
@@ -1565,8 +1673,9 @@ export function aggregateWeeklyReport(
     },
     openBacklog: openBacklog(openBugs, nowMs),
     openSectionTitle: openSectionTitle(open.length, openBugs.length, horizon, options.year),
-    openByPlan: openByPlan(openBugs),
-    openByMerchant: openByMerchant(openBugs),
+    openBreakdown: { scopeLabels: OPEN_BREAKDOWN_SCOPE_LABELS },
+    openByPlan: openByPlan(bugs, rangeStartMs, nowMs),
+    openByMerchant: openByMerchant(bugs, rangeStartMs, nowMs),
     openByFeature: openByFeature(
       openBugs,
       bugs,

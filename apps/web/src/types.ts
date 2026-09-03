@@ -206,6 +206,20 @@ export type TimeToFirstDone = {
   caption: string;
 };
 
+export type PlanReading = {
+  rows: Array<{ key: string; label: string; count: number }>;
+  freeNote: string | null;
+  scopeNote: string;
+};
+
+export type MerchantReading = {
+  rows: Array<{ key: string; label: string; count: number }>;
+  concentrationNote: string;
+  tailNote: string | null;
+  tailCount: number;
+  scopeNote: string;
+};
+
 export type WeeklyReport = {
   /** Oldest first. Drives every panel. */
   weeks: WeekSummary[];
@@ -271,15 +285,22 @@ export type WeeklyReport = {
     oldestCaption: string;
   };
   openSectionTitle: string;
+  /**
+   * Both breakdown panels read one population — Dev Fixing or Dev Done tickets
+   * created in the selected range — under two readings, and the control that
+   * chooses between them is shared, so the two panels always answer the same
+   * question.
+   */
+  openBreakdown: {
+    scopeLabels: { createdInRange: string; stillOpen: string };
+  };
   openByPlan: {
-    rows: Array<{ key: string; label: string; count: number }>;
-    freeNote: string | null;
+    createdInRange: PlanReading;
+    stillOpen: PlanReading;
   };
   openByMerchant: {
-    rows: Array<{ key: string; label: string; count: number }>;
-    concentrationNote: string;
-    tailNote: string | null;
-    tailCount: number;
+    createdInRange: MerchantReading;
+    stillOpen: MerchantReading;
   };
   openByFeature: {
     rows: Array<{

@@ -1050,28 +1050,37 @@ describe('the open backlog', () => {
 });
 
 describe('open tickets by plan', () => {
-  test('is empty without open tickets', () => {
-    expect(report([]).openByPlan).toEqual({ rows: [], freeNote: null });
+  test('is empty in both readings without tickets', () => {
+    const result = report([]).openByPlan;
+    const empty = { rows: [], freeNote: null, scopeNote: expect.any(String) };
+    expect(result.createdInRange).toEqual(empty);
+    expect(result.stillOpen).toEqual(empty);
   });
 
   test('names a single free row with singular grammar', () => {
-    const result = report([ticket({ appPlan: 'free' })]).openByPlan;
+    const result = report([
+      ticket({ appPlan: 'free', createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]).openByPlan.createdInRange;
     expect(result.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
     expect(result.freeNote).toContain('1 of 1 open Dev Fixing or Dev Done ticket');
   });
 
   test('pins the absent plan last even when it is the largest row', () => {
     const result = report([
-      ticket({ ticketId: 'paid', appPlan: 'advanced_2026' }),
-      ticket({ ticketId: 'none-1', appPlan: null }),
-      ticket({ ticketId: 'none-2', appPlan: '  ' }),
-    ]).openByPlan;
+      ticket({ ticketId: 'paid', appPlan: 'advanced_2026', createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'none-1', appPlan: null, createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'none-2', appPlan: '  ', createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]).openByPlan.createdInRange;
     expect(result.rows.map((row) => row.key)).toEqual(['advanced_2026', '(no plan)']);
     expect(result.rows[0]?.label).toBe('Advanced 2026');
   });
 
   test('does not infer a free group when the literal free value is absent', () => {
-    expect(report([ticket({ appPlan: 'trial' })]).openByPlan.freeNote).toBeNull();
+    expect(
+      report([
+        ticket({ appPlan: 'trial', createdAt: '2026-08-18T09:00:00+07:00' }),
+      ]).openByPlan.createdInRange.freeNote
+    ).toBeNull();
   });
 });
 
@@ -1080,11 +1089,11 @@ describe('open tickets by merchant', () => {
     // Two rows for one merchant push a real merchant out of the top five and
     // lower the concentration figure this panel exists to report.
     const result = report([
-      ticket({ ticketId: 'a', store: [{ shopName: 'Hegen' }] }),
-      ticket({ ticketId: 'b', store: [{ shopName: 'HEGEN' }] }),
-      ticket({ ticketId: 'c', store: [{ shopName: ' hegen  store ' }] }),
-      ticket({ ticketId: 'd', store: [{ shopName: 'Hegen Store' }] }),
-    ]).openByMerchant;
+      ticket({ ticketId: 'a', store: [{ shopName: 'Hegen' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'b', store: [{ shopName: 'HEGEN' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'c', store: [{ shopName: ' hegen  store ' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'd', store: [{ shopName: 'Hegen Store' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]).openByMerchant.createdInRange;
 
     expect(result.rows).toEqual([
       { key: 'hegen', label: 'Hegen', count: 2 },
@@ -1096,16 +1105,27 @@ describe('open tickets by merchant', () => {
   });
 
 
-  test('words the empty case and keeps no tail', () => {
+  test('words the empty case and keeps no tail in both readings', () => {
     const result = report([]).openByMerchant;
-    expect(result.rows).toEqual([]);
-    expect(result.concentrationNote.length).toBeGreaterThan(0);
-    expect(result.tailNote).toBeNull();
-    expect(result.tailCount).toBe(0);
+    for (const reading of [result.createdInRange, result.stillOpen]) {
+      expect(reading).toEqual({
+        rows: [],
+        concentrationNote: expect.any(String),
+        tailNote: null,
+        tailCount: 0,
+        scopeNote: expect.any(String),
+      });
+      expect(reading.concentrationNote.length).toBeGreaterThan(0);
+    }
   });
 
   test('words a single named merchant and no tail', () => {
-    const result = report([ticket({ store: [{ shopName: 'Only Shop' }] })]).openByMerchant;
+    const result = report([
+      ticket({
+        store: [{ shopName: 'Only Shop' }],
+        createdAt: '2026-08-18T09:00:00+07:00',
+      }),
+    ]).openByMerchant.createdInRange;
     expect(result.rows).toEqual([{ key: 'only shop', label: 'Only Shop', count: 1 }]);
     expect(result.concentrationNote).toContain(
       'The busiest merchant holds 1 of 1 open Dev Fixing or Dev Done ticket'
@@ -1115,10 +1135,19 @@ describe('open tickets by merchant', () => {
 
   test('appends the absent row after the five ranked merchants', () => {
     const merchants = ['A', 'B', 'C', 'D', 'E', 'F'].map((shopName) =>
-      ticket({ ticketId: shopName, store: [{ shopName }] })
+      ticket({
+        ticketId: shopName,
+        store: [{ shopName }],
+        createdAt: '2026-08-18T09:00:00+07:00',
+      })
     );
-    const absent = [1, 2, 3].map((number) => ticket({ ticketId: `absent-${number}` }));
-    const result = report([...merchants, ...absent]).openByMerchant;
+    const absent = [1, 2, 3].map((number) =>
+      ticket({
+        ticketId: `absent-${number}`,
+        createdAt: '2026-08-18T09:00:00+07:00',
+      })
+    );
+    const result = report([...merchants, ...absent]).openByMerchant.createdInRange;
     expect(result.rows.map((row) => row.label)).toEqual(['A', 'B', 'C', 'D', 'E', '(no merchant)']);
     expect(result.rows.at(-1)?.count).toBe(3);
     expect(result.concentrationNote).toContain('5 busiest merchants');
@@ -1128,17 +1157,46 @@ describe('open tickets by merchant', () => {
 
   test('uses the trimmed merchant fallback chain at panel level', () => {
     const result = report([
-      ticket({ ticketId: 'shop', store: [{ shopName: ' Shop ' }] }),
-      ticket({ ticketId: 'domain', store: [{ shopName: ' ', domain: ' domain.test ' }] }),
-      ticket({ ticketId: 'fallback', storeDomains: [' fallback.test '] }),
-      ticket({ ticketId: 'absent' }),
-    ]).openByMerchant;
+      ticket({ ticketId: 'shop', store: [{ shopName: ' Shop ' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'domain', store: [{ shopName: ' ', domain: ' domain.test ' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'fallback', storeDomains: [' fallback.test '], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'absent', createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]).openByMerchant.createdInRange;
     expect(result.rows.map((row) => row.label)).toEqual([
       'domain.test',
       'fallback.test',
       'Shop',
       '(no merchant)',
     ]);
+  });
+});
+
+describe('range-scoped breakdown readings', () => {
+  test('keeps both panels on one population under both readings', () => {
+    const result = report([
+      ticket({ ticketId: 'open-in-range', appPlan: 'free', createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({
+        ticketId: 'closed-in-range',
+        ticketStatus: 'closed',
+        appPlan: 'pro',
+        createdAt: '2026-08-18T09:00:00+07:00',
+        doneAt: '2026-08-20T09:00:00+07:00',
+      }),
+      ticket({ ticketId: 'open-before-range', createdAt: '2026-03-01T09:00:00+07:00' }),
+      ticket({ ticketId: 'open-undated', createdAt: null, doneAt: '2026-08-20T09:00:00+07:00' }),
+    ]);
+    const planTotal = (scope: 'createdInRange' | 'stillOpen') =>
+      result.openByPlan[scope].rows.reduce((total, row) => total + row.count, 0);
+    const merchantTotal = (scope: 'createdInRange' | 'stillOpen') => {
+      const reading = result.openByMerchant[scope];
+      return reading.rows.reduce((total, row) => total + row.count, 0) + reading.tailCount;
+    };
+
+    expect(planTotal('createdInRange')).toBe(merchantTotal('createdInRange'));
+    expect(planTotal('stillOpen')).toBe(merchantTotal('stillOpen'));
+    expect(planTotal('stillOpen')).toBeLessThanOrEqual(planTotal('createdInRange'));
+    expect(result.openByPlan.createdInRange.scopeNote).toContain('selected range');
+    expect(result.openByMerchant.stillOpen.scopeNote).toContain('still open');
   });
 });
 
@@ -1783,14 +1841,20 @@ describe('the panels agree with each other', () => {
       ticket({ ticketId: 'f', appPlan: 'pro', store: [{ shopName: 'F' }] }),
       ticket({ ticketId: 'absent', appPlan: 'free' }),
     ]);
-    expect(result.openByPlan.rows.reduce((total, row) => total + row.count, 0)).toBe(
+    expect(
+      result.openByPlan.createdInRange.rows.reduce((total, row) => total + row.count, 0)
+    ).toBe(
       result.openBacklog.total
     );
-    const noMerchant = result.openByMerchant.rows.find((row) => row.key === '(no merchant)')?.count ?? 0;
-    const topFive = result.openByMerchant.rows
+    const noMerchant =
+      result.openByMerchant.createdInRange.rows.find((row) => row.key === '(no merchant)')?.count ??
+      0;
+    const topFive = result.openByMerchant.createdInRange.rows
       .filter((row) => row.key !== '(no merchant)')
       .reduce((total, row) => total + row.count, 0);
-    expect(topFive + result.openByMerchant.tailCount + noMerchant).toBe(result.openBacklog.total);
+    expect(topFive + result.openByMerchant.createdInRange.tailCount + noMerchant).toBe(
+      result.openBacklog.total
+    );
   });
 
   test('accounts for every open ticket in the feature rows', () => {
@@ -2044,21 +2108,24 @@ describe('the strings the page prints', () => {
       ticket({
         ticketId: 'chased',
         subject: 'this ticket is overdue',
-        createdAt: '2026-03-04T09:00:00+07:00',
+        createdAt: '2026-08-18T09:00:00+07:00',
         store: [{ shopName: 'Breach Co' }],
       }),
     ]);
 
-    // The banned words really did reach the payload, in all four relayed fields.
+    // The banned words really did reach the payload, in all six relayed fields:
+    // the backlog pair plus merchant label and key in each reading.
     expect(result.openBacklog.oldest[0]?.subject).toBe('this ticket is overdue');
     expect(result.openBacklog.oldest[0]?.merchant).toBe('Breach Co');
-    expect(result.openByMerchant.rows[0]?.label).toBe('Breach Co');
-    expect(result.openByMerchant.rows[0]?.key).toBe('breach co');
+    expect(result.openByMerchant.createdInRange.rows[0]?.label).toBe('Breach Co');
+    expect(result.openByMerchant.createdInRange.rows[0]?.key).toBe('breach co');
+    expect(result.openByMerchant.stillOpen.rows[0]?.label).toBe('Breach Co');
+    expect(result.openByMerchant.stillOpen.rows[0]?.key).toBe('breach co');
     expect(payloadStrings(result).filter((value) => FORBIDDEN_LANGUAGE.test(value))).toHaveLength(
-      4
+      6
     );
 
-    // And the guard walks past all four, because it wrote none of them.
+    // And the guard walks past all six, because it wrote none of them.
     expect(serverWordedStrings(result).filter((value) => FORBIDDEN_LANGUAGE.test(value))).toEqual(
       []
     );
@@ -2066,7 +2133,7 @@ describe('the strings the page prints', () => {
 
   test('still catches a banned word in server wording, wherever it sits', () => {
     // The exclusion is a hole cut in the walk, so it has to be exactly the shape
-    // of the four relayed fields: server wording one key away from each of them,
+    // of the six relayed fields: server wording one key away from each of them,
     // at every depth the payload has, is still caught.
     const payload = report([
       ticket({
@@ -2081,7 +2148,14 @@ describe('the strings the page prints', () => {
       weeklySpeed: { ...payload.weeklySpeed, caption: 'Two breaches this week' },
       openByMerchant: {
         ...payload.openByMerchant,
-        concentrationNote: 'The busiest merchant missed three deadlines',
+        createdInRange: {
+          ...payload.openByMerchant.createdInRange,
+          concentrationNote: 'The busiest merchant missed three deadlines',
+        },
+        stillOpen: {
+          ...payload.openByMerchant.stillOpen,
+          concentrationNote: 'The still-open reading missed three deadlines',
+        },
       },
       openBacklog: {
         ...payload.openBacklog,
@@ -2101,6 +2175,7 @@ describe('the strings the page prints', () => {
         'Done means the SLAs were met',
         'Two breaches this week',
         'The busiest merchant missed three deadlines',
+        'The still-open reading missed three deadlines',
         'The five oldest, most overdue first',
         `${payload.openBacklog.buckets[0]?.label}, breached`,
       ].sort()
@@ -2126,7 +2201,7 @@ describe('the strings the page prints', () => {
       report([
         ticket({
           ticketId: 'one',
-          createdAt: '2026-03-04T09:00:00+07:00',
+          createdAt: '2026-08-18T09:00:00+07:00',
           store: [{ shopName: 'Hegen' }],
         }),
       ])
@@ -2154,8 +2229,8 @@ describe('the strings the page prints', () => {
       ticket({ ticketId: 'free', appPlan: 'free', store: [{ shopName: 'Hegen' }] }),
     ]);
 
-    expect(result.openByPlan.freeNote).toContain('right now');
-    expect(result.openByMerchant.concentrationNote).toContain('right now');
+    expect(result.openByPlan.createdInRange.freeNote).toContain('right now');
+    expect(result.openByMerchant.createdInRange.concentrationNote).toContain('right now');
   });
 
   test('names the all-open scope, its count and the mirror reach-back date', () => {
@@ -2305,8 +2380,10 @@ function weeklyHistoryEndingAt(weeks: number, now: Date): HelpDeskTicket[] {
 const CUSTOMER_TEXT_PATHS = new Set([
   'openBacklog.oldest[].subject',
   'openBacklog.oldest[].merchant',
-  'openByMerchant.rows[].key',
-  'openByMerchant.rows[].label',
+  'openByMerchant.createdInRange.rows[].key',
+  'openByMerchant.createdInRange.rows[].label',
+  'openByMerchant.stillOpen.rows[].key',
+  'openByMerchant.stillOpen.rows[].label',
 ]);
 
 /**
@@ -2446,15 +2523,21 @@ describe('the all-open panels at their edges', () => {
 
   test('labels the absent plan row without inventing a plan name', () => {
     const result = report([
-      ticket({ ticketId: 'null-plan', appPlan: null }),
-      ticket({ ticketId: 'missing-plan' }),
-    ]).openByPlan;
+      ticket({ ticketId: 'null-plan', appPlan: null, createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'missing-plan', createdAt: '2026-08-18T09:00:00+07:00' }),
+    ]).openByPlan.createdInRange;
     expect(result.rows).toEqual([{ key: '(no plan)', label: 'No plan', count: 2 }]);
   });
 
-  test('keeps a closed ticket out of every all-open panel', () => {
+  test('keeps a closed ticket out of the still-open reading and inside the created-in-range one', () => {
     const result = report([
-      ticket({ ticketId: 'open', appPlan: 'free', subject: 'widget broken', store: [{ shopName: 'Open Shop' }] }),
+      ticket({
+        ticketId: 'open',
+        appPlan: 'free',
+        subject: 'widget broken',
+        store: [{ shopName: 'Open Shop' }],
+        createdAt: '2026-08-18T09:00:00+07:00',
+      }),
       ticket({
         ticketId: 'closed',
         ticketStatus: 'closed',
@@ -2466,8 +2549,16 @@ describe('the all-open panels at their edges', () => {
       }),
     ]);
 
-    expect(result.openByPlan.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
-    expect(result.openByMerchant.rows.map((row) => row.label)).toEqual(['Open Shop']);
+    expect(result.openByPlan.stillOpen.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
+    expect(result.openByMerchant.stillOpen.rows.map((row) => row.label)).toEqual(['Open Shop']);
+    expect(result.openByPlan.createdInRange.rows.map((row) => row.key)).toEqual([
+      'advanced_2026',
+      'free',
+    ]);
+    expect(result.openByMerchant.createdInRange.rows.map((row) => row.label)).toEqual([
+      'Closed Shop',
+      'Open Shop',
+    ]);
     expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(1);
   });
 });
@@ -2626,14 +2717,20 @@ describe('the all-open panels over the real fixture', () => {
       result.openBacklog.buckets.reduce((total, bucket) => total + bucket.count, 0) +
         result.openBacklog.noCreatedDate
     ).toBe(open);
-    expect(result.openByPlan.rows.reduce((total, row) => total + row.count, 0)).toBe(open);
+    expect(
+      result.openByPlan.stillOpen.rows.reduce((total, row) => total + row.count, 0)
+    ).toBe(open);
 
-    const named = result.openByMerchant.rows.filter((row) => row.key !== '(no merchant)');
-    const noMerchant = result.openByMerchant.rows.find((row) => row.key === '(no merchant)');
+    const named = result.openByMerchant.stillOpen.rows.filter(
+      (row) => row.key !== '(no merchant)'
+    );
+    const noMerchant = result.openByMerchant.stillOpen.rows.find(
+      (row) => row.key === '(no merchant)'
+    );
     expect(named.length).toBeLessThanOrEqual(5);
     expect(
       named.reduce((total, row) => total + row.count, 0) +
-        result.openByMerchant.tailCount +
+        result.openByMerchant.stillOpen.tailCount +
         (noMerchant?.count ?? 0)
     ).toBe(open);
 

@@ -368,16 +368,16 @@ describe('the dev-fix narrowing reaches every panel at once', () => {
       result.openBacklog.buckets.reduce((total, bucket) => total + bucket.count, 0) +
       result.openBacklog.noCreatedDate;
     const merchants =
-      result.openByMerchant.rows.reduce((total, row) => total + row.count, 0) +
-      result.openByMerchant.tailCount;
+      result.openByMerchant.createdInRange.rows.reduce((total, row) => total + row.count, 0) +
+      result.openByMerchant.createdInRange.tailCount;
 
     expect(result.devFixOpenRightNow).toBe(1);
     expect(result.openRightNow).toBe(2);
     expect(result.openBacklog.total).toBe(result.devFixOpenRightNow);
     expect(bucketed).toBe(result.devFixOpenRightNow);
-    expect(result.openByPlan.rows.reduce((total, row) => total + row.count, 0)).toBe(
-      result.devFixOpenRightNow
-    );
+    expect(
+      result.openByPlan.createdInRange.rows.reduce((total, row) => total + row.count, 0)
+    ).toBe(result.devFixOpenRightNow);
     expect(merchants).toBe(result.devFixOpenRightNow);
     expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(
       result.devFixOpenRightNow
