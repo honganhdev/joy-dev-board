@@ -2734,7 +2734,7 @@ describe('the resolution clocks', () => {
       selectionNote:
         'HelpDesk recorded this clock on 0 of the 0 tickets that reached a done state (0%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.',
       unmeasuredNote:
-        'Every ticket carrying this clock reached a done state in HelpDesk. The rest fall in two groups: 0 tickets never reached one — still open, or closed another way — and 0 tickets reached one but HelpDesk recorded no time for this clock.',
+        '0 of the 0 tickets carrying this clock reached a done state in HelpDesk. The tickets without a reading fall in two groups: 0 tickets never reached one — still open, or closed another way — and 0 tickets reached one but HelpDesk recorded no time for this clock.',
       otherStatusNote: null,
       done: emptyGroup,
       devDone: { ...emptyGroup, label: 'Dev Done' },
@@ -2747,8 +2747,15 @@ describe('the resolution clocks', () => {
         "HelpDesk computes these two clocks over each ticket's whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.",
       scaleNote:
         "The two rows share one scale, so a bar's length compares how many tickets landed in that row. How fast each cohort was is in the median beside its name, not in the bar lengths.",
-      bucketLabels: ['≤ 1h', '1–4h', '4–8h', '8–24h', '24h–3 days', '3–7 days', 'over 7 days'],
-      noMedianLabel: 'no median',
+      bucketLabels: [
+        '≤ 1h',
+        '> 1h, ≤ 4h',
+        '> 4h, ≤ 8h',
+        '> 8h, ≤ 24h',
+        '> 24h, ≤ 3 days',
+        '> 3 days, ≤ 7 days',
+        '> 7 days',
+      ],
       clockLabels: { csReply: 'CS reply', customerOk: 'Customer OK' },
       csReply: panel(
         "Measured from the customer's own message to the CS reply HelpDesk marked done. That start is earlier than the ticket's created date, so this clock does not begin where time to first done begins and the two are not comparable."
@@ -2770,13 +2777,35 @@ describe('the resolution clocks', () => {
     expect(report([old], 4).resolutionClocks.csReply.sampleSize).toBe(1);
   });
 
-  test('uses inclusive upper bounds on the hour axis', () => {
-    const durations = [HOUR, HOUR + 1, 24 * HOUR, 24 * HOUR + 1, 7 * DAY, 7 * DAY + 1];
-    const group = report(
+  test('uses inclusive upper bounds and visibly exclusive lower-bound labels', () => {
+    const durations = [
+      HOUR,
+      HOUR + 1,
+      4 * HOUR,
+      4 * HOUR + 1,
+      8 * HOUR,
+      8 * HOUR + 1,
+      24 * HOUR,
+      24 * HOUR + 1,
+      3 * DAY,
+      3 * DAY + 1,
+      7 * DAY,
+      7 * DAY + 1,
+    ];
+    const clocks = report(
       durations.map((duration, index) => measured(`edge-${index}`, 'done', duration, duration))
-    ).resolutionClocks.csReply.done;
+    ).resolutionClocks;
 
-    expect(group.buckets).toEqual([1, 1, 0, 1, 1, 1, 1]);
+    expect(clocks.bucketLabels).toEqual([
+      '≤ 1h',
+      '> 1h, ≤ 4h',
+      '> 4h, ≤ 8h',
+      '> 8h, ≤ 24h',
+      '> 24h, ≤ 3 days',
+      '> 3 days, ≤ 7 days',
+      '> 7 days',
+    ]);
+    expect(clocks.csReply.done.buckets).toEqual([1, 2, 2, 2, 2, 2, 1]);
   });
 
   test('prints the measured and finished denominators separately', () => {
@@ -3859,6 +3888,47 @@ describe('the resolution clocks over real-shaped and degenerate populations', ()
     // And they land in different rows of the axis, not in one shared clump.
     expect(clocks.done.buckets).toEqual([0, 3, 0, 0, 0, 0, 0]);
     expect(clocks.devDone.buckets).toEqual([0, 0, 0, 0, 3, 0, 0]);
+  });
+
+  test('intersects clock readings with done tickets in every population note', () => {
+    const tickets = [
+      clocked('open-clock-a', 'done', HOUR, HOUR, {
+        ticketStatus: 'open',
+        doneAt: null,
+      }),
+      clocked('open-clock-b', 'done', 2 * HOUR, 2 * HOUR, {
+        ticketStatus: 'open',
+        doneAt: null,
+      }),
+      clocked('done-clock', 'done', 3 * HOUR),
+      clocked('done-unrecorded', 'done', null),
+      ticket({
+        ticketId: 'open-unrecorded',
+        createdAt: '2026-08-10T09:00:00+07:00',
+      }),
+    ];
+    const panel = report(tickets).resolutionClocks.csReply;
+    const carried = panel.carriedNote.match(/^(\d+) of (\d+) dated tickets/);
+    const selected = panel.selectionNote.match(/on (\d+) of the (\d+) tickets/);
+    const measuredDone = panel.unmeasuredNote.match(/^(\d+) of the (\d+) tickets carrying/);
+    const unmeasured = panel.unmeasuredNote.match(
+      /groups: (\d+) tickets? never reached one .+ and (\d+) tickets? reached one/
+    );
+
+    expect(carried).not.toBeNull();
+    expect(selected).not.toBeNull();
+    expect(measuredDone).not.toBeNull();
+    expect(unmeasured).not.toBeNull();
+    if (!carried || !selected || !measuredDone || !unmeasured) {
+      throw new Error('population note changed');
+    }
+
+    for (const fraction of [carried, selected, measuredDone]) {
+      expect(Number(fraction[1])).toBeLessThanOrEqual(Number(fraction[2]));
+    }
+    expect(Number(selected[1])).toBe(1);
+    expect(Number(measuredDone[1])).toBe(1);
+    expect(Number(unmeasured[1]) + Number(unmeasured[2])).toBe(tickets.length - panel.sampleSize);
   });
 
   test('places every measured duration in exactly one bucket, including zero and years', () => {

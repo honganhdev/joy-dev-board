@@ -226,7 +226,7 @@ export type ResolutionClockPanel = {
   /** Tickets carrying this clock at all. */
   sampleSize: number;
   medianHours: number | null;
-  /** The panel's own headline, sample first — the same shape the cohort rows use. */
+  /** The pooled summary, sample first — the same shape the cohort rows use. */
   sampleNote: string;
   /** `sampleSize` against every dated ticket, in words. Sample first. */
   carriedNote: string;
@@ -249,8 +249,6 @@ export type ResolutionClocks = {
   scaleNote: string;
   /** The shared hour axis. Every `buckets` array has this length and order. */
   bucketLabels: string[];
-  /** Server wording for a cohort under the median floor. */
-  noMedianLabel: string;
   /** Names the two clocks on the toggle; the browser composes no list. */
   clockLabels: { csReply: string; customerOk: string };
   csReply: ResolutionClockPanel;

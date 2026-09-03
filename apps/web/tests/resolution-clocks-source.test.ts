@@ -61,6 +61,20 @@ test('prints every cohort note and every bar count', () => {
   expect(source.match(/\{devDoneCount\}/g)).toHaveLength(1);
 });
 
+test('leads with the cohort split and keeps the pooled median subordinate', () => {
+  const done = source.indexOf('{panel.done.sampleNote}');
+  const devDone = source.indexOf('{panel.devDone.sampleNote}');
+  const pooled = source.indexOf('{panel.sampleNote}');
+
+  expect(done).toBeGreaterThan(-1);
+  expect(devDone).toBeGreaterThan(done);
+  expect(pooled).toBeGreaterThan(devDone);
+  expect(source).toContain('className="flex gap-3 text-[12px] font-semibold tabular-nums"');
+  expect(source).toContain(
+    'className="mt-2 text-[10px] text-muted-foreground tabular-nums">{panel.sampleNote}'
+  );
+});
+
 test('names both clocks and both cohorts in the server words only', () => {
   // The browser composes no label: the axis, the cohort names and the toggle all
   // read out of the payload. A hard-coded '≤ 1h' here would survive the server

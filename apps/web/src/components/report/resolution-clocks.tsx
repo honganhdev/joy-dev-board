@@ -33,20 +33,20 @@ export function ResolutionClocks({ data }: { data: ResolutionClocksData }) {
         </div>
       }
     >
-      <p className="text-[12px] font-semibold tabular-nums">{panel.sampleNote}</p>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Legend
           items={[
             { label: panel.done.label, className: 'bg-stone-500' },
             { label: panel.devDone.label, className: 'bg-stone-500 opacity-40' },
           ]}
         />
-        <div className="flex gap-3 text-[10px] text-muted-foreground tabular-nums">
+        <div className="flex gap-3 text-[12px] font-semibold tabular-nums">
           <span>{panel.done.sampleNote}</span>
           <span>{panel.devDone.sampleNote}</span>
         </div>
       </div>
+
+      <p className="mt-2 text-[10px] text-muted-foreground tabular-nums">{panel.sampleNote}</p>
 
       <ul className="mt-3 space-y-1.5">
         {data.bucketLabels.map((label, index) => {

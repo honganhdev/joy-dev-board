@@ -384,12 +384,12 @@ const BUCKETS = [
 /** Inclusive duration bounds on the shared hour axis. */
 const CLOCK_BUCKETS = [
   { label: '≤ 1h', maxMs: HOUR_MS },
-  { label: '1–4h', maxMs: 4 * HOUR_MS },
-  { label: '4–8h', maxMs: 8 * HOUR_MS },
-  { label: '8–24h', maxMs: 24 * HOUR_MS },
-  { label: '24h–3 days', maxMs: 3 * DAY_MS },
-  { label: '3–7 days', maxMs: 7 * DAY_MS },
-  { label: 'over 7 days', maxMs: Infinity },
+  { label: '> 1h, ≤ 4h', maxMs: 4 * HOUR_MS },
+  { label: '> 4h, ≤ 8h', maxMs: 8 * HOUR_MS },
+  { label: '> 8h, ≤ 24h', maxMs: 24 * HOUR_MS },
+  { label: '> 24h, ≤ 3 days', maxMs: 3 * DAY_MS },
+  { label: '> 3 days, ≤ 7 days', maxMs: 7 * DAY_MS },
+  { label: '> 7 days', maxMs: Infinity },
 ];
 
 /** How many of the oldest open tickets the backlog panel lists. Named on screen. */
@@ -629,7 +629,6 @@ function percentOf(part: number, whole: number): number {
 /** The two lifetime issue-resolution clocks, over every dated ticket. */
 function resolutionClocks(counted: Counted[]): ResolutionClocks {
   const doneCount = counted.filter((ticket) => ticket.doneMs !== null).length;
-  const neverDone = counted.length - doneCount;
   const sampleNote = (sampleSize: number, medianHours: number | null) =>
     `${sampleSize} ${sampleSize === 1 ? 'ticket' : 'tickets'} · ` +
     (medianHours === null ? NO_MEDIAN_LABEL : `median ${medianHours} h`);
@@ -672,7 +671,13 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
     const otherStatusCount = measured.filter(
       (ticket) => ticket.status !== 'done' && ticket.status !== 'dev_done'
     ).length;
-    const doneButUnrecorded = Math.max(0, doneCount - measured.length);
+    const measuredDone = measured.filter((ticket) => ticket.doneMs !== null).length;
+    const doneUnrecorded = counted.filter(
+      (ticket) => ticket.doneMs !== null && ticket[key] === null
+    ).length;
+    const neverDone = counted.filter(
+      (ticket) => ticket.doneMs === null && ticket[key] === null
+    ).length;
 
     return {
       caption,
@@ -680,8 +685,8 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
       medianHours,
       sampleNote: sampleNote(measured.length, medianHours),
       carriedNote: `${measured.length} of ${counted.length} dated tickets carry this clock (${percentOf(measured.length, counted.length)}%).`,
-      selectionNote: `HelpDesk recorded this clock on ${measured.length} of the ${doneCount} tickets that reached a done state (${percentOf(measured.length, doneCount)}%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.`,
-      unmeasuredNote: `Every ticket carrying this clock reached a done state in HelpDesk. The rest fall in two groups: ${neverDone} ${neverDone === 1 ? 'ticket' : 'tickets'} never reached one — still open, or closed another way — and ${doneButUnrecorded} ${doneButUnrecorded === 1 ? 'ticket' : 'tickets'} reached one but HelpDesk recorded no time for this clock.`,
+      selectionNote: `HelpDesk recorded this clock on ${measuredDone} of the ${doneCount} tickets that reached a done state (${percentOf(measuredDone, doneCount)}%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.`,
+      unmeasuredNote: `${measuredDone} of the ${measured.length} tickets carrying this clock reached a done state in HelpDesk. The tickets without a reading fall in two groups: ${neverDone} ${neverDone === 1 ? 'ticket' : 'tickets'} never reached one — still open, or closed another way — and ${doneUnrecorded} ${doneUnrecorded === 1 ? 'ticket' : 'tickets'} reached one but HelpDesk recorded no time for this clock.`,
       otherStatusNote:
         otherStatusCount === 0
           ? null
@@ -699,7 +704,6 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
     scaleNote:
       "The two rows share one scale, so a bar's length compares how many tickets landed in that row. How fast each cohort was is in the median beside its name, not in the bar lengths.",
     bucketLabels: CLOCK_BUCKETS.map((bucket) => bucket.label),
-    noMedianLabel: NO_MEDIAN_LABEL,
     clockLabels: { csReply: 'CS reply', customerOk: 'Customer OK' },
     csReply: panel(
       'csReplyMs',
