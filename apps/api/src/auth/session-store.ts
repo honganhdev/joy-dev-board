@@ -36,6 +36,15 @@ export function createSession(db: Db, username: string, ttlMs: number, now = new
 }
 
 /**
+ * The live session for `id` without sliding its expiry — for deciding whether a
+ * session may be used at all, before committing to keeping it alive.
+ */
+export function readSession(db: Db, id: string, now = new Date()): SessionRow | null {
+  deleteExpiredSessions(db, now);
+  return db.select().from(sessions).where(eq(sessions.id, id)).limit(1).all()[0] ?? null;
+}
+
+/**
  * The live session for `id`, or `null` for one that is unknown, tampered with
  * or expired — the caller cannot tell those apart, and does not need to.
  *
@@ -43,9 +52,7 @@ export function createSession(db: Db, username: string, ttlMs: number, now = new
  * window "since you last used it" rather than "since you signed in".
  */
 export function touchSession(db: Db, id: string, ttlMs: number, now = new Date()): SessionRow | null {
-  deleteExpiredSessions(db, now);
-
-  const [row] = db.select().from(sessions).where(eq(sessions.id, id)).limit(1).all();
+  const row = readSession(db, id, now);
   if (!row) return null;
 
   const nowIso = now.toISOString();

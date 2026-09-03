@@ -245,7 +245,7 @@ describe('the MCP surface is bounded', () => {
 });
 
 describe('what find_ticket enumerates versus the board', () => {
-  test('includes open tickets in extra statuses the board is not configured to show', async () => {
+  test('enumerates exactly the statuses the board is configured to show', async () => {
     const { db, handle, token } = (() => {
       const opened = openDatabase(':memory:');
       const tickets = [
@@ -270,24 +270,38 @@ describe('what find_ticket enumerates versus the board', () => {
       };
     })();
 
-    // The board, with no stored column preference, does not enumerate the extra
-    // status at all.
     const { createSession } = await import('../src/auth/session-store');
     const { SESSION_COOKIE } = await import('../src/auth/cookie');
+    const { writeEnabledColumns } = await import('../src/db/preferences');
     const session = createSession(db, USERNAME, 60_000);
-    const board = await handle(
-      new Request('http://localhost/api/tickets', {
-        headers: { cookie: `${SESSION_COOKIE}=${session}` },
-      })
-    );
-    expect(board.status).toBe(200);
-    expect(JSON.stringify(await board.json())).not.toContain('JOY-260903-EXTRA');
 
-    // find_ticket does.
-    const found = await call(handle, token, 'find_ticket', { query: 'zebra' });
-    const ids = (found.payload as { tickets: Array<{ ticketId: string }> }).tickets.map(
-      (value) => value.ticketId
-    );
-    expect(ids.sort()).toEqual(['JOY-260903-EXTRA', 'JOY-260903-KNOWN']);
+    async function boardIds(): Promise<string[]> {
+      const response = await handle(
+        new Request('http://localhost/api/tickets', {
+          headers: { cookie: `${SESSION_COOKIE}=${session}` },
+        })
+      );
+      expect(response.status).toBe(200);
+      const body = JSON.stringify(await response.json());
+      return ['JOY-260903-KNOWN', 'JOY-260903-EXTRA'].filter((id) => body.includes(id));
+    }
+
+    async function foundIds(): Promise<string[]> {
+      const found = await call(handle, token, 'find_ticket', { query: 'zebra' });
+      return (found.payload as { tickets: Array<{ ticketId: string }> }).tickets
+        .map((value) => value.ticketId)
+        .sort();
+    }
+
+    // With no stored column preference the board does not enumerate the extra
+    // status, and neither does find_ticket.
+    expect(await boardIds()).toEqual(['JOY-260903-KNOWN']);
+    expect(await foundIds()).toEqual(['JOY-260903-KNOWN']);
+
+    // Enabling that column on the board adds the ticket to both corpora. The
+    // board's configuration is the only thing that decides what MCP can see.
+    writeEnabledColumns(db, ['waiting_dev'], 0);
+    expect((await boardIds()).sort()).toEqual(['JOY-260903-EXTRA', 'JOY-260903-KNOWN']);
+    expect(await foundIds()).toEqual(['JOY-260903-EXTRA', 'JOY-260903-KNOWN']);
   });
 });

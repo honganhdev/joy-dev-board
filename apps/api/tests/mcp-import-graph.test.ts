@@ -71,6 +71,9 @@ const EXPECTED_DEPS = [
   'readLastSuccessfulPull',
   'countTickets',
   'resolveTags',
+  // Added so the tools enumerate the board's enabled columns rather than every
+  // open status in the mirror.
+  'readEnabledColumns',
 ];
 
 describe('MCP read-only import boundary', () => {
@@ -130,7 +133,7 @@ describe('MCP read-only import boundary', () => {
     }
   });
 
-  test('McpToolDeps declares exactly the seven read dependencies', () => {
+  test('McpToolDeps declares exactly the eight read dependencies', () => {
     const source = readFileSync(resolve(SRC, 'mcp/tools.ts'), 'utf8');
     const block = /export type McpToolDeps = \{([\s\S]*?)\n\};/.exec(source)?.[1];
     expect(block).toBeTruthy();

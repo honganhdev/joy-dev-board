@@ -137,6 +137,7 @@ export function createRouter({
   });
   const mcpTools: McpToolDeps = {
     readTickets: () => readTickets(db),
+    readEnabledColumns: () => readBoardColumns(db).statuses,
     readTicket: (ticketId) => readTicket(db, ticketId),
     readStatusHistory: (ticketId) => readStatusHistory(db, ticketId),
     readLastPull: () => readLastPull(db),
@@ -176,8 +177,11 @@ export function createRouter({
     const { pathname } = url;
 
     // Bearer credentials must never inherit the cookie surface's permissive
-    // CORS headers. This branch owns every method and its own error boundary.
-    if (pathname === '/api/mcp') {
+    // CORS headers. This branch owns every method and its own error boundary,
+    // and it owns subpaths too: a client configured with a trailing slash used
+    // to fall through to the board gate and get its generic 401 with
+    // `Access-Control-Allow-Origin: *` on it.
+    if (pathname === '/api/mcp' || pathname.startsWith('/api/mcp/')) {
       if (request.method !== 'POST') {
         return Response.json(
           { error: 'method_not_allowed', message: 'Use POST for MCP requests.' },
@@ -190,8 +194,12 @@ export function createRouter({
         const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] ?? '';
         const publicId = mcpPublicId(bearer);
         const ip = clientIp(request, server, auth.trustProxy);
-        const keys = [`mcp-token:${publicId ?? '(invalid)'}`];
-        if (auth.trustProxy) keys.push(`mcp-ip:${ip}`);
+        // Only by IP. The public id is non-secret by design — it is printed in
+        // every line below and by `mcp:revoke` — so keying a lockout on it let
+        // anyone who had read a log refuse the owner's own token. The secret is
+        // 32 CSPRNG bytes: entropy is the control against guessing, and the
+        // per-token key bought nothing but a targeted denial.
+        const keys = auth.trustProxy ? [`mcp-ip:${ip}`] : [];
 
         const verdict = loginThrottle.check(keys);
         const verification = verdict.locked

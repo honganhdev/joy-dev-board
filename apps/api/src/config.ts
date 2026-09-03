@@ -84,6 +84,16 @@ export function decodePasswordHash(raw: string): string {
   );
 }
 
+/**
+ * The argon2 cost parameters of a PHC string —
+ * `$argon2id$v=19$m=65536,t=2,p=1$<salt>$<digest>` → `argon2id$v=19$m=65536,t=2,p=1`.
+ * `null` when the string is not in that shape.
+ */
+export function argon2Parameters(hash: string): string | null {
+  const match = hash.match(/^\$(argon2[a-z]*)\$(v=\d+)\$(m=\d+,t=\d+,p=\d+)\$/);
+  return match ? `${match[1]}$${match[2]}$${match[3]}` : null;
+}
+
 /** Throws with an actionable message when required env is missing. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const apiKey = env.API_KEY_HELPDESK?.trim();
@@ -113,9 +123,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
 
-  const users: AuthUser[] = [
-    { username, passwordHash: decodePasswordHash(passwordHash) },
-  ];
+  const firstHash = decodePasswordHash(passwordHash);
+  // Entry 1 defines the reference cost. `selectVerificationTarget` verifies an
+  // unknown username against entry 1's hash so the response time is the same as
+  // a wrong password's; that only holds while every configured hash costs the
+  // same to verify. A mismatched entry never enters the list below, so the decoy
+  // cannot be mismatched — and only entry 1 itself refuses to start, because a
+  // bad later entry must never take the live board down.
+  const referenceParameters = argon2Parameters(firstHash);
+  if (!referenceParameters) {
+    throw new Error(
+      'AUTH_PASSWORD_HASH is not a usable argon2id hash. Regenerate it with `bun run auth:hash` and paste the whole line.'
+    );
+  }
+
+  const users: AuthUser[] = [{ username, passwordHash: firstHash }];
   const usernames = new Set([username]);
   for (let index = 2; index <= 20; index += 1) {
     const nameKey = `AUTH_USER_${index}_NAME`;
@@ -139,14 +161,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       continue;
     }
 
+    let decodedHash: string;
     try {
-      users.push({ username: candidateUsername, passwordHash: decodePasswordHash(candidateHash) });
-      usernames.add(candidateUsername);
+      decodedHash = decodePasswordHash(candidateHash);
     } catch {
       console.error(
         `[config] ${hashKey} is not a usable argon2id hash; skipping account entry ${index}.`
       );
+      continue;
     }
+
+    const parameters = argon2Parameters(decodedHash);
+    if (parameters !== referenceParameters) {
+      console.error(
+        `[config] ${hashKey} was minted with different argon2 parameters ` +
+          `(${parameters ?? 'unreadable'}) than AUTH_PASSWORD_HASH (${referenceParameters}); ` +
+          `skipping account entry ${index}. Re-mint it with \`bun run auth:hash\` on this build.`
+      );
+      continue;
+    }
+
+    users.push({ username: candidateUsername, passwordHash: decodedHash });
+    usernames.add(candidateUsername);
   }
 
   return {

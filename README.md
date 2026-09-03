@@ -51,6 +51,14 @@ AUTH_USER_2_NAME=teammate
 AUTH_USER_2_HASH=<base64 hash from auth:hash>
 ```
 
+**Mint every hash with the same tool and the same argon2 parameters.** A login against an unknown
+username is verified against entry 1's hash so that it costs the same as a wrong password; if a
+later entry were hashed more cheaply, the response time would say which of the two the caller got
+wrong. An entry whose `$argon2id$v=..$m=..,t=..,p=..` prefix differs from entry 1's is logged with
+the offending key and skipped, so a mismatch costs that one account, not the board. In practice this
+means running `bun run auth:hash` on this build for all of them, rather than pasting in a hash
+minted on another machine or an older Bun.
+
 The hash is emitted **base64-encoded**, not as the raw `$argon2id$...` string. `bun --env-file`
 expands `$argon2id`, `$v` and `$m` as shell variables — inside single quotes too — so a pasted PHC
 string arrives mangled and every login fails with an unsupported-algorithm error, while Docker's
@@ -138,7 +146,7 @@ A failing tag directory degrades a detail view to raw tag ids; it never fails th
 | `AUTH_USERNAME` | *(required)* | Entry 1 username. The existing login keeps these keys unchanged. |
 | `AUTH_PASSWORD_HASH` | *(required)* | Entry 1 base64 argon2id hash. From `bun run auth:hash`. |
 | `AUTH_USER_2_NAME` … `AUTH_USER_20_NAME` | *(optional)* | Additional usernames, paired by number with a hash. |
-| `AUTH_USER_2_HASH` … `AUTH_USER_20_HASH` | *(optional)* | Additional base64 argon2id hashes. Invalid or half-configured entries are logged and skipped. |
+| `AUTH_USER_2_HASH` … `AUTH_USER_20_HASH` | *(optional)* | Additional base64 argon2id hashes. Must share entry 1's argon2 parameters. Invalid, half-configured or mismatched entries are logged and skipped. |
 | `SESSION_TTL_MS` | `604800000` (7d) | Session lifetime, refreshed on every authenticated request. |
 | `COOKIE_SECURE` | `true` | `Secure` on the session cookie. Set to `false` **only** for local http — over plain http a `Secure` cookie is never sent and no login will stick. |
 | `TRUST_PROXY` | `false` | Believe `X-Forwarded-For`. Set `true` **only** behind a real reverse proxy; otherwise a client can set the header itself and get a fresh bucket for every login guess. |
@@ -152,6 +160,11 @@ A failing tag directory degrades a detail view to raw tag ids; it never fails th
 - **`board_session`** cookie: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` unless `COOKIE_SECURE=false`.
 - **Sliding expiry.** Reading a session pushes `expiresAt` forward, so the 7 days run from last use.
   Expired rows are deleted on read and on login; there is no cron.
+- **Removing an account is the revocation.** Every authenticated request checks the session's
+  username against the configured account list, the same check MCP tokens already made, so deleting
+  someone's `.env` pair ends their open browser too. A refused session is not slid forward, and its
+  row is left to expire on its own. Deleting rows is still how you end a session for an account that
+  remains configured.
 - **Passwords** are hashed with `Bun.password` (argon2id, built into Bun — no crypto dependency).
 - **Rate limited.** Failures are counted per username *and* per client IP; five inside fifteen minutes
   lock that key out for fifteen. A wrong password, an unknown username and a lockout all return the
@@ -171,7 +184,9 @@ The API serves a stateless, read-only MCP endpoint at `https://issue.anhth.cc/ap
 personal bearer token, not the browser session cookie, and exposes four tools:
 
 - `find_ticket` searches open tickets using the board's id, link, text, and Vietnamese-diacritic
-  matching. It cannot enumerate closed tickets.
+  matching. It cannot enumerate closed tickets. Its corpus is exactly the board's: a ticket in a
+  status nobody has enabled as a board column is invisible to MCP too, so enable the column to make
+  those tickets searchable.
 - `get_ticket` reads a ticket by exact id, including a closed ticket, matching the existing detail
   route.
 - `get_ticket_history` reads that ticket's observed status changes.
@@ -231,6 +246,11 @@ The MCP bearer surface is weaker than the board cookie surface in five specific 
 5. `lastUsedAt` identifies use, not whether the owner or a thief used it. The API therefore also logs
    sanitized public token ids, usernames, and client IPs on success, and sanitized ids/IPs on
    rejection. It never logs the token or secret.
+
+Failed MCP requests are throttled by client IP only, and only with `TRUST_PROXY=true`. There is no
+per-token counter: the public id is printed in those log lines and by `mcp:revoke`, so a lockout
+keyed on it let anyone who had read a log refuse the owner's own token for fifteen minutes at a
+time. The secret is 32 CSPRNG bytes — entropy, not a counter, is what makes it unguessable.
 
 Bearer tokens are immune to CSRF. A stolen token can read the complete open-ticket corpus and fetch
 any known ticket id, including merchant names, subjects, and Slack/Crisp links. It cannot write to

@@ -34,23 +34,29 @@ not alter the two recorded row counts.
 
 ## Offboarding
 
-Run these in this order, before editing `.env`:
+Removing the account is the revocation. Both credential surfaces check the configured account list
+on every request, so once the `.env` pair is gone and the API has restarted, that person's browser
+session and every MCP token they hold stop working — no session row has to be touched.
 
-1. Delete every browser session for the person:
-
-   ```sql
-   DELETE FROM sessions WHERE username = ?;
-   ```
-
-2. Revoke all of that person's MCP tokens inside the container:
+1. Revoke all of that person's MCP tokens inside the container:
 
    ```bash
    bun run mcp:revoke -- --user <name>
    ```
 
-3. Remove their numbered `.env` pair and restart. Token verification also rejects usernames absent
-   from the configured list, but explicit revocation prevents old rows becoming valid after a future
-   re-add.
+   Removing the `.env` pair already refuses those tokens; revoking explicitly stops the old rows
+   becoming valid again after a future re-add.
+
+2. Remove their numbered `.env` pair and restart. Their session row survives until it expires, but
+   the cookie opens nothing while the account is absent, and a refused request no longer slides the
+   row's 7-day expiry forward.
+
+Deleting session rows is still how you end a session for an account that **remains** configured — a
+lost laptop, a cookie you want out of circulation now:
+
+```sql
+DELETE FROM sessions WHERE username = ?;
+```
 
 ## Incident response and rollback
 
@@ -58,8 +64,10 @@ Run these in this order, before editing `.env`:
   `mcp:revoke -- --user <name>` for each configured user before changing code.
 - Token/auth code rollback: revoke rows **before** reverting. Reverting first removes the revocation
   CLI and can orphan credentials that become valid if the code is later reapplied.
-- Multi-user rollback or account removal: delete affected `sessions` rows before reverting or
-  removing accounts; active sessions otherwise keep sliding their expiry.
+- Account removal: removing the `.env` pair and restarting is enough — the cookie stops working
+  with the account. **Rolling the auth code back** is the case that still needs the rows deleted
+  first: the reverted build does not check the account list, so a session it finds is a session it
+  keeps sliding.
 - Route rollback after the MCP server exists requires reverting the server/route change together.
   There is deliberately no `501` fallback surface; without the route, `/api/mcp` stays unavailable.
 - Reverting the dependency-only commit removes the exact SDK and Zod peer pins while retaining any

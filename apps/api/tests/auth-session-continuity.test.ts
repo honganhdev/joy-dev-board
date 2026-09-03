@@ -130,27 +130,84 @@ describe('a session issued before this change', () => {
     expect(await me.json()).toEqual({ username: USERNAME });
   });
 
-  test('outlives removal of its account from the configured list', async () => {
-    // Documents the behaviour, which is NOT revocation: dropping an account from
-    // the environment stops new logins and every MCP token, but leaves that
-    // person's live board session usable until it expires or its row is deleted.
+  test('stops working once its account leaves the configured list', async () => {
+    // Removing an account from the environment is the revocation mechanism: the
+    // session row survives, but the cookie stops opening anything, matching what
+    // an MCP token already does for an offboarded username.
     const { db, sqlite } = openDatabase(':memory:');
     insertLegacySession(sqlite, 'departed-session-id', 'departed');
     const handle = router(db, auth([{ username: USERNAME, passwordHash: HASH }]));
+    const expiryOf = () =>
+      (
+        sqlite.query('SELECT expiresAt FROM sessions WHERE id = ?').get('departed-session-id') as
+          | { expiresAt: string }
+          | null
+      )?.expiresAt ?? null;
+    const before = expiryOf();
 
     const me = await handle(
       new Request('http://localhost/api/auth/me', {
         headers: { cookie: `${SESSION_COOKIE}=departed-session-id` },
       })
     );
-    expect(me.status).toBe(200);
-    expect(await me.json()).toEqual({ username: 'departed' });
+    expect(me.status).toBe(401);
 
-    // Deleting the row is the only thing that ends it, and that works.
-    sqlite.query('DELETE FROM sessions WHERE username = ?').run('departed');
+    const board = await handle(
+      new Request('http://localhost/api/tickets', {
+        headers: { cookie: `${SESSION_COOKIE}=departed-session-id` },
+      })
+    );
+    expect(board.status).toBe(401);
+
+    // The refused session is not kept alive either — a request that is turned
+    // away must not slide the row's expiry forward for another seven days, or
+    // the row outlives every reaper and springs back if the account returns.
+    expect(expiryOf()).toBe(before);
+  });
+
+  test('keeps working for an account that is still configured alongside a removed one', async () => {
+    // The property that let this change ship: entry 1 stays in the list
+    // verbatim, so the login in daily use is untouched by anyone's departure.
+    const { db, sqlite } = openDatabase(':memory:');
+    insertLegacySession(sqlite, 'live-session-id', USERNAME);
+    insertLegacySession(sqlite, 'departed-session-id', 'departed');
+    const handle = router(db, auth([{ username: USERNAME, passwordHash: HASH }]));
+
+    const me = await handle(
+      new Request('http://localhost/api/auth/me', {
+        headers: { cookie: `${SESSION_COOKIE}=live-session-id` },
+      })
+    );
+    expect(me.status).toBe(200);
+    expect(await me.json()).toEqual({ username: USERNAME });
+
+    const board = await handle(
+      new Request('http://localhost/api/tickets', {
+        headers: { cookie: `${SESSION_COOKIE}=live-session-id` },
+      })
+    );
+    expect(board.status).toBe(200);
+  });
+
+  test('deleting the row still ends a session whose account remains configured', async () => {
+    const { db, sqlite } = openDatabase(':memory:');
+    insertLegacySession(sqlite, 'live-session-id', USERNAME);
+    const handle = router(db, auth([{ username: USERNAME, passwordHash: HASH }]));
+
+    expect(
+      (
+        await handle(
+          new Request('http://localhost/api/auth/me', {
+            headers: { cookie: `${SESSION_COOKIE}=live-session-id` },
+          })
+        )
+      ).status
+    ).toBe(200);
+
+    sqlite.query('DELETE FROM sessions WHERE username = ?').run(USERNAME);
     const after = await handle(
       new Request('http://localhost/api/auth/me', {
-        headers: { cookie: `${SESSION_COOKIE}=departed-session-id` },
+        headers: { cookie: `${SESSION_COOKIE}=live-session-id` },
       })
     );
     expect(after.status).toBe(401);

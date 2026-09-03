@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { assembleBoard, toTicketDetail } from '../board/assemble';
-import { BOARD_COLUMNS, type BoardTicket } from '../board/types';
+import type { BoardTicket } from '../board/types';
 import { searchNeedle, ticketMatches } from '../board/search';
 import type { StatusHistoryEntry } from '../db/queries';
 import type { PullRow } from '../db/schema';
@@ -12,6 +12,8 @@ export type ResolvedTag = { id: string; name: string; color: string | null };
 /** The complete capability available to tools: reads and tag resolution only. */
 export type McpToolDeps = {
   readTickets: () => HelpDeskTicket[];
+  /** The extra statuses the board is configured to show. See `assembledOpen`. */
+  readEnabledColumns: () => string[];
   readTicket: (ticketId: string) => HelpDeskTicket | null;
   readStatusHistory: (ticketId: string) => StatusHistoryEntry[];
   readLastPull: () => PullRow | null;
@@ -51,19 +53,14 @@ function assembledOpen(deps: McpToolDeps): {
   };
 } {
   const raw = deps.readTickets();
-  const known = new Set<string>(BOARD_COLUMNS.map((column) => column.status));
-  const extraStatuses = [
-    ...new Set(
-      raw
-        .filter((ticket) => ticket.ticketStatus === 'open')
-        .map((ticket) => ticket.tsStatus || '(no status)')
-        .filter((status) => !known.has(status))
-    ),
-  ];
+  // The same enabled set `boardFromDb` uses, so a tool enumerates exactly what
+  // the board enumerates. A status nobody has enabled as a column is invisible
+  // here too — matching the board is the point, and inferring the extras from
+  // the data instead made MCP show tickets the board hides.
   const board = assembleBoard(
     raw,
     deps.readLastSuccessfulPull()?.finishedAt ?? new Date(0).toISOString(),
-    { enabled: extraStatuses }
+    { enabled: deps.readEnabledColumns() }
   );
   const columns = [...board.columns, ...board.extraColumns];
   const tickets = columns.flatMap((column) =>

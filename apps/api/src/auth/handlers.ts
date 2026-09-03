@@ -8,7 +8,13 @@ import type { AuthConfig, AuthUser } from '../config';
 import type { Db } from '../db/client';
 import { json } from '../http';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookie';
-import { createSession, deleteExpiredSessions, deleteSession, touchSession } from './session-store';
+import {
+  createSession,
+  deleteExpiredSessions,
+  deleteSession,
+  readSession,
+  touchSession,
+} from './session-store';
 import { LoginThrottle } from './throttle';
 
 /**
@@ -109,10 +115,22 @@ export function createAuthHandlers({ db, auth, throttle }: AuthDeps) {
     return json({ ok: true }, 200, { 'Set-Cookie': clearedSessionCookie(auth.cookieSecure) });
   }
 
-  /** The signed-in username, or `null` for no cookie, an unknown id or an expired one. */
+  /**
+   * The signed-in username, or `null` for no cookie, an unknown id, an expired
+   * one, or a session whose account is no longer configured.
+   *
+   * The account check is what makes removing someone from the environment an
+   * actual revocation: without it a sliding 7-day TTL means an offboarded
+   * person's open browser never expires. It matches what `verifyMcpToken`
+   * already does for bearer tokens — configured accounts are the single source
+   * of truth for access. The membership test comes before `touchSession` so a
+   * refused session does not have its expiry slid forward.
+   */
   function currentUser(request: Request): string | null {
     const id = readSessionCookie(request);
     if (!id) return null;
+    const row = readSession(db, id);
+    if (!row || !auth.users.some((user) => user.username === row.username)) return null;
     return touchSession(db, id, auth.sessionTtlMs)?.username ?? null;
   }
 

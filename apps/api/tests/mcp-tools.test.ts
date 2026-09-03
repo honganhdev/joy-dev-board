@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { issueMcpToken } from '../src/auth/mcp-token';
 import type { AuthConfig } from '../src/config';
 import { openDatabase } from '../src/db/client';
+import { writeEnabledColumns } from '../src/db/preferences';
 import { readLastSuccessfulPull } from '../src/db/queries';
 import { pulls } from '../src/db/schema';
 import { finishPull, startPull, syncPull } from '../src/db/sync';
@@ -53,6 +54,11 @@ function harness(options: { tagsFail?: boolean } = {}) {
   );
   const secondPull = startPull(db, '2026-09-03T00:02:00.000Z');
   finishPull(db, secondPull, syncPull(db, moved, secondPull, '2026-09-03T00:03:00.000Z'));
+
+  // The tools enumerate exactly the columns the board is configured to show, so
+  // the extra status OPENMATCH sits in has to be one of them for these tests to
+  // be about search and paging rather than about column configuration.
+  writeEnabledColumns(db, ['custom_status_2'], 0);
 
   let pullRuns = 0;
   const handle = createRouter({
@@ -148,7 +154,7 @@ describe('MCP tools', () => {
     }
   });
 
-  test('find_ticket searches open tickets only, including open extra statuses', async () => {
+  test('find_ticket searches open tickets only, including the extra statuses the board shows', async () => {
     const h = harness();
     const found = await call(h, 'find_ticket', { query: 'diem thuong', limit: 10 });
     const tickets = (found.payload as { tickets: Array<{ ticketId: string }> }).tickets;
