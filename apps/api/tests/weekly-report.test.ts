@@ -2744,18 +2744,31 @@ describe('the resolution clocks', () => {
     expect(panel.done.barWidths[1]).toBe(panel.devDone.barWidths[1]);
     expect(Math.max(...panel.done.barWidths)).toBe(100);
     expect(Math.max(...panel.devDone.barWidths)).toBeCloseTo(83.33, 2);
+
+    const fullWidthIndex = panel.done.barWidths.findIndex((width) => width === 100);
+    const statedMaximum = panel.scaleNote.match(/is ([\d.]+)%/)?.[1];
+    expect(fullWidthIndex).toBeGreaterThanOrEqual(0);
+    expect(statedMaximum).toBeDefined();
+    expect(Number(statedMaximum)).toBe(
+      Math.round(
+        ((panel.done.buckets[fullWidthIndex] ?? 0) / panel.done.sampleSize) * 10_000
+      ) / 100
+    );
   });
 
   test('draws an empty cohort at zero without dividing by zero', () => {
     const panel = report([
       measured('done-a', 'done', HOUR, HOUR),
-      measured('done-b', 'done', 2 * HOUR, 2 * HOUR),
-      measured('done-c', 'done', 3 * HOUR, 3 * HOUR),
+      measured('done-b', 'done', HOUR, HOUR),
+      measured('done-c', 'done', HOUR, HOUR),
     ]).resolutionClocks.csReply;
 
     expect(panel.devDone.sampleSize).toBe(0);
     expect(panel.devDone.barWidths).toEqual([0, 0, 0, 0, 0, 0, 0]);
     expect(panel.devDone.barWidths.every(Number.isFinite)).toBe(true);
+    expect(panel.scaleNote).toContain(
+      'The largest share across both cohorts is 100% of a cohort; it fills the full track'
+    );
   });
 
   test('cautions only a cohort below the existing five-percent floor', () => {
@@ -2770,8 +2783,10 @@ describe('the resolution clocks', () => {
     ]).resolutionClocks.csReply;
 
     expect(panel.done.sampleNote).toBe('3 tickets · median 2 h');
-    expect(panel.devDone.sampleNote).toBe(
-      '1 ticket · no median · small sample within the dated mirror; read this distribution cautiously.'
+    expect(panel.done.smallSampleNote).toBeNull();
+    expect(panel.devDone.sampleNote).toBe('1 ticket · no median');
+    expect(panel.devDone.smallSampleNote).toBe(
+      ' · small sample within the dated mirror; read this distribution cautiously.'
     );
   });
 
@@ -2781,6 +2796,7 @@ describe('the resolution clocks', () => {
       sampleSize: 0,
       medianHours: null,
       sampleNote: '0 tickets · no median',
+      smallSampleNote: null,
       buckets: [0, 0, 0, 0, 0, 0, 0],
       barWidths: [0, 0, 0, 0, 0, 0, 0],
     };
@@ -2789,6 +2805,8 @@ describe('the resolution clocks', () => {
       sampleSize: 0,
       medianHours: null,
       sampleNote: '0 tickets · no median',
+      scaleNote:
+        "Each bar shows that bucket's percentage share of its own cohort. Neither cohort contains a ticket, so the largest share is 0% and every track stays empty; ticket counts stay beside the bars.",
       carriedNote: '0 of 0 dated tickets carry this clock (0%).',
       selectionNote:
         'HelpDesk recorded this clock on 0 of the 0 tickets that reached a done state (0%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.',
@@ -2804,8 +2822,6 @@ describe('the resolution clocks', () => {
         "Over each ticket's whole life — every dated ticket carrying a HelpDesk resolution clock, whatever week it was created in.",
       scopeRule:
         "HelpDesk computes these two clocks over each ticket's whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.",
-      scaleNote:
-        "Each bar shows that bucket's percentage share of its own cohort. The largest share across both cohorts fills the track and every bar uses that same scale; ticket counts stay beside the bars.",
       bucketLabels: [
         '≤ 1h',
         '> 1h, ≤ 4h',

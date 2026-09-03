@@ -629,16 +629,9 @@ function percentOf(part: number, whole: number): number {
 /** The two lifetime issue-resolution clocks, over every dated ticket. */
 function resolutionClocks(counted: Counted[]): ResolutionClocks {
   const doneCount = counted.filter((ticket) => ticket.doneMs !== null).length;
-  const sampleNote = (
-    sampleSize: number,
-    medianHours: number | null,
-    smallSample = false
-  ) =>
+  const sampleNote = (sampleSize: number, medianHours: number | null) =>
     `${sampleSize} ${sampleSize === 1 ? 'ticket' : 'tickets'} · ` +
-    (medianHours === null ? NO_MEDIAN_LABEL : `median ${medianHours} h`) +
-    (smallSample
-      ? ' · small sample within the dated mirror; read this distribution cautiously.'
-      : '');
+    (medianHours === null ? NO_MEDIAN_LABEL : `median ${medianHours} h`);
 
   const panel = (
     key: 'csReplyMs' | 'customerOkMs',
@@ -674,7 +667,10 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
         label,
         sampleSize: values.length,
         medianHours: groupMedianHours,
-        sampleNote: sampleNote(values.length, groupMedianHours, smallSample),
+        sampleNote: sampleNote(values.length, groupMedianHours),
+        smallSampleNote: smallSample
+          ? ' · small sample within the dated mirror; read this distribution cautiously.'
+          : null,
         buckets,
       };
     };
@@ -687,6 +683,7 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
     const doneShares = shares(done);
     const devDoneShares = shares(devDone);
     const sharedMaxShare = Math.max(0, ...doneShares, ...devDoneShares);
+    const maximumShareLabel = `${Math.round(sharedMaxShare * 10_000) / 100}%`;
     const barWidths = (bucketShares: number[]) =>
       bucketShares.map((share) =>
         sharedMaxShare === 0 ? 0 : (share / sharedMaxShare) * 100
@@ -707,6 +704,10 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
       sampleSize: measured.length,
       medianHours,
       sampleNote: sampleNote(measured.length, medianHours),
+      scaleNote:
+        sharedMaxShare === 0
+          ? "Each bar shows that bucket's percentage share of its own cohort. Neither cohort contains a ticket, so the largest share is 0% and every track stays empty; ticket counts stay beside the bars."
+          : `Each bar shows that bucket's percentage share of its own cohort. The largest share across both cohorts is ${maximumShareLabel} of a cohort; it fills the full track and every bar uses that same scale; ticket counts stay beside the bars.`,
       carriedNote: `${measured.length} of ${counted.length} dated tickets carry this clock (${percentOf(measured.length, counted.length)}%).`,
       selectionNote: `HelpDesk recorded this clock on ${measuredDone} of the ${doneCount} tickets that reached a done state (${percentOf(measuredDone, doneCount)}%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.`,
       unmeasuredNote: `${measuredDone} of the ${measured.length} tickets carrying this clock reached a done state in HelpDesk. The tickets without a reading fall in two groups: ${neverDone} ${neverDone === 1 ? 'ticket' : 'tickets'} never reached one — still open, or closed another way — and ${doneUnrecorded} ${doneUnrecorded === 1 ? 'ticket' : 'tickets'} reached one but HelpDesk recorded no time for this clock.`,
@@ -724,8 +725,6 @@ function resolutionClocks(counted: Counted[]): ResolutionClocks {
       "Over each ticket's whole life — every dated ticket carrying a HelpDesk resolution clock, whatever week it was created in.",
     scopeRule:
       'HelpDesk computes these two clocks over each ticket\'s whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.',
-    scaleNote:
-      "Each bar shows that bucket's percentage share of its own cohort. The largest share across both cohorts fills the track and every bar uses that same scale; ticket counts stay beside the bars.",
     bucketLabels: CLOCK_BUCKETS.map((bucket) => bucket.label),
     clockLabels: { csReply: 'CS reply', customerOk: 'Customer OK' },
     csReply: panel(

@@ -46,9 +46,23 @@ export function ResolutionClocks({
             { label: panel.devDone.label, className: 'bg-stone-500 opacity-40' },
           ]}
         />
-        <div className="flex gap-3 text-[12px] font-semibold tabular-nums">
-          <span>{panel.done.sampleNote}</span>
-          <span>{panel.devDone.sampleNote}</span>
+        <div className="flex gap-3 tabular-nums">
+          <span className="flex items-baseline gap-1">
+            <span className="text-[12px] font-semibold">{panel.done.sampleNote}</span>
+            {panel.done.smallSampleNote && (
+              <span className="text-[10px] text-muted-foreground">
+                {panel.done.smallSampleNote}
+              </span>
+            )}
+          </span>
+          <span className="flex items-baseline gap-1">
+            <span className="text-[12px] font-semibold">{panel.devDone.sampleNote}</span>
+            {panel.devDone.smallSampleNote && (
+              <span className="text-[10px] text-muted-foreground">
+                {panel.devDone.smallSampleNote}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
@@ -62,7 +76,7 @@ export function ResolutionClocks({
           const devDoneWidth = panel.devDone.barWidths[index] ?? 0;
           return (
             <li key={label} className="flex items-center gap-2">
-              <span className="w-[24%] max-w-40 shrink-0 text-[12px]">{label}</span>
+              <span className="w-40 shrink-0 text-[12px]">{label}</span>
 
               <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 <span className="h-2.5 min-w-0 flex-1">
@@ -92,7 +106,7 @@ export function ResolutionClocks({
         })}
       </ul>
 
-      <p className="mt-3 text-[10px] leading-snug text-muted-foreground">{data.scaleNote}</p>
+      <p className="mt-3 text-[10px] leading-snug text-muted-foreground">{panel.scaleNote}</p>
       {panel.otherStatusNote && (
         <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
           {panel.otherStatusNote}

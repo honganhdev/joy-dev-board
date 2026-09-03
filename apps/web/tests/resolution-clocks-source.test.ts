@@ -37,8 +37,9 @@ test('keeps the selected clock above the range-remounted band', () => {
   expect(source).toMatch(/onClick=\{\(\) => onClockChange\(option\)\}/);
 });
 
-test('caps the percentage label gutter at a static width', () => {
-  expect(source).toContain('className="w-[24%] max-w-40 shrink-0 text-[12px]"');
+test('uses the effective static width for the label gutter', () => {
+  expect(source).toContain('className="w-40 shrink-0 text-[12px]"');
+  expect(source).not.toContain('w-[24%]');
 });
 
 test('scores nothing', () => {
@@ -67,6 +68,7 @@ test('prints every note the panel declares', () => {
   expect(fields).toEqual([
     'caption',
     'sampleNote',
+    'scaleNote',
     'carriedNote',
     'selectionNote',
     'unmeasuredNote',
@@ -80,6 +82,9 @@ test('prints every cohort note and every bar count', () => {
   // against a number rather than against the shared scale.
   expect(source).toContain('{panel.done.sampleNote}');
   expect(source).toContain('{panel.devDone.sampleNote}');
+  expect(source).toContain('panel.done.smallSampleNote');
+  expect(source).toContain('panel.devDone.smallSampleNote');
+  expect(source).toContain('text-[10px] text-muted-foreground');
   expect(source.match(/\{doneCount\}/g)).toHaveLength(1);
   expect(source.match(/\{devDoneCount\}/g)).toHaveLength(1);
 });
@@ -92,10 +97,12 @@ test('leads with the cohort split and keeps the pooled median subordinate', () =
   expect(done).toBeGreaterThan(-1);
   expect(devDone).toBeGreaterThan(done);
   expect(pooled).toBeGreaterThan(devDone);
-  expect(source).toContain('className="flex gap-3 text-[12px] font-semibold tabular-nums"');
+  expect(source).toContain('className="flex gap-3 tabular-nums"');
+  expect(source.match(/className="text-\[12px\] font-semibold"/g)).toHaveLength(2);
   expect(source).toContain(
     'className="mt-2 text-[10px] text-muted-foreground tabular-nums">{panel.sampleNote}'
   );
+  expect(source).toContain('{panel.scaleNote}');
 });
 
 test('names both clocks and both cohorts in the server words only', () => {

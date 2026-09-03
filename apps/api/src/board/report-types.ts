@@ -207,6 +207,8 @@ export type ResolutionClockGroup = {
   medianHours: number | null;
   /** Sample first, then the median or the no-median wording. Rendered verbatim. */
   sampleNote: string;
+  /** Thin-cohort caveat, kept beside only that cohort; `null` otherwise. */
+  smallSampleNote: string | null;
   /** One count per `bucketLabels` entry — same length, same order. */
   buckets: number[];
   /** 0–100 widths from bucket shares against the largest share across both cohorts. */
@@ -221,6 +223,8 @@ export type ResolutionClockPanel = {
   medianHours: number | null;
   /** The pooled summary, sample first — the same shape the cohort rows use. */
   sampleNote: string;
+  /** What the shared bar scale means, including the full track's server-computed share. */
+  scaleNote: string;
   /** `sampleSize` against every dated ticket, in words. Sample first. */
   carriedNote: string;
   /** How the measured subset differs from the tickets on which this clock was not recorded. */
@@ -238,8 +242,6 @@ export type ResolutionClocks = {
   sectionTitle: string;
   /** Why the range control above does not reach this band. */
   scopeRule: string;
-  /** What the shared bar scale does and does not compare. Rendered under the bars. */
-  scaleNote: string;
   /** The shared hour axis. Every `buckets` array has this length and order. */
   bucketLabels: string[];
   /** Names the two clocks on the toggle; the browser composes no list. */
