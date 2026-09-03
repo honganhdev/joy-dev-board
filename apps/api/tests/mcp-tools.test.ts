@@ -5,9 +5,40 @@ import { openDatabase } from '../src/db/client';
 import { readLastSuccessfulPull, readLastSuccessfulWebhook } from '../src/db/queries';
 import { pulls } from '../src/db/schema';
 import { finishPull, startPull, syncPull } from '../src/db/sync';
+import type { DocsBlock } from '../src/docs/blocks';
+import { TOOL_SECTIONS, type ToolName } from '../src/docs/mcp-guide';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
 import { MCP_CORPUS } from '../src/mcp/corpus';
 import { createRouter } from '../src/routes';
+
+type JsonSchema = {
+  properties?: Record<
+    string,
+    {
+      type?: string;
+      default?: unknown;
+      minLength?: number;
+      minimum?: number;
+      maximum?: number;
+    }
+  >;
+  required?: string[];
+};
+
+/** The rows of a tool section's parameter table, in the order the page shows them. */
+function parameterRows(tool: ToolName): readonly (readonly string[])[] {
+  const table = TOOL_SECTIONS[tool].find(
+    (block): block is Extract<DocsBlock, { kind: 'table' }> =>
+      block.kind === 'table' && block.headers[0] === 'Tham số'
+  );
+  if (!table) throw new Error(`No parameter table documented for ${tool}`);
+  return table.rows;
+}
+
+/** The bounds cell is Vietnamese prose; its numbers are the part that must agree. */
+function numbersIn(cell: string): number[] {
+  return [...cell.matchAll(/\d+/g)].map((match) => Number(match[0]));
+}
 
 const USERNAME = 'teammate';
 const AUTH: AuthConfig = {
@@ -165,6 +196,38 @@ describe('MCP tools', () => {
     }
   });
 
+  // The guide's tool-name test proves the four sections exist. This proves the
+  // parameter tables under them still describe the schema an agent is handed:
+  // a renamed argument, a widened limit or a newly optional field breaks here.
+  test('the guide parameter tables match the schema agents receive', async () => {
+    const h = harness();
+    const envelope = await rpc(h.handle, h.token, 'tools/list');
+    const tools = (envelope.result as { tools: Array<{ name: ToolName; inputSchema: JsonSchema }> })
+      .tools;
+
+    expect(tools.length).toBe(4);
+    for (const tool of tools) {
+      const rows = parameterRows(tool.name);
+      const properties = tool.inputSchema.properties ?? {};
+      const required = new Set(tool.inputSchema.required ?? []);
+
+      expect(rows.map((row) => row[0])).toEqual(Object.keys(properties));
+      for (const [name, type, mandatory, fallback, bounds] of rows) {
+        const property = properties[name!]!;
+        expect(type!.split(' ')[0]).toBe(property.type!);
+        expect(mandatory).toBe(required.has(name!) ? 'Có' : 'Không');
+        expect(fallback).toBe(property.default === undefined ? '—' : String(property.default));
+        expect(numbersIn(bounds!)).toEqual(
+          property.type === 'integer'
+            ? [property.minimum!, property.maximum!]
+            : property.minLength === undefined
+              ? []
+              : [property.minLength]
+        );
+      }
+    }
+  });
+
   test('find_ticket searches the whole mirror, including closed tickets', async () => {
     const h = harness();
     const found = await call(h, 'find_ticket', { query: 'diem thuong', limit: 10 });
@@ -177,6 +240,23 @@ describe('MCP tools', () => {
       'JOY-260903-OPENMATCH',
     ]);
     expect(tickets.map((value) => value.ticketStatus)).toEqual(['closed', 'open']);
+  });
+
+  test('find_ticket reaches an open ticket whose workflow status is blank', async () => {
+    const h = harness();
+    const found = await call(h, 'find_ticket', { query: 'JOY-260903-000000', limit: 10 });
+    const tickets = (
+      found.payload as {
+        tickets: Array<{ ticketId: string; status: string; ticketStatus: string }>;
+      }
+    ).tickets;
+
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]).toMatchObject({
+      ticketId: 'JOY-260903-000000',
+      status: '(no status)',
+      ticketStatus: 'open',
+    });
   });
 
   test('find_ticket sorts before applying its result limit', async () => {
@@ -263,6 +343,27 @@ describe('MCP tools', () => {
     ).toBe(true);
     expect(statuses.size).toBe(payload.counts.statuses.length);
     expect(payload.tickets.every((value) => value.ticketStatus === 'open')).toBe(true);
+  });
+
+  // `ticketStatus` is stamped 'open' by the assembler, so asserting on that
+  // field cannot tell an excluded closed ticket from an included one. The id
+  // find_ticket does return is what separates the two corpora.
+  test('list_open excludes a closed ticket that find_ticket reaches', async () => {
+    const h = harness();
+    const listed = await call(h, 'list_open', { limit: 100 });
+    const payload = listed.payload as {
+      tickets: Array<{ ticketId: string }>;
+      total: number;
+      mirror: { ticketCount: number };
+    };
+    const found = await call(h, 'find_ticket', { query: 'JOY-260903-CLOSEDMATCH', limit: 10 });
+    const foundIds = (found.payload as { tickets: Array<{ ticketId: string }> }).tickets.map(
+      (value) => value.ticketId
+    );
+
+    expect(foundIds).toEqual(['JOY-260903-CLOSEDMATCH']);
+    expect(payload.tickets.map((value) => value.ticketId)).not.toContain('JOY-260903-CLOSEDMATCH');
+    expect(payload.total).toBe(payload.mirror.ticketCount - 1);
   });
 
   test('list_open filters status and category without changing complete counts', async () => {
