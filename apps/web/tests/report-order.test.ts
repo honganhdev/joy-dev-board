@@ -15,6 +15,7 @@ test('keeps report panels inside their approved time-scope bands', () => {
     'title={report.rangeComparison.title}',
     '<WeekColumns',
     '<DurationHistogram',
+    '\n        <OpenBreakdown',
     'title={report.openSectionTitle}',
     'title={report.dayComparison.title}',
     'title={report.devFixOpenRightNowLabel}',
@@ -26,6 +27,8 @@ test('keeps report panels inside their approved time-scope bands', () => {
   expect(positions).toEqual([...positions].sort((a, b) => a - b));
   expect(source.match(/<RangePicker/g)).toHaveLength(1);
   expect(source).not.toMatch(/<div className="px-1">\s*<RangePicker/);
+  expect(source.match(/scope=\{openScope\}/g)).toHaveLength(2);
+  expect(source.match(/onScopeChange=\{setOpenScope\}/g)).toHaveLength(2);
 });
 
 test('returns the focused week to the running week when the range changes', () => {

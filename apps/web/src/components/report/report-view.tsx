@@ -227,6 +227,32 @@ export function ReportView({
 
       <DurationHistogram data={report.timeToFirstDone} />
 
+      <div className="flex gap-3">
+        <OpenBreakdown
+          title="By service plan"
+          rows={report.openByPlan[openScope].rows}
+          notes={[
+            report.openByPlan[openScope].freeNote,
+            report.openByPlan[openScope].scopeNote,
+          ]}
+          scope={openScope}
+          scopeLabels={report.openBreakdown.scopeLabels}
+          onScopeChange={setOpenScope}
+        />
+        <OpenBreakdown
+          title="By merchant"
+          rows={report.openByMerchant[openScope].rows}
+          notes={[
+            report.openByMerchant[openScope].concentrationNote,
+            report.openByMerchant[openScope].tailNote,
+            report.openByMerchant[openScope].scopeNote,
+          ]}
+          scope={openScope}
+          scopeLabels={report.openBreakdown.scopeLabels}
+          onScopeChange={setOpenScope}
+        />
+      </div>
+
       <SectionDivider title={report.openSectionTitle} />
 
       <div className="flex gap-3">
@@ -253,32 +279,6 @@ export function ReportView({
       </div>
 
       <BacklogAge data={report.openBacklog} />
-
-      <div className="flex gap-3">
-        <OpenBreakdown
-          title="By service plan"
-          rows={report.openByPlan[openScope].rows}
-          notes={[
-            report.openByPlan[openScope].freeNote,
-            report.openByPlan[openScope].scopeNote,
-          ]}
-          scope={openScope}
-          scopeLabels={report.openBreakdown.scopeLabels}
-          onScopeChange={setOpenScope}
-        />
-        <OpenBreakdown
-          title="By merchant"
-          rows={report.openByMerchant[openScope].rows}
-          notes={[
-            report.openByMerchant[openScope].concentrationNote,
-            report.openByMerchant[openScope].tailNote,
-            report.openByMerchant[openScope].scopeNote,
-          ]}
-          scope={openScope}
-          scopeLabels={report.openBreakdown.scopeLabels}
-          onScopeChange={setOpenScope}
-        />
-      </div>
 
       <FeatureBreakdown data={report.openByFeature} weeks={report.range.selectedWeeks} />
 
