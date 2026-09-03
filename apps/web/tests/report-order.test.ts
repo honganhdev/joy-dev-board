@@ -31,6 +31,23 @@ test('keeps report panels inside their approved time-scope bands', () => {
   expect(source.match(/onScopeChange=\{setOpenScope\}/g)).toHaveLength(2);
 });
 
+test('offers both readings on the shared control and reports which one is live', () => {
+  // `report-view.tsx` proves the two panels share one state; nothing reached
+  // `open-breakdown.tsx` itself, so the control could render one option, drop
+  // its pressed state or stop calling back and the suite stayed green. There is
+  // no renderer here, so this pins the wiring at the only level that can see it.
+  const control = readFileSync(
+    new URL('../src/components/report/open-breakdown.tsx', import.meta.url),
+    'utf8'
+  );
+
+  expect(control).toMatch(/\['createdInRange', 'stillOpen'\] as const\)\.map\(/);
+  expect(control).toMatch(/onClick=\{\(\) => onScopeChange\(option\)\}/);
+  expect(control).toMatch(/aria-pressed=\{scope === option\}/);
+  // The two options are named by the server, never composed in the browser.
+  expect(control).toMatch(/\{scopeLabels\[option\]\}/);
+});
+
 test('returns the focused week to the running week when the range changes', () => {
   // The trend heading says so in the server's words. Nothing else resets the
   // focus, so without this a week picked from the old range stays selected

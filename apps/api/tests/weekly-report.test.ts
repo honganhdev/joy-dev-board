@@ -1203,6 +1203,99 @@ describe('range-scoped breakdown readings', () => {
     expect(result.openByPlan.createdInRange.scopeNote).toContain('selected range');
     expect(result.openByMerchant.stillOpen.scopeNote).toContain('still open');
   });
+
+  test('keeps a ticket created before the range out of both readings of both panels', () => {
+    // The real fixture holds no open ticket older than its range, so every
+    // identity over that fixture stays true with the range floor deleted. This
+    // witness makes the excluded population non-zero, which is what turns the
+    // floor into behaviour a test can see.
+    const result = report([
+      ticket({
+        ticketId: 'in-range',
+        appPlan: 'free',
+        store: [{ shopName: 'In Range' }],
+        createdAt: '2026-08-18T09:00:00+07:00',
+      }),
+      ticket({
+        ticketId: 'before-range',
+        appPlan: 'pro',
+        store: [{ shopName: 'Before Range' }],
+        createdAt: '2026-03-01T09:00:00+07:00',
+      }),
+    ]);
+
+    for (const scope of ['createdInRange', 'stillOpen'] as const) {
+      expect(result.openByPlan[scope].rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
+      expect(result.openByMerchant[scope].rows.map((row) => row.label)).toEqual(['In Range']);
+    }
+
+    // Both panels are told the same thing about what they left out.
+    expect(result.openByPlan.stillOpen.scopeNote).toContain(
+      '1 open ticket created before the range'
+    );
+    expect(result.openByMerchant.stillOpen.scopeNote).toContain(
+      '1 open ticket created before the range'
+    );
+  });
+
+  test('names an undated ticket as outside the still-open reading', () => {
+    const result = report([
+      ticket({ ticketId: 'in-range', createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'undated', createdAt: null, doneAt: '2026-08-20T09:00:00+07:00' }),
+    ]);
+
+    expect(result.openByPlan.stillOpen.scopeNote).toContain('1 with no readable created date');
+    // Asserted in two fragments on purpose. The joined sentence reads
+    // "1 ticket have ... and are in no reading", whose verbs stay plural in the
+    // singular branch; that wording is production's to settle, so this test
+    // pins the count and the clause without blessing the agreement between them.
+    expect(result.openByPlan.createdInRange.scopeNote).toContain('1 ticket');
+    expect(result.openByPlan.createdInRange.scopeNote).toContain(
+      'no readable created date'
+    );
+    expect(result.openByPlan.createdInRange.rows.reduce((total, row) => total + row.count, 0)).toBe(
+      1
+    );
+  });
+
+  test('tracks the range denominator rather than the live open count', () => {
+    // Separates two numbers the simpler fixtures make equal: a closed ticket
+    // created in the range counts for the panels and not for the live backlog,
+    // and an open ticket created before it counts for the backlog and not the
+    // panels. Both terms have to be non-zero for the assertion to discriminate.
+    const result = report([
+      ticket({ ticketId: 'in-range-open', createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({
+        ticketId: 'in-range-closed',
+        ticketStatus: 'closed',
+        createdAt: '2026-08-18T09:00:00+07:00',
+        doneAt: '2026-08-20T09:00:00+07:00',
+      }),
+      ticket({
+        ticketId: 'in-range-closed-2',
+        ticketStatus: 'closed',
+        createdAt: '2026-08-19T09:00:00+07:00',
+        doneAt: '2026-08-21T09:00:00+07:00',
+      }),
+      ticket({ ticketId: 'before-range-open', createdAt: '2026-03-01T09:00:00+07:00' }),
+    ]);
+    const planCreatedInRange = result.openByPlan.createdInRange.rows.reduce(
+      (total, row) => total + row.count,
+      0
+    );
+
+    expect(result.devFixOpenRightNow).not.toBe(result.rangeComparison.current);
+    expect(planCreatedInRange).toBe(result.rangeComparison.current);
+    expect(planCreatedInRange).not.toBe(result.devFixOpenRightNow);
+  });
+
+  test('names each reading on the shared control the way the reading counts', () => {
+    const labels = report([]).openBreakdown.scopeLabels;
+
+    expect(labels.createdInRange).toMatch(/created/i);
+    expect(labels.stillOpen).toMatch(/open/i);
+    expect(labels.createdInRange).not.toBe(labels.stillOpen);
+  });
 });
 
 describe('open tickets by feature', () => {
