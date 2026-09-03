@@ -36,6 +36,7 @@ import type { WebhookProcessor } from './webhook-service';
 import { sanitizeForLog } from './webhook-verify';
 import { handleMcpRequest } from './mcp/server';
 import type { McpToolDeps } from './mcp/tools';
+import { MCP_GUIDE_BLOCKS } from './docs/mcp-guide';
 
 // Bounds drift from deletions, bulk closes and silent updates that emit no webhook.
 const STALE_PULL_MS = 30 * 60 * 1000;
@@ -137,11 +138,11 @@ export function createRouter({
   });
   const mcpTools: McpToolDeps = {
     readTickets: () => readTickets(db),
-    readEnabledColumns: () => readBoardColumns(db).statuses,
     readTicket: (ticketId) => readTicket(db, ticketId),
     readStatusHistory: (ticketId) => readStatusHistory(db, ticketId),
     readLastPull: () => readLastPull(db),
     readLastSuccessfulPull: () => readLastSuccessfulPull(db),
+    readLastSuccessfulWebhook: () => readLastSuccessfulWebhook(db),
     countTickets: () => countTickets(db),
     resolveTags: (tagIds) => resolveTags(tags, tagIds),
   };
@@ -306,6 +307,10 @@ export function createRouter({
         ensureSeeded();
         const weeks = Number(url.searchParams.get('weeks'));
         return json(aggregateWeeklyReport(readTickets(db), { weeks, now: new Date(), year }));
+      }
+
+      if (pathname === '/api/docs/mcp' && request.method === 'GET') {
+        return json({ blocks: MCP_GUIDE_BLOCKS });
       }
 
       const historyMatch = pathname.match(/^\/api\/tickets\/([^/]+)\/history$/);

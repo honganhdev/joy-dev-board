@@ -245,7 +245,7 @@ describe('the MCP surface is bounded', () => {
 });
 
 describe('what find_ticket enumerates versus the board', () => {
-  test('enumerates exactly the statuses the board is configured to show', async () => {
+  test('reads the whole mirror independently of the board column preference', async () => {
     const { db, handle, token } = (() => {
       const opened = openDatabase(':memory:');
       const tickets = [
@@ -293,13 +293,12 @@ describe('what find_ticket enumerates versus the board', () => {
         .sort();
     }
 
-    // With no stored column preference the board does not enumerate the extra
-    // status, and neither does find_ticket.
+    // With no stored column preference the board still hides its extra status,
+    // while find_ticket reads both tickets from the mirror.
     expect(await boardIds()).toEqual(['JOY-260903-KNOWN']);
-    expect(await foundIds()).toEqual(['JOY-260903-KNOWN']);
+    expect(await foundIds()).toEqual(['JOY-260903-EXTRA', 'JOY-260903-KNOWN']);
 
-    // Enabling that column on the board adds the ticket to both corpora. The
-    // board's configuration is the only thing that decides what MCP can see.
+    // Enabling the board column changes only the board; MCP's corpus is unchanged.
     writeEnabledColumns(db, ['waiting_dev'], 0);
     expect((await boardIds()).sort()).toEqual(['JOY-260903-EXTRA', 'JOY-260903-KNOWN']);
     expect(await foundIds()).toEqual(['JOY-260903-EXTRA', 'JOY-260903-KNOWN']);

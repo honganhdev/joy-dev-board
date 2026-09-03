@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BoardColumn } from '@/components/board/board-column';
 import { ColumnSettings } from '@/components/board/column-settings';
 import { BoardError, BoardSkeleton } from '@/components/board/board-states';
 import { LoginScreen } from '@/components/login-screen';
+import { McpDocsView } from '@/components/docs/mcp-docs-view';
 import { ReportView } from '@/components/report/report-view';
 import { TicketDetailDialog } from '@/components/ticket-detail-dialog';
 import { TopBar, type BoardStatus, type BoardView } from '@/components/top-bar';
@@ -21,6 +22,10 @@ type CollapsedState = Map<string, ReadonlySet<string>>;
 
 const EMPTY_COLLAPSED: ReadonlySet<string> = new Set();
 
+function viewFromPath(pathname: string): BoardView {
+  return pathname === '/docs/mcp' ? 'docs' : 'board';
+}
+
 /**
  * The board itself. Mounted only once there is a session, so none of its
  * requests ever fire while signed out — a signed-out visitor gets the login
@@ -28,12 +33,24 @@ const EMPTY_COLLAPSED: ReadonlySet<string> = new Set();
  */
 function BoardApp({ username, onSignOut }: { username: string | null; onSignOut: () => void }) {
   const detail = useTicketDetail();
-  const [view, setView] = useState<BoardView>('board');
+  const [view, setView] = useState<BoardView>(() => viewFromPath(window.location.pathname));
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<CollapsedState>(() => new Map());
   // Bumped by a finished pull. The board re-reads itself; the report is mounted
   // elsewhere and needs telling that its numbers just aged.
   const [pullToken, setPullToken] = useState(0);
+
+  useEffect(() => {
+    const followHistory = () => setView(viewFromPath(window.location.pathname));
+    window.addEventListener('popstate', followHistory);
+    return () => window.removeEventListener('popstate', followHistory);
+  }, []);
+
+  const changeView = useCallback((next: BoardView) => {
+    setView(next);
+    const pathname = next === 'docs' ? '/docs/mcp' : '/';
+    if (window.location.pathname !== pathname) window.history.pushState(null, '', pathname);
+  }, []);
 
   // How a finished pull is reported, whoever started it: the button, or a page
   // load that found one already running.
@@ -113,7 +130,7 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
     <div className="flex h-screen flex-col bg-background">
       <TopBar
         view={view}
-        onViewChange={setView}
+        onViewChange={changeView}
         query={query}
         onQueryChange={setQuery}
         columnSettings={
@@ -140,6 +157,10 @@ function BoardApp({ username, onSignOut }: { username: string | null; onSignOut:
         {view === 'report' ? (
           <div ref={reportScroll} className="h-full overflow-y-auto">
             <ReportView pullToken={pullToken} scrollRef={reportScroll} />
+          </div>
+        ) : view === 'docs' ? (
+          <div className="h-full overflow-y-auto pb-4">
+            <McpDocsView />
           </div>
         ) : (
           <>

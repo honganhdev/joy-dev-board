@@ -7,6 +7,7 @@ const ANCHORS = [resolve(SRC, 'mcp/server.ts'), resolve(SRC, 'mcp/tools.ts')];
 const ALLOWED = new Set([
   'mcp/server.ts',
   'mcp/tools.ts',
+  'mcp/corpus.ts',
   'board/assemble.ts',
   'board/categories.ts',
   'board/classify.ts',
@@ -69,11 +70,10 @@ const EXPECTED_DEPS = [
   'readStatusHistory',
   'readLastPull',
   'readLastSuccessfulPull',
+  // Added so every tool reports webhook freshness separately from full pulls.
+  'readLastSuccessfulWebhook',
   'countTickets',
   'resolveTags',
-  // Added so the tools enumerate the board's enabled columns rather than every
-  // open status in the mirror.
-  'readEnabledColumns',
 ];
 
 describe('MCP read-only import boundary', () => {
@@ -113,6 +113,7 @@ describe('MCP read-only import boundary', () => {
       'readStatusHistory',
       'readLastPull',
       'readLastSuccessfulPull',
+      'readLastSuccessfulWebhook',
       'countTickets',
       'resolveTags',
     ]) {

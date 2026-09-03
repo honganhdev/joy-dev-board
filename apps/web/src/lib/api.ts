@@ -1,4 +1,11 @@
-import type { Board, PullSummary, StatusHistoryEntry, TicketDetail, WeeklyReport } from '@/types';
+import type {
+  Board,
+  DocsBlock,
+  PullSummary,
+  StatusHistoryEntry,
+  TicketDetail,
+  WeeklyReport,
+} from '@/types';
 
 /**
  * Errors carry the message the API produced so the UI can show what actually
@@ -112,6 +119,10 @@ export async function updateBoardColumns(
 /** The whole report in one response — the server picks no week, the client picks no range. */
 export function fetchWeeklyReport(weeks: number): Promise<WeeklyReport> {
   return request<WeeklyReport>(`/api/report/weekly?weeks=${weeks}`);
+}
+
+export function fetchMcpDocs(): Promise<readonly DocsBlock[]> {
+  return request<{ blocks: readonly DocsBlock[] }>('/api/docs/mcp').then((body) => body.blocks);
 }
 
 /** Starts a HelpDesk pull and returns the current server-side attempt. */

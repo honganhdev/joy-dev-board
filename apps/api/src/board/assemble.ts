@@ -18,7 +18,7 @@ function isOpen(ticket: HelpDeskTicket): boolean {
   return ticket.ticketStatus === 'open';
 }
 
-function toBoardTicket(ticket: HelpDeskTicket): BoardTicket {
+export function toBoardTicket(ticket: HelpDeskTicket): BoardTicket {
   const store = ticket.store?.[0];
   return {
     ticketId: ticket.ticketId,

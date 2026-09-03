@@ -7,7 +7,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatAge } from '@/lib/format';
 
-export type BoardView = 'board' | 'report';
+export type BoardView = 'board' | 'report' | 'docs';
 
 export type BoardStatus = {
   /** Cards on the board out of all open tickets. Rendered `N of M open`. */
@@ -21,7 +21,7 @@ export type BoardStatus = {
 };
 
 type TopBarProps = {
-  /** Which of the two surfaces is on screen. */
+  /** Which surface is on screen. */
   view: BoardView;
   onViewChange: (view: BoardView) => void;
   query: string;
@@ -54,6 +54,7 @@ function instantOf(iso: string | null | undefined): number | null {
 const VIEWS: Array<{ value: BoardView; label: string }> = [
   { value: 'board', label: 'Board' },
   { value: 'report', label: 'Report' },
+  { value: 'docs', label: 'Docs' },
 ];
 
 export function TopBar({

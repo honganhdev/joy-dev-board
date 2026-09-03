@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { issueMcpToken } from '../src/auth/mcp-token';
 import type { AuthConfig } from '../src/config';
 import { openDatabase } from '../src/db/client';
-import { writeEnabledColumns } from '../src/db/preferences';
-import { readLastSuccessfulPull } from '../src/db/queries';
+import { readLastSuccessfulPull, readLastSuccessfulWebhook } from '../src/db/queries';
 import { pulls } from '../src/db/schema';
 import { finishPull, startPull, syncPull } from '../src/db/sync';
 import type { HelpDeskTicket } from '../src/helpdesk/types';
+import { MCP_CORPUS } from '../src/mcp/corpus';
 import { createRouter } from '../src/routes';
 
 const USERNAME = 'teammate';
@@ -32,7 +32,9 @@ function ticket(index: number, overrides: Partial<HelpDeskTicket> = {}): HelpDes
 
 function harness(options: { tagsFail?: boolean } = {}) {
   const { db } = openDatabase(':memory:');
-  const tickets = Array.from({ length: 30 }, (_, index) => ticket(index));
+  const tickets = Array.from({ length: 30 }, (_, index) =>
+    index === 0 ? ticket(index, { tsStatus: undefined }) : ticket(index)
+  );
   tickets.push(
     ticket(100, {
       ticketId: 'JOY-260903-OPENMATCH',
@@ -55,10 +57,18 @@ function harness(options: { tagsFail?: boolean } = {}) {
   const secondPull = startPull(db, '2026-09-03T00:02:00.000Z');
   finishPull(db, secondPull, syncPull(db, moved, secondPull, '2026-09-03T00:03:00.000Z'));
 
-  // The tools enumerate exactly the columns the board is configured to show, so
-  // the extra status OPENMATCH sits in has to be one of them for these tests to
-  // be about search and paging rather than about column configuration.
-  writeEnabledColumns(db, ['custom_status_2'], 0);
+  db.insert(pulls)
+    .values({
+      startedAt: '2026-09-03T00:04:00.000Z',
+      finishedAt: '2026-09-03T00:05:00.000Z',
+      ticketCount: 1,
+      inserted: 0,
+      statusChanges: 0,
+      status: 'ok',
+      source: 'webhook',
+      deliveryId: 'mcp-tools-webhook',
+    })
+    .run();
 
   let pullRuns = 0;
   const handle = createRouter({
@@ -149,24 +159,31 @@ describe('MCP tools', () => {
     );
     for (const tool of tools) {
       expect(tool.description?.length).toBeGreaterThan(0);
+      expect(tool.description).toContain(MCP_CORPUS);
       expect(tool.inputSchema.type).toBe('object');
       expect(Object.keys(tool.inputSchema.properties ?? {}).length).toBeGreaterThan(0);
     }
   });
 
-  test('find_ticket searches open tickets only, including the extra statuses the board shows', async () => {
+  test('find_ticket searches the whole mirror, including closed tickets', async () => {
     const h = harness();
     const found = await call(h, 'find_ticket', { query: 'diem thuong', limit: 10 });
-    const tickets = (found.payload as { tickets: Array<{ ticketId: string }> }).tickets;
+    const tickets = (
+      found.payload as { tickets: Array<{ ticketId: string; ticketStatus: string }> }
+    ).tickets;
 
-    expect(tickets.map((value) => value.ticketId)).toEqual(['JOY-260903-OPENMATCH']);
-    expect(tickets.map((value) => value.ticketId)).not.toContain('JOY-260903-CLOSEDMATCH');
+    expect(tickets.map((value) => value.ticketId)).toEqual([
+      'JOY-260903-CLOSEDMATCH',
+      'JOY-260903-OPENMATCH',
+    ]);
+    expect(tickets.map((value) => value.ticketStatus)).toEqual(['closed', 'open']);
   });
 
-  test('find_ticket honours its result limit', async () => {
+  test('find_ticket sorts before applying its result limit', async () => {
     const h = harness();
-    const found = await call(h, 'find_ticket', { query: 'Merchant', limit: 2 });
-    expect((found.payload as { tickets: unknown[] }).tickets).toHaveLength(2);
+    const found = await call(h, 'find_ticket', { query: 'diem thuong', limit: 1 });
+    const tickets = (found.payload as { tickets: Array<{ ticketId: string }> }).tickets;
+    expect(tickets.map((value) => value.ticketId)).toEqual(['JOY-260903-CLOSEDMATCH']);
   });
 
   test('get_ticket returns detail and resolved tag names', async () => {
@@ -214,14 +231,38 @@ describe('MCP tools', () => {
     const firstPayload = first.payload as {
       tickets: unknown[];
       counts: unknown;
+      total: number;
       nextCursor: string;
     };
     const second = await call(h, 'list_open', { cursor: firstPayload.nextCursor });
     const secondPayload = second.payload as { tickets: unknown[]; counts: unknown };
 
     expect(firstPayload.tickets).toHaveLength(25);
+    expect(firstPayload.total).toBe(31);
     expect(secondPayload.tickets).toHaveLength(6);
     expect(secondPayload.counts).toEqual(firstPayload.counts);
+  });
+
+  test('list_open includes blank and every other open status without board preferences', async () => {
+    const h = harness();
+    const listed = await call(h, 'list_open', { limit: 100 });
+    const payload = listed.payload as {
+      tickets: Array<{ ticketId: string; status: string; ticketStatus: string }>;
+      counts: { statuses: Array<{ status: string }> };
+    };
+    const statuses = new Set(payload.counts.statuses.map((value) => value.status));
+
+    expect(payload.tickets.find((value) => value.ticketId === 'JOY-260903-000000')).toMatchObject({
+      status: '(no status)',
+      ticketStatus: 'open',
+    });
+    expect(
+      [...new Set(payload.tickets.map((value) => value.status))].every((status) =>
+        statuses.has(status)
+      )
+    ).toBe(true);
+    expect(statuses.size).toBe(payload.counts.statuses.length);
+    expect(payload.tickets.every((value) => value.ticketStatus === 'open')).toBe(true);
   });
 
   test('list_open filters status and category without changing complete counts', async () => {
@@ -230,22 +271,32 @@ describe('MCP tools', () => {
     const allPayload = all.payload as {
       tickets: Array<{ status: string; category: string }>;
       counts: unknown;
+      total: number;
     };
     const category = allPayload.tickets[0]!.category;
     const filtered = await call(h, 'list_open', { status: 'doing', category, limit: 100 });
     const filteredPayload = filtered.payload as {
       tickets: Array<{ status: string; category: string }>;
       counts: unknown;
+      total: number;
     };
 
     expect(filteredPayload.tickets.every((value) => value.status === 'doing')).toBe(true);
     expect(filteredPayload.tickets.every((value) => value.category === category)).toBe(true);
+    expect(filteredPayload.total).toBe(
+      allPayload.tickets.filter(
+        (value) => value.status === 'doing' && value.category === category
+      ).length
+    );
+    expect(allPayload.total).toBe(allPayload.tickets.length);
     expect(filteredPayload.counts).toEqual(allPayload.counts);
   });
 
   test('freshness is stamped on every success and error and no pull starts', async () => {
     const h = harness();
     const expected = readLastSuccessfulPull(h.db)?.finishedAt;
+    const expectedWebhook = readLastSuccessfulWebhook(h.db)?.finishedAt;
+    expect(expectedWebhook).not.toBe(expected);
     const responses = [
       await call(h, 'find_ticket', { query: 'Merchant 1' }),
       await call(h, 'get_ticket', { ticketId: 'JOY-260903-000001' }),
@@ -255,10 +306,15 @@ describe('MCP tools', () => {
 
     for (const response of responses) {
       expect(response.payload).toMatchObject({
-        mirror: { lastSuccessfulPullAt: expected, lastPullStatus: 'ok', ticketCount: 32 },
+        mirror: {
+          lastSuccessfulPullAt: expected,
+          lastWebhookAt: expectedWebhook,
+          lastPullStatus: 'ok',
+          ticketCount: 32,
+        },
       });
     }
     expect(h.pullRuns()).toBe(0);
-    expect(h.db.select().from(pulls).all()).toHaveLength(2);
+    expect(h.db.select().from(pulls).all()).toHaveLength(3);
   });
 });

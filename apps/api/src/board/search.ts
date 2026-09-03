@@ -1,5 +1,10 @@
 import type { BoardTicket } from './types';
 
+export type SearchableTicket = Pick<
+  BoardTicket,
+  'ticketId' | 'subject' | 'shopName' | 'domain' | 'chatLink' | 'slackLink' | 'shortUrl'
+>;
+
 /**
  * Duplicated from `apps/web/src/lib/search.ts` because the API and web app do
  * not share a package. `apps/web/tests/search-parity.test.ts` keeps both copies
@@ -45,7 +50,7 @@ export function searchNeedle(query: string): string {
   return normalize(trimmed);
 }
 
-function haystack(ticket: BoardTicket): string {
+function haystack(ticket: SearchableTicket): string {
   return normalize(
     [
       ticket.ticketId,
@@ -59,6 +64,6 @@ function haystack(ticket: BoardTicket): string {
   );
 }
 
-export function ticketMatches(ticket: BoardTicket, needle: string): boolean {
+export function ticketMatches(ticket: SearchableTicket, needle: string): boolean {
   return !needle || haystack(ticket).includes(needle);
 }

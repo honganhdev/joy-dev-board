@@ -89,6 +89,14 @@ export type StatusHistoryEntry = {
   ticketUpdatedAt: string | null;
 };
 
+/** Block vocabulary returned by the login-gated MCP guide route. */
+export type DocsBlock =
+  | { kind: 'h2' | 'h3'; text: string }
+  | { kind: 'p'; text: string }
+  | { kind: 'ul'; items: readonly string[] }
+  | { kind: 'code'; text: string }
+  | { kind: 'table'; headers: readonly string[]; rows: readonly (readonly string[])[] };
+
 /**
  * Wire shape of `GET /api/report/weekly`.
  *

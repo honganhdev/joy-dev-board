@@ -227,6 +227,7 @@ describe('protected routes', () => {
       get('/api/tickets/T-1'),
       get('/api/tickets/T-1/history'),
       get('/api/report/weekly'),
+      get('/api/docs/mcp'),
       get('/api/pull/status'),
       post('/api/pull'),
     ]) {
@@ -242,6 +243,18 @@ describe('protected routes', () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'unauthorized', message: 'Sign in to use the board.' });
+  });
+
+  test('the MCP guide answers with typed blocks behind a valid session', async () => {
+    const { handle } = harness();
+    const cookie = await login(handle);
+    const response = await handle(get('/api/docs/mcp', { cookie }));
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { blocks: Array<{ kind: string }> };
+    expect(body.blocks.length).toBeGreaterThan(0);
+    const kinds = new Set(['h2', 'h3', 'p', 'ul', 'code', 'table']);
+    expect(body.blocks.every((block) => kinds.has(block.kind))).toBe(true);
   });
 
   test('an unknown or tampered session id is a 401', async () => {

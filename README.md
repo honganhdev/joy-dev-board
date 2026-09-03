@@ -183,19 +183,20 @@ third-party page gets a `401` and nothing else.
 The API serves a stateless, read-only MCP endpoint at `https://issue.anhth.cc/api/mcp`. It uses a
 personal bearer token, not the browser session cookie, and exposes four tools:
 
-- `find_ticket` searches open tickets using the board's id, link, text, and Vietnamese-diacritic
-  matching. It cannot enumerate closed tickets. Its corpus is exactly the board's: a ticket in a
-  status nobody has enabled as a board column is invisible to MCP too, so enable the column to make
-  those tickets searchable.
-- `get_ticket` reads a ticket by exact id, including a closed ticket, matching the existing detail
-  route.
-- `get_ticket_history` reads that ticket's observed status changes.
-- `list_open` returns complete status/category counts plus a filtered, paged open-ticket list.
+- `find_ticket` searches the whole mirror, open and closed, by id, subject, shop name, domain, and
+  chat/Slack/short link. It does not search ticket body text, and returns newest matches first.
+- `get_ticket` reads any mirrored ticket by exact id, including its category and resolved tags.
+- `get_ticket_history` reads any mirrored ticket's observed status changes, oldest first. Its first
+  row records when this mirror first observed the ticket, not when the ticket entered that status.
+- `list_open` returns every open ticket independently of the board's column settings. Its complete
+  status/category counts stay unfiltered, while `total` describes the filtered, paged result set.
 
-Every tool result includes the last successful mirror timestamp, latest pull status, and stored
-ticket count. `find_ticket` and `list_open` currently parse the complete mirror on every call. At
-this board's size that is acceptable; measure after deploy and revisit if a call exceeds 150 ms or
-agent use visibly stalls the board.
+Every tool result includes the last successful full-pull timestamp, last successful webhook
+timestamp, latest full-pull status, and whole-mirror ticket count. `find_ticket` and `list_open`
+currently parse the complete mirror on every call. `find_ticket` applies its cheap search before
+classifying the at-most-50 returned tickets; `list_open` classifies every open ticket to produce its
+category counts. Measure after deploy and revisit if a call exceeds 150 ms or agent use visibly
+stalls the board.
 
 Issue and revoke tokens from inside the running container (the VPS host has no Bun):
 
@@ -252,16 +253,22 @@ per-token counter: the public id is printed in those log lines and by `mcp:revok
 keyed on it let anyone who had read a log refuse the owner's own token for fifteen minutes at a
 time. The secret is 32 CSPRNG bytes — entropy, not a counter, is what makes it unguessable.
 
-Bearer tokens are immune to CSRF. A stolen token can read the complete open-ticket corpus and fetch
-any known ticket id, including merchant names, subjects, and Slack/Crisp links. It cannot write to
-HelpDesk, change the board, create a browser session, read a password, or read `.env`.
+Bearer tokens are immune to CSRF. A stolen token can enumerate the whole mirror, including the
+1,666 closed tickets in the measured mirror, and read merchant names, subjects, and Slack/Crisp
+links. It cannot write to HelpDesk, change the board, create a browser session, read a password, or
+read `.env`.
 
-Everyone with a token sees the same open-ticket corpus as the board, and the initial teammates are
-the same people who already share its password. Visibility scoping is therefore deferred, but not
-forgotten: revisit it for the first person who should not see all merchants (for example a
-contractor, agency, partner, or probationary hire). The retrofit must thread a viewer through the
-four read functions and every web/report/MCP caller; one missed call site would leak silently, so it
-belongs in a deliberate access-control change rather than this rollout.
+Everyone with a token sees the whole mirror, independently of the board's visible columns. Visibility
+scoping is deferred because the initial token holders are the same teammates who already share the
+board password, not because the corpus is small. Revisit it for the first person who should not see
+all merchants (for example a contractor, agency, partner, or probationary hire). The retrofit must
+thread a viewer through the four read functions and every web/report/MCP caller; one missed call site
+would leak silently, so it belongs in a deliberate access-control change rather than this rollout.
+
+A corpus rollback must keep behavior and documentation atomic. Prefer reverting this feature as one
+unit; for a selective rollback, reverse the README, tool descriptions and corpus constant,
+`list_open.total`, then the corpus/freshness implementation, and amend the guide's corpus section and
+its drift test in the same change.
 
 The endpoint adds no environment variable. Deployment, offboarding, rollback ordering, and the
 required real-client gate are in [`docs/mcp-deploy.md`](docs/mcp-deploy.md).
