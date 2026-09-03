@@ -567,6 +567,10 @@ type Counted = {
   doneMs: number | null;
   isGhost: boolean;
   isDevFix: boolean;
+  /** `ticketStatus === 'open'` — the same strict test the board uses. */
+  isOpen: boolean;
+  plan: string;
+  merchant: string;
   category: string;
   priority: string;
   status: string;
@@ -1244,6 +1248,9 @@ export function aggregateWeeklyReport(
       doneMs,
       isGhost: isClosed && doneMs === null,
       isDevFix: isDevFix(ticket),
+      isOpen: ticket.ticketStatus === 'open',
+      plan: isPresent(ticket.appPlan) ? ticket.appPlan.trim() : NO_PLAN,
+      merchant: merchantName(ticket),
       category: classify(ticket),
       priority: isPresent(ticket.priority) ? ticket.priority.trim() : NO_PRIORITY,
       status: isPresent(ticket.tsStatus) ? ticket.tsStatus.trim() : NO_STATUS,
