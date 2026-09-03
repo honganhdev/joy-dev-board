@@ -3765,3 +3765,246 @@ describe('the day breakdown inside a week', () => {
     expect(result.trendSectionTitle).not.toMatch(/before|earlier|previous|preceding/i);
   });
 });
+
+/**
+ * A second pass over the resolution clocks, written against the payload rather
+ * than the implementation: the shapes production actually holds (a fractional
+ * median, an even sample, two cohorts an order of magnitude apart, a duration of
+ * zero) and the degenerate populations where a denominator or a note can go
+ * wrong without any figure looking obviously false.
+ */
+describe('the resolution clocks over real-shaped and degenerate populations', () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+
+  /** A ticket carrying both clocks, done, with the mixed encodings HelpDesk sends. */
+  const clocked = (
+    ticketId: string,
+    tsStatus: string,
+    csDoneMs: number | null,
+    customerOkMs: number | null = csDoneMs,
+    overrides: Partial<HelpDeskTicket> = {}
+  ): HelpDeskTicket =>
+    ticket({
+      ticketId,
+      ticketStatus: 'closed',
+      tsStatus,
+      createdAt: '2026-08-10T09:00:00+07:00',
+      doneAt: '2026-08-18T09:00:00+07:00',
+      resolutionMetrics: {
+        ticketResolution: { createdAt: 1_786_000_000_000, doneAt: 1_786_691_200_000 },
+        issueResolution: {
+          customerReportAt: 1_785_998_200_000,
+          durationToCsDoneMs: csDoneMs,
+          durationToCustomerOkMs: customerOkMs,
+        },
+      },
+      ...overrides,
+    });
+
+  test('averages the middle two of an even sample, in numeric order', () => {
+    // Four durations whose numeric order and their millisecond strings'
+    // lexicographic order disagree: sorted numerically the middle two are 2h and
+    // 10h, so the median is 6h. Ordered as strings they are 100h and 1h, which
+    // averages to 50.5h. A four-value sample is also the smallest that proves
+    // the middle pair is averaged rather than one of them returned.
+    const group = report([
+      clocked('even-a', 'done', 1 * HOUR),
+      clocked('even-b', 'done', 2 * HOUR),
+      clocked('even-c', 'done', 10 * HOUR),
+      clocked('even-d', 'done', 100 * HOUR),
+    ]).resolutionClocks.csReply.done;
+
+    expect(group.sampleSize).toBe(4);
+    expect(group.medianHours).toBe(6);
+    expect(group.sampleNote).toBe('4 tickets · median 6 h');
+  });
+
+  test('rounds a fractional median to one decimal in the figure and in its note', () => {
+    // Production's own medians are 2.44h and 40.18h. Nothing above pins what a
+    // median that is not a whole number of hours prints, and the note is built
+    // from the rounded figure rather than from the raw one.
+    const clocks = report([
+      clocked('frac-a', 'done', 1 * HOUR),
+      clocked('frac-b', 'done', 2.44 * HOUR),
+      clocked('frac-c', 'done', 5 * HOUR),
+      clocked('frac-d', 'dev_done', 30 * HOUR),
+      clocked('frac-e', 'dev_done', 40.18 * HOUR),
+      clocked('frac-f', 'dev_done', 90 * HOUR),
+    ]).resolutionClocks.csReply;
+
+    expect(clocks.done.medianHours).toBe(2.4);
+    expect(clocks.done.sampleNote).toBe('3 tickets · median 2.4 h');
+    expect(clocks.devDone.medianHours).toBe(40.2);
+    expect(clocks.devDone.sampleNote).toBe('3 tickets · median 40.2 h');
+  });
+
+  test('keeps two cohorts an order of magnitude apart from averaging into one figure', () => {
+    // The split is the whole point of the band: production's Done cohort sits at
+    // 2.44h and its Dev Done cohort at 40.18h, sixteen times slower. The panel
+    // median mixes both, so it has to sit between them and stand for neither.
+    const clocks = report([
+      clocked('fast-a', 'done', 2 * HOUR),
+      clocked('fast-b', 'done', 2.44 * HOUR),
+      clocked('fast-c', 'done', 3 * HOUR),
+      clocked('slow-a', 'dev_done', 38 * HOUR),
+      clocked('slow-b', 'dev_done', 40.18 * HOUR),
+      clocked('slow-c', 'dev_done', 44 * HOUR),
+    ]).resolutionClocks.csReply;
+
+    expect(clocks.done.medianHours).toBe(2.4);
+    expect(clocks.devDone.medianHours).toBe(40.2);
+    expect(clocks.medianHours).toBeGreaterThan(clocks.done.medianHours ?? 0);
+    expect(clocks.medianHours).toBeLessThan(clocks.devDone.medianHours ?? 0);
+    // And they land in different rows of the axis, not in one shared clump.
+    expect(clocks.done.buckets).toEqual([0, 3, 0, 0, 0, 0, 0]);
+    expect(clocks.devDone.buckets).toEqual([0, 0, 0, 0, 3, 0, 0]);
+  });
+
+  test('places every measured duration in exactly one bucket, including zero and years', () => {
+    // Zero is a legitimate reading, not an absent one, and nothing pins that the
+    // buckets account for the whole cohort rather than for the durations that
+    // happened to fall inside the axis.
+    const durations = [0, 1, HOUR, 8 * HOUR, 3 * DAY, 400 * DAY];
+    const clocks = report([
+      ...durations.map((duration, index) => clocked(`spread-${index}`, 'done', duration)),
+      ...durations.map((duration, index) => clocked(`spread-dev-${index}`, 'dev_done', duration)),
+    ]).resolutionClocks;
+
+    for (const panel of [clocks.csReply, clocks.customerOk]) {
+      for (const group of [panel.done, panel.devDone]) {
+        expect(group.buckets).toHaveLength(clocks.bucketLabels.length);
+        expect(group.buckets.reduce((total, count) => total + count, 0)).toBe(group.sampleSize);
+      }
+      expect(panel.done.sampleSize + panel.devDone.sampleSize).toBe(panel.sampleSize);
+    }
+    expect(clocks.csReply.done.buckets).toEqual([3, 0, 1, 0, 1, 0, 1]);
+  });
+
+  test('prints an empty cohort beside a populated one without borrowing its sample', () => {
+    const panel = report([
+      clocked('only-done-a', 'done', HOUR),
+      clocked('only-done-b', 'done', 2 * HOUR),
+      clocked('only-done-c', 'done', 3 * HOUR),
+    ]).resolutionClocks.csReply;
+
+    expect(panel.done).toMatchObject({ sampleSize: 3, medianHours: 2 });
+    expect(panel.devDone).toMatchObject({
+      label: 'Dev Done',
+      sampleSize: 0,
+      medianHours: null,
+      sampleNote: '0 tickets · no median',
+      buckets: [0, 0, 0, 0, 0, 0, 0],
+    });
+    expect(panel.sampleSize).toBe(3);
+    expect(panel.otherStatusNote).toBeNull();
+  });
+
+  test('holds every figure still across all four range presets', () => {
+    // The band is lifetime-scoped, so the range control must not reach it. A
+    // population spread either side of the shortest preset is what makes the
+    // check bite: with one recent ticket every preset sees the same tickets
+    // anyway and the assertion passes without proving anything.
+    const tickets = [
+      clocked('old-a', 'done', HOUR, HOUR, {
+        createdAt: '2026-02-01T09:00:00+07:00',
+        doneAt: '2026-02-03T09:00:00+07:00',
+      }),
+      clocked('old-b', 'dev_done', 40 * HOUR, 60 * HOUR, {
+        createdAt: '2026-03-01T09:00:00+07:00',
+        doneAt: '2026-03-05T09:00:00+07:00',
+      }),
+      clocked('mid', 'done', 2 * HOUR, 4 * HOUR, {
+        createdAt: '2026-06-01T09:00:00+07:00',
+        doneAt: '2026-06-02T09:00:00+07:00',
+      }),
+      clocked('recent-a', 'done', 3 * HOUR, 5 * HOUR),
+      clocked('recent-b', 'dev_done', 50 * HOUR, 70 * HOUR),
+    ];
+    const runs = [4, 12, 26, 52].map((weeks) => report(tickets, weeks));
+
+    const [shortest, ...rest] = runs;
+    if (!shortest) throw new Error('no report for the shortest preset');
+
+    // The presets really do resolve to different ranges over this population.
+    expect(new Set(runs.map((run) => run.range.selectedWeeks)).size).toBeGreaterThan(1);
+    for (const run of rest) {
+      expect(run.resolutionClocks).toEqual(shortest.resolutionClocks);
+    }
+    expect(shortest.resolutionClocks.csReply.sampleSize).toBe(5);
+  });
+
+  test('takes no duration from a missing key, a serialised blob or a nested array', () => {
+    // verify-data records `resolutionMetrics` as absent-as-a-key on 599 of 2281
+    // tickets and never null, and the durations as `number | null`. These are the
+    // remaining shapes a mirror round trip or an upstream change could produce.
+    const clocks = report([
+      // `issueResolution` present, this clock's key absent rather than null.
+      ticket({
+        ticketId: 'key-absent',
+        ticketStatus: 'closed',
+        tsStatus: 'done',
+        createdAt: '2026-08-10T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+        resolutionMetrics: { issueResolution: { customerReportAt: 1_785_998_200_000 } },
+      }),
+      // The whole blob arriving as its own JSON text rather than as an object.
+      ticket({
+        ticketId: 'serialised',
+        ticketStatus: 'closed',
+        tsStatus: 'done',
+        createdAt: '2026-08-10T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+        resolutionMetrics: JSON.stringify({ issueResolution: { durationToCsDoneMs: HOUR } }),
+      }),
+      ticket({
+        ticketId: 'array',
+        ticketStatus: 'closed',
+        tsStatus: 'done',
+        createdAt: '2026-08-10T09:00:00+07:00',
+        doneAt: '2026-08-18T09:00:00+07:00',
+        resolutionMetrics: { issueResolution: [] },
+      }),
+      clocked('null-durations', 'done', null, null),
+    ]).resolutionClocks;
+
+    expect(clocks.csReply.sampleSize).toBe(0);
+    expect(clocks.customerOk.sampleSize).toBe(0);
+    expect(clocks.csReply.carriedNote).toContain('0 of 4 dated tickets carry this clock (0%).');
+  });
+
+  test('prints no arithmetic accident anywhere in a server-worded string', () => {
+    // Every note in this band states a count or a percentage over a population
+    // that can be empty. `NaN%`, `Infinity` or a stray `undefined` reaching the
+    // page would read as a real figure to anyone skimming it.
+    const payloads = [
+      report([]),
+      report([clocked('one', 'done', HOUR)]),
+      report([clocked('stray', 'feature_request', HOUR)]),
+      report([ticket({ ticketId: 'unmeasured', createdAt: '2026-08-18T09:00:00+07:00' })]),
+      report([clocked('zero', 'done', 0, 0)]),
+    ];
+
+    for (const payload of payloads) {
+      expect(
+        serverWordedStrings(payload).filter((value) => /NaN|Infinity|undefined|null/.test(value))
+      ).toEqual([]);
+    }
+  });
+
+  test('keeps forbidden performance language out of a populated clocks payload', () => {
+    // The existing whole-payload guards walk payloads carrying no measured
+    // ticket, so the band's only conditional sentence — the one naming tickets
+    // under some other HelpDesk status — is never among the strings they read.
+    const payload = report([
+      clocked('lang-a', 'done', HOUR),
+      clocked('lang-b', 'dev_done', 40 * HOUR),
+      clocked('lang-c', 'feature_request', 5 * HOUR),
+    ]);
+
+    expect(payload.resolutionClocks.csReply.otherStatusNote).not.toBeNull();
+    expect(
+      serverWordedStrings(payload).filter((value) => FORBIDDEN_LANGUAGE.test(value))
+    ).toEqual([]);
+  });
+});
