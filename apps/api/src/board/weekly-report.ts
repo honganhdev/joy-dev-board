@@ -17,6 +17,7 @@ import type {
   Comparison,
   GhostAudit,
   RangeMeta,
+  ResolutionClocks,
   TimeToFirstDone,
   WeeklyReport,
   WeekSummary,
@@ -35,6 +36,7 @@ import {
 import type { HelpDeskTicket } from '../helpdesk/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 /** Whole-week ranges the control offers, smallest first. */
 const PRESET_WEEKS = [4, 12, 26, 52];
@@ -67,7 +69,7 @@ const DONE_RULE =
 const NO_MEDIAN_LABEL = 'no median';
 
 const BUG_RULE =
-  'Counted here: tickets whose HelpDesk status is Dev Fixing or Dev Done. Weekly, day, range and feature figures use only those tickets.';
+  'Counted here: tickets whose HelpDesk status is Dev Fixing or Dev Done. Weekly, day, range and feature figures use only those tickets; the resolution clocks in the last band count every dated ticket.';
 
 const TIME_ZONE_NOTE =
   'Every date on this page is read in Vietnam time (UTC+07:00): a week runs Monday 00:00 to the following Monday 00:00, and a day is midnight to midnight in that same zone.';
@@ -379,6 +381,17 @@ const BUCKETS = [
   { label: 'over 30 days', maxDays: Infinity },
 ];
 
+/** Inclusive duration bounds on the shared hour axis. */
+const CLOCK_BUCKETS = [
+  { label: '≤ 1h', maxMs: HOUR_MS },
+  { label: '1–4h', maxMs: 4 * HOUR_MS },
+  { label: '4–8h', maxMs: 8 * HOUR_MS },
+  { label: '8–24h', maxMs: 24 * HOUR_MS },
+  { label: '24h–3 days', maxMs: 3 * DAY_MS },
+  { label: '3–7 days', maxMs: 7 * DAY_MS },
+  { label: 'over 7 days', maxMs: Infinity },
+];
+
 /** How many of the oldest open tickets the backlog panel lists. Named on screen. */
 const OLDEST_ROWS = 5;
 
@@ -542,6 +555,30 @@ function timestamp(value: unknown): number | null {
   return new Date(value).getTime();
 }
 
+/**
+ * HelpDesk mixes encodings inside this object — the timestamps beside these
+ * durations arrive as epoch numbers on most tickets and as ISO strings on a
+ * few — so a duration is taken only when it reads as a finite, non-negative
+ * number, whichever way it was encoded. `timestamp()` above cannot be reused:
+ * it is guarded by `isPresent`, which rejects numbers, and would return `null`
+ * for every record here. The empty string is excluded explicitly because
+ * `Number('')` is `0`, which would otherwise be accepted as an instant reply.
+ */
+function issueDurationMs(ticket: HelpDeskTicket, key: string): number | null {
+  const metrics = ticket.resolutionMetrics;
+  if (typeof metrics !== 'object' || metrics === null) return null;
+  const issue = (metrics as Record<string, unknown>).issueResolution;
+  if (typeof issue !== 'object' || issue === null) return null;
+  const raw = (issue as Record<string, unknown>)[key];
+  const ms =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.trim() !== ''
+        ? Number(raw)
+        : NaN;
+  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
 /** Days between two instants, floored at 0 — a done date before a created date is 0, not negative. */
 function wholeDaysBetween(fromMs: number, toMs: number): number {
   return Math.max(0, Math.floor((toMs - fromMs) / DAY_MS));
@@ -578,7 +615,102 @@ type Counted = {
   category: string;
   priority: string;
   status: string;
+  /** Customer's message to the CS reply HelpDesk marked done. */
+  csReplyMs: number | null;
+  /** Customer's message to the customer confirming resolved. */
+  customerOkMs: number | null;
 };
+
+/** `0` rather than `NaN` when the mirror or finished population is empty. */
+function percentOf(part: number, whole: number): number {
+  return whole === 0 ? 0 : Math.round((part / whole) * 100);
+}
+
+/** The two lifetime issue-resolution clocks, over every dated ticket. */
+function resolutionClocks(counted: Counted[]): ResolutionClocks {
+  const doneCount = counted.filter((ticket) => ticket.doneMs !== null).length;
+  const neverDone = counted.length - doneCount;
+  const sampleNote = (sampleSize: number, medianHours: number | null) =>
+    `${sampleSize} ${sampleSize === 1 ? 'ticket' : 'tickets'} · ` +
+    (medianHours === null ? NO_MEDIAN_LABEL : `median ${medianHours} h`);
+
+  const panel = (
+    key: 'csReplyMs' | 'customerOkMs',
+    caption: string
+  ): ResolutionClocks['csReply'] => {
+    const measured = counted.filter((ticket) => ticket[key] !== null);
+    const durations = measured.map((ticket) => ticket[key] ?? 0);
+    const medianHours =
+      durations.length < 3
+        ? null
+        : Math.round(
+            ((median([...durations].sort((a, b) => a - b)) ?? 0) / HOUR_MS) * 10
+          ) / 10;
+    const group = (status: 'done' | 'dev_done', label: string) => {
+      const values = measured
+        .filter((ticket) => ticket.status === status)
+        .map((ticket) => ticket[key] ?? 0);
+      const groupMedianHours =
+        values.length < 3
+          ? null
+          : Math.round(
+              ((median([...values].sort((a, b) => a - b)) ?? 0) / HOUR_MS) * 10
+            ) / 10;
+      const buckets = CLOCK_BUCKETS.map(() => 0);
+      for (const duration of values) {
+        const index = CLOCK_BUCKETS.findIndex((bucket) => duration <= bucket.maxMs);
+        if (index >= 0) buckets[index] = (buckets[index] ?? 0) + 1;
+      }
+      return {
+        label,
+        sampleSize: values.length,
+        medianHours: groupMedianHours,
+        sampleNote: sampleNote(values.length, groupMedianHours),
+        buckets,
+      };
+    };
+    const otherStatusCount = measured.filter(
+      (ticket) => ticket.status !== 'done' && ticket.status !== 'dev_done'
+    ).length;
+    const doneButUnrecorded = Math.max(0, doneCount - measured.length);
+
+    return {
+      caption,
+      sampleSize: measured.length,
+      medianHours,
+      sampleNote: sampleNote(measured.length, medianHours),
+      carriedNote: `${measured.length} of ${counted.length} dated tickets carry this clock (${percentOf(measured.length, counted.length)}%).`,
+      selectionNote: `HelpDesk recorded this clock on ${measured.length} of the ${doneCount} tickets that reached a done state (${percentOf(measured.length, doneCount)}%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.`,
+      unmeasuredNote: `Every ticket carrying this clock reached a done state in HelpDesk. The rest fall in two groups: ${neverDone} ${neverDone === 1 ? 'ticket' : 'tickets'} never reached one — still open, or closed another way — and ${doneButUnrecorded} ${doneButUnrecorded === 1 ? 'ticket' : 'tickets'} reached one but HelpDesk recorded no time for this clock.`,
+      otherStatusNote:
+        otherStatusCount === 0
+          ? null
+          : `${otherStatusCount} measured ${otherStatusCount === 1 ? 'ticket carries' : 'tickets carry'} another HelpDesk status and ${otherStatusCount === 1 ? 'is' : 'are'} in neither row above.`,
+      done: group('done', 'Done'),
+      devDone: group('dev_done', 'Dev Done'),
+    };
+  };
+
+  return {
+    sectionTitle:
+      "Over each ticket's whole life — every dated ticket carrying a HelpDesk resolution clock, whatever week it was created in.",
+    scopeRule:
+      'HelpDesk computes these two clocks over each ticket\'s whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.',
+    scaleNote:
+      "The two rows share one scale, so a bar's length compares how many tickets landed in that row. How fast each cohort was is in the median beside its name, not in the bar lengths.",
+    bucketLabels: CLOCK_BUCKETS.map((bucket) => bucket.label),
+    noMedianLabel: NO_MEDIAN_LABEL,
+    clockLabels: { csReply: 'CS reply', customerOk: 'Customer OK' },
+    csReply: panel(
+      'csReplyMs',
+      "Measured from the customer's own message to the CS reply HelpDesk marked done. That start is earlier than the ticket's created date, so this clock does not begin where time to first done begins and the two are not comparable."
+    ),
+    customerOk: panel(
+      'customerOkMs',
+      "Measured from the customer's own message to the customer confirming the issue resolved. Same start as the CS reply clock, and recorded on far fewer tickets — read its sample before its median."
+    ),
+  };
+}
 
 /**
  * Compares created-ticket counts in two matching slices of adjacent periods.
@@ -998,7 +1130,7 @@ function openSectionTitle(
       : `The mirror reaches back to ${dayLabel(horizon.startsAtMs)}.`;
   return (
     `Today and right now — all open tickets, ${count}. ${devFixCount} marked Dev Fixing or Dev Done, and ` +
-    `only those are counted in the report figures below. ${reach}`
+    `only those are counted in the figures under this heading. ${reach}`
   );
 }
 
@@ -1366,6 +1498,8 @@ export function aggregateWeeklyReport(
       category: classify(ticket),
       priority: isPresent(ticket.priority) ? ticket.priority.trim() : NO_PRIORITY,
       status: isPresent(ticket.tsStatus) ? ticket.tsStatus.trim() : NO_STATUS,
+      csReplyMs: issueDurationMs(ticket, 'durationToCsDoneMs'),
+      customerOkMs: issueDurationMs(ticket, 'durationToCustomerOkMs'),
     });
   }
 
@@ -1639,6 +1773,7 @@ export function aggregateWeeklyReport(
           : `A range of ${range.selectedWeeks} weeks leaves each week too narrow to print a figure, so the week-on-week change is shown for ranges up to ${GROWTH_SERIES_MAX_WEEKS} weeks.`,
     },
     timeToFirstDone: timeToFirstDone(bugs, rangeStartMs, rangeEndMs),
+    resolutionClocks: resolutionClocks(counted),
     dayComparison: {
       ...dayComparison,
       valence: 'riseIsBad',

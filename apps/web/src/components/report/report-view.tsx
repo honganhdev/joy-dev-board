@@ -11,6 +11,7 @@ import { PairedBars, type PairedRow } from './paired-bars';
 import { OpenBreakdown, type OpenBreakdownScope } from './open-breakdown';
 import { Panel } from './panel';
 import { RangePicker, withheldNoteId } from './range-picker';
+import { ResolutionClocks } from './resolution-clocks';
 import { SectionDivider } from './section-divider';
 import { WeekColumns } from './week-columns';
 import { WeeklySpeed } from './weekly-speed';
@@ -290,6 +291,13 @@ export function ReportView({
       {report.excludedNote && (
         <p className="px-1 text-[11px] text-muted-foreground">{report.excludedNote}</p>
       )}
+
+      <SectionDivider
+        title={report.resolutionClocks.sectionTitle}
+        note={<p>{report.resolutionClocks.scopeRule}</p>}
+      />
+
+      <ResolutionClocks data={report.resolutionClocks} />
     </div>
   );
 }

@@ -206,6 +206,57 @@ export type TimeToFirstDone = {
   caption: string;
 };
 
+/** One cohort of one clock: `done` or `dev_done`, split by `tsStatus`. */
+export type ResolutionClockGroup = {
+  /** Server-worded cohort name, printed verbatim. */
+  label: string;
+  /** Tickets in this cohort carrying this clock. Always real, never suppressed. */
+  sampleSize: number;
+  /** Hours to one decimal; `null` below the median floor of 3. */
+  medianHours: number | null;
+  /** Sample first, then the median or the no-median wording. Rendered verbatim. */
+  sampleNote: string;
+  /** One count per `bucketLabels` entry — same length, same order. */
+  buckets: number[];
+};
+
+export type ResolutionClockPanel = {
+  /** What it measures, where its clock starts, and what it is not comparable to. */
+  caption: string;
+  /** Tickets carrying this clock at all. */
+  sampleSize: number;
+  medianHours: number | null;
+  /** The panel's own headline, sample first — the same shape the cohort rows use. */
+  sampleNote: string;
+  /** `sampleSize` against every dated ticket, in words. Sample first. */
+  carriedNote: string;
+  /** How the measured subset differs from the tickets on which this clock was not recorded. */
+  selectionNote: string;
+  /** The groups that carry no reading on this clock. */
+  unmeasuredNote: string;
+  /** Carrying the clock under some other HelpDesk status; `null` when none do. */
+  otherStatusNote: string | null;
+  done: ResolutionClockGroup;
+  devDone: ResolutionClockGroup;
+};
+
+export type ResolutionClocks = {
+  /** Band heading: scope, population and rule, in the server's words. */
+  sectionTitle: string;
+  /** Why the range control above does not reach this band. */
+  scopeRule: string;
+  /** What the shared bar scale does and does not compare. Rendered under the bars. */
+  scaleNote: string;
+  /** The shared hour axis. Every `buckets` array has this length and order. */
+  bucketLabels: string[];
+  /** Server wording for a cohort under the median floor. */
+  noMedianLabel: string;
+  /** Names the two clocks on the toggle; the browser composes no list. */
+  clockLabels: { csReply: string; customerOk: string };
+  csReply: ResolutionClockPanel;
+  customerOk: ResolutionClockPanel;
+};
+
 export type PlanReading = {
   rows: Array<{ key: string; label: string; count: number }>;
   freeNote: string | null;
@@ -241,6 +292,12 @@ export type WeeklyReport = {
   };
   /** Range-scoped, not week-scoped. */
   timeToFirstDone: TimeToFirstDone;
+  /**
+   * Lifetime-scoped and population-wide: HelpDesk computes these over each
+   * ticket's whole life, so the range control does not reach them and the
+   * dev-fix filter does not apply. Its own band says both.
+   */
+  resolutionClocks: ResolutionClocks;
   /** About the current day, independent of the focused week. */
   dayComparison: Comparison & {
     title: string;

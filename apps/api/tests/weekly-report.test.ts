@@ -1677,6 +1677,9 @@ describe('range and fixed strings', () => {
     const result = report([]);
     expect(result.bugRule).toContain('Dev Fixing or Dev Done');
     expect(result.bugRule).toContain('Weekly, day, range and feature figures');
+    expect(result.bugRule).toContain(
+      'the resolution clocks in the last band count every dated ticket'
+    );
     // The rule is the date, not a list of statuses: `tsStatus` is open-ended, so
     // any enumerated list in this sentence is one release from being untrue.
     expect(result.doneRule).toContain('reached a done state in HelpDesk at any point');
@@ -1685,6 +1688,16 @@ describe('range and fixed strings', () => {
     for (const week of result.weeks) {
       expect(week.outstandingCaption).not.toContain('right now');
     }
+  });
+
+  test('names the lifetime population exception without extending the live heading', () => {
+    const result = report([]);
+
+    expect(result.bugRule).toContain('Weekly, day, range and feature figures');
+    expect(result.bugRule).toContain(
+      'the resolution clocks in the last band count every dated ticket'
+    );
+    expect(result.openSectionTitle).not.toContain('below');
   });
 
   test('keeps each band label and comparison caption scoped to the figures it describes', () => {
@@ -2523,33 +2536,331 @@ function payloadStrings(value: unknown): string[] {
   return payloadEntries(value).map(([, text]) => text);
 }
 
-describe('the unreliable upstream fields', () => {
-  test('reads none of the due or resolution-metric dates', () => {
-    // `dueDate` is always `createdAt + 48h`, `dueDateDone` disagrees with the
-    // done dates more often than it agrees, and the resolution-metrics done date
-    // contradicts the authoritative one. Poisoning all three has to change
-    // nothing: if any figure moved, something is reading them.
-    const tickets = () => [
-      ticket({ ticketId: 'open-old', createdAt: '2026-03-01T09:00:00+07:00' }),
-      ticket({
-        ticketId: 'finished',
-        ticketStatus: 'closed',
-        createdAt: '2026-08-10T09:00:00+07:00',
-        doneAt: '2026-08-18T09:00:00+07:00',
-      }),
-    ];
+describe('the resolution clocks', () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
 
-    const poisoned = tickets().map(
-      (value) =>
-        ({
+  /** The subset of the blob these tests write. HelpDeskTicket types it as `unknown`. */
+  type ResolutionMetricsFixture = {
+    ticketResolution?: Record<string, unknown>;
+    issueResolution?: Record<string, unknown>;
+  };
+
+  const measured = (
+    ticketId: string,
+    tsStatus: string,
+    csDoneMs: number,
+    customerOkMs: number
+  ): HelpDeskTicket =>
+    ticket({
+      ticketId,
+      ticketStatus: 'closed',
+      tsStatus,
+      createdAt: '2026-08-10T09:00:00+07:00',
+      doneAt: '2026-08-18T09:00:00+07:00',
+      resolutionMetrics: {
+        ticketResolution: {
+          createdAt: 1_786_000_000_000,
+          doneAt: 1_786_691_200_000,
+          durationMs: 691_200_000,
+        },
+        issueResolution: {
+          customerReportAt: 1_785_998_200_000,
+          csDoneReplyAt: 1_785_998_200_000 + csDoneMs,
+          durationToCsDoneMs: csDoneMs,
+          customerOkAt: 1_785_998_200_000 + customerOkMs,
+          durationToCustomerOkMs: customerOkMs,
+        } satisfies Record<string, unknown>,
+      } satisfies ResolutionMetricsFixture,
+    });
+
+  const measuredSet = () => [
+    ticket({ ticketId: 'open-old', createdAt: '2026-03-01T09:00:00+07:00' }),
+    measured('done-a', 'done', 1 * HOUR, 3 * HOUR),
+    measured('done-b', 'done', 4 * HOUR, 9 * HOUR),
+    measured('done-c', 'done', 2 * HOUR, HOUR / 2),
+  ];
+
+  test('reads numeric durations without deriving them from adjacent timestamps', () => {
+    const value = measured('numeric', 'done', 2 * HOUR, 3 * HOUR);
+    const metrics = value.resolutionMetrics as ResolutionMetricsFixture;
+    metrics.issueResolution = {
+      ...metrics.issueResolution,
+      customerReportAt: '2026-08-10T08:30:00+07:00',
+      csDoneReplyAt: '2026-08-10T08:31:00+07:00',
+      customerOkAt: '2026-08-10T08:32:00+07:00',
+    };
+    const clocks = report([value]).resolutionClocks;
+
+    expect(clocks.csReply.sampleSize).toBe(1);
+    expect(clocks.csReply.done.buckets).toEqual([0, 1, 0, 0, 0, 0, 0]);
+    expect(clocks.customerOk.sampleSize).toBe(1);
+    expect(clocks.customerOk.done.buckets).toEqual([0, 1, 0, 0, 0, 0, 0]);
+  });
+
+  test('accepts a non-blank numeric string duration', () => {
+    const value = measured('string', 'done', 2 * HOUR, 3 * HOUR);
+    const metrics = value.resolutionMetrics as ResolutionMetricsFixture;
+    metrics.issueResolution = {
+      ...metrics.issueResolution,
+      durationToCsDoneMs: '7200000',
+    };
+
+    expect(report([value]).resolutionClocks.csReply.done.buckets).toEqual([
+      0, 1, 0, 0, 0, 0, 0,
+    ]);
+  });
+
+  test('treats invalid, blank, non-finite and negative durations as absent', () => {
+    const invalid = ['not-a-number', '', '   ', Number.NaN, -1];
+    const tickets = invalid.map((duration, index) => {
+      const value = measured(`invalid-${index}`, 'done', HOUR, HOUR);
+      const metrics = value.resolutionMetrics as ResolutionMetricsFixture;
+      metrics.issueResolution = {
+        ...metrics.issueResolution,
+        durationToCsDoneMs: duration,
+      };
+      return value;
+    });
+    const panel = report(tickets).resolutionClocks.csReply;
+
+    expect(panel.sampleSize).toBe(0);
+    expect(panel.carriedNote).toContain('0 of 5 dated tickets carry this clock (0%).');
+  });
+
+  test('counts each clock independently', () => {
+    const value = measured('customer-only', 'done', HOUR, 2 * HOUR);
+    const metrics = value.resolutionMetrics as ResolutionMetricsFixture;
+    metrics.issueResolution = {
+      ...metrics.issueResolution,
+      durationToCsDoneMs: null,
+    };
+    const clocks = report([value]).resolutionClocks;
+
+    expect(clocks.csReply.sampleSize).toBe(0);
+    expect(clocks.customerOk.sampleSize).toBe(1);
+  });
+
+  test('handles every absent resolution-metrics shape', () => {
+    const clocks = report([
+      ticket({ ticketId: 'absent' }),
+      ticket({ ticketId: 'issue-absent', resolutionMetrics: {} }),
+      ticket({ ticketId: 'null', resolutionMetrics: null }),
+    ]).resolutionClocks;
+
+    expect(clocks.csReply.sampleSize).toBe(0);
+    expect(clocks.customerOk.sampleSize).toBe(0);
+    expect(clocks.csReply.carriedNote).toContain('0 of 3 dated tickets');
+    expect(clocks.csReply.unmeasuredNote).toContain('3 tickets never reached one');
+    expect(clocks.csReply.unmeasuredNote).toContain('0 tickets reached one');
+  });
+
+  test('splits done and dev done with sorted medians and exact buckets', () => {
+    const tickets = [
+      ...measuredSet().slice(1),
+      measured('devdone-a', 'dev_done', 40 * HOUR, 12 * HOUR),
+      measured('devdone-b', 'dev_done', 100 * HOUR, 6 * HOUR),
+      measured('devdone-c', 'dev_done', 9 * HOUR, 60 * HOUR),
+    ];
+    const clocks = report(tickets).resolutionClocks;
+
+    expect(clocks.csReply.done).toMatchObject({
+      sampleSize: 3,
+      medianHours: 2,
+      buckets: [1, 2, 0, 0, 0, 0, 0],
+    });
+    expect(clocks.customerOk.done).toMatchObject({
+      sampleSize: 3,
+      medianHours: 3,
+      buckets: [1, 1, 0, 1, 0, 0, 0],
+    });
+    expect(clocks.csReply.devDone).toMatchObject({
+      sampleSize: 3,
+      medianHours: 40,
+      buckets: [0, 0, 0, 1, 1, 1, 0],
+    });
+    expect(clocks.customerOk.devDone).toMatchObject({
+      sampleSize: 3,
+      medianHours: 12,
+      buckets: [0, 0, 1, 1, 1, 0, 0],
+    });
+    expect(clocks.csReply.done.sampleSize + clocks.csReply.devDone.sampleSize).toBe(
+      clocks.csReply.sampleSize
+    );
+    expect(clocks.customerOk.done.sampleSize + clocks.customerOk.devDone.sampleSize).toBe(
+      clocks.customerOk.sampleSize
+    );
+  });
+
+  test('reports a measured ticket outside both named rows', () => {
+    const panel = report([
+      measured('stray', 'feature_request', HOUR, HOUR),
+    ]).resolutionClocks.csReply;
+
+    expect(panel.otherStatusNote).toBe(
+      '1 measured ticket carries another HelpDesk status and is in neither row above.'
+    );
+    expect(panel.done.sampleSize + panel.devDone.sampleSize).toBe(0);
+    expect(panel.sampleSize).toBe(1);
+  });
+
+  test('suppresses a median below three while keeping the sample visible', () => {
+    const two = report([
+      measured('two-a', 'done', 4 * HOUR, HOUR),
+      measured('two-b', 'done', 2 * HOUR, HOUR),
+    ]).resolutionClocks.csReply.done;
+    const three = report(measuredSet().slice(1)).resolutionClocks.csReply.done;
+
+    expect(two).toMatchObject({ sampleSize: 2, medianHours: null });
+    expect(two.sampleNote).toBe('2 tickets · no median');
+    expect(three).toMatchObject({ sampleSize: 3, medianHours: 2 });
+    expect(three.sampleNote).toBe('3 tickets · median 2 h');
+  });
+
+  test('returns every clock key and safe zero percentages for an empty mirror', () => {
+    const emptyGroup = {
+      label: 'Done',
+      sampleSize: 0,
+      medianHours: null,
+      sampleNote: '0 tickets · no median',
+      buckets: [0, 0, 0, 0, 0, 0, 0],
+    };
+    const panel = (caption: string) => ({
+      caption,
+      sampleSize: 0,
+      medianHours: null,
+      sampleNote: '0 tickets · no median',
+      carriedNote: '0 of 0 dated tickets carry this clock (0%).',
+      selectionNote:
+        'HelpDesk recorded this clock on 0 of the 0 tickets that reached a done state (0%). The ones it did not record are not a random sample of the rest, so read this as the measured population rather than as every finished ticket.',
+      unmeasuredNote:
+        'Every ticket carrying this clock reached a done state in HelpDesk. The rest fall in two groups: 0 tickets never reached one — still open, or closed another way — and 0 tickets reached one but HelpDesk recorded no time for this clock.',
+      otherStatusNote: null,
+      done: emptyGroup,
+      devDone: { ...emptyGroup, label: 'Dev Done' },
+    });
+
+    expect(report([]).resolutionClocks).toEqual({
+      sectionTitle:
+        "Over each ticket's whole life — every dated ticket carrying a HelpDesk resolution clock, whatever week it was created in.",
+      scopeRule:
+        "HelpDesk computes these two clocks over each ticket's whole life, so the range control above does not reach this band and these figures count every dated ticket, not only Dev Fixing and Dev Done. The split below names the same Dev Done status the figures above count.",
+      scaleNote:
+        "The two rows share one scale, so a bar's length compares how many tickets landed in that row. How fast each cohort was is in the median beside its name, not in the bar lengths.",
+      bucketLabels: ['≤ 1h', '1–4h', '4–8h', '8–24h', '24h–3 days', '3–7 days', 'over 7 days'],
+      noMedianLabel: 'no median',
+      clockLabels: { csReply: 'CS reply', customerOk: 'Customer OK' },
+      csReply: panel(
+        "Measured from the customer's own message to the CS reply HelpDesk marked done. That start is earlier than the ticket's created date, so this clock does not begin where time to first done begins and the two are not comparable."
+      ),
+      customerOk: panel(
+        "Measured from the customer's own message to the customer confirming the issue resolved. Same start as the CS reply clock, and recorded on far fewer tickets — read its sample before its median."
+      ),
+    });
+  });
+
+  test('keeps the clocks lifetime-scoped when the selected range changes', () => {
+    const old = {
+      ...measured('old', 'done', 2 * HOUR, 3 * HOUR),
+      createdAt: '2026-03-01T09:00:00+07:00',
+      doneAt: '2026-03-02T09:00:00+07:00',
+    };
+
+    expect(report([old], 4).resolutionClocks).toEqual(report([old], 52).resolutionClocks);
+    expect(report([old], 4).resolutionClocks.csReply.sampleSize).toBe(1);
+  });
+
+  test('uses inclusive upper bounds on the hour axis', () => {
+    const durations = [HOUR, HOUR + 1, 24 * HOUR, 24 * HOUR + 1, 7 * DAY, 7 * DAY + 1];
+    const group = report(
+      durations.map((duration, index) => measured(`edge-${index}`, 'done', duration, duration))
+    ).resolutionClocks.csReply.done;
+
+    expect(group.buckets).toEqual([1, 1, 0, 1, 1, 1, 1]);
+  });
+
+  test('prints the measured and finished denominators separately', () => {
+    const panel = report([
+      ticket({ ticketId: 'open-a' }),
+      ticket({ ticketId: 'open-b' }),
+      ...measuredSet().slice(1),
+    ]).resolutionClocks.csReply;
+
+    expect(panel.carriedNote).toContain('3 of 5 dated tickets carry this clock (60%).');
+    expect(panel.selectionNote).toContain('3 of the 3 tickets that reached a done state (100%).');
+  });
+
+  test('includes a done-status ticket outside the dev-fix figures', () => {
+    const result = report([measured('done-only', 'done', HOUR, HOUR)]);
+
+    expect(result.resolutionClocks.csReply.sampleSize).toBe(1);
+    expect(result.timeToFirstDone.sampleSize).toBe(0);
+  });
+
+  test('separates never-done tickets from finished tickets with no clock reading', () => {
+    const finished = measured('unrecorded', 'done', HOUR, HOUR);
+    const metrics = finished.resolutionMetrics as ResolutionMetricsFixture;
+    metrics.issueResolution = {
+      ...metrics.issueResolution,
+      durationToCsDoneMs: null,
+    };
+    const note = report([ticket({ ticketId: 'open' }), finished]).resolutionClocks.csReply
+      .unmeasuredNote;
+
+    expect(note).toContain('1 ticket never reached one');
+    expect(note).toContain('1 ticket reached one but HelpDesk recorded no time for this clock');
+  });
+
+  describe('the unreliable upstream fields', () => {
+    test('reads none of the due dates, the resolution-metrics done date, or its duration', () => {
+      const poisoned = measuredSet().map((value) => {
+        const metrics = (value.resolutionMetrics ?? {}) as ResolutionMetricsFixture;
+        return {
           ...value,
           dueDate: '2020-01-01T00:00:00+07:00',
           dueDateDone: true,
-          resolutionMetrics: { ticketResolution: { doneAt: '2026-01-02T00:00:00+07:00' } },
-        }) as HelpDeskTicket
-    );
+          resolutionMetrics: {
+            ...metrics,
+            ticketResolution: {
+              ...metrics.ticketResolution,
+              doneAt: '2026-01-02T00:00:00+07:00',
+              durationMs: 1,
+            },
+          },
+        } as HelpDeskTicket;
+      });
 
-    expect(report(poisoned)).toEqual(report(tickets()));
+      expect(report(poisoned)).toEqual(report(measuredSet()));
+    });
+
+    test('reads the issue-resolution durations, and every figure moves when they do', () => {
+      const base = measuredSet();
+      const doubled = base.map((value) => {
+        const metrics = value.resolutionMetrics as ResolutionMetricsFixture | undefined;
+        if (metrics?.issueResolution === undefined) return value;
+        const issue = metrics.issueResolution;
+        return {
+          ...value,
+          resolutionMetrics: {
+            ...metrics,
+            issueResolution: {
+              ...issue,
+              durationToCsDoneMs: Number(issue.durationToCsDoneMs) * 2,
+              durationToCustomerOkMs: Number(issue.durationToCustomerOkMs) * 2,
+            },
+          },
+        } as HelpDeskTicket;
+      });
+
+      expect(report(base).resolutionClocks.csReply.done.medianHours).toBe(2);
+      expect(report(doubled).resolutionClocks.csReply.done.medianHours).toBe(4);
+      expect(report(base).resolutionClocks.customerOk.done.medianHours).toBe(3);
+      expect(report(doubled).resolutionClocks.customerOk.done.medianHours).toBe(6);
+      expect(report(base).resolutionClocks.csReply.medianHours).toBe(2);
+      expect(report(doubled).resolutionClocks.csReply.medianHours).toBe(4);
+      expect(report(base).resolutionClocks.customerOk.medianHours).toBe(3);
+      expect(report(doubled).resolutionClocks.customerOk.medianHours).toBe(6);
+    });
   });
 });
 

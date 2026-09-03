@@ -108,7 +108,7 @@ bun run build        # production build of the web app
 | `GET /api/tickets` | Board payload from SQLite: five columns, category groups, counts, and `lastPull`. `?refresh=1` starts a pull and returns the board as it stands. |
 | `GET /api/tickets/:ticketId` | Full stored HelpDesk record for one ticket, plus its computed category and resolved tag names. |
 | `GET /api/tickets/:ticketId/history` | That ticket's observed status changes, oldest first. |
-| `GET /api/report/weekly` | Weekly issue report from SQLite: one entry per week in range with created, done, outstanding and their category, priority and status breakdowns, plus every label and caption the page renders. `?weeks=` picks 4, 12, 26 or 52 and is clamped to what the mirror covers. |
+| `GET /api/report/weekly` | Weekly issue report from SQLite: one entry per week in range with created, done, outstanding and their category, priority and status breakdowns, plus every label and caption the page renders. It also carries two lifetime-scoped resolution clocks over every dated ticket, which the range parameter does not affect. `?weeks=` picks 4, 12, 26 or 52 and is clamped to what the mirror covers. |
 | `POST /api/pull` | Starts a HelpDesk pull and returns `202` with the current pull summary; the client follows it on `GET /api/pull/status`. |
 | `GET /api/pull/status` | The last pull attempt: `startedAt`, `finishedAt`, `ticketCount`, `inserted`, `statusChanges`, `status` (`running` / `ok` / `error`), `error`. |
 | `GET /api/health` | Liveness, stored ticket count, last pull attempt. Unauthenticated, but returns no ticket content. |

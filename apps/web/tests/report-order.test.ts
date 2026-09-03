@@ -19,6 +19,8 @@ test('keeps report panels inside their approved time-scope bands', () => {
     'title={report.dayComparison.title}',
     'title={report.devFixOpenRightNowLabel}',
     '<BacklogAge',
+    'title={report.resolutionClocks.sectionTitle}',
+    '<ResolutionClocks',
   ];
   const positions = markers.map((marker) => source.indexOf(marker));
 
