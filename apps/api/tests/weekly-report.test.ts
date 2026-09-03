@@ -1060,9 +1060,14 @@ describe('open tickets by plan', () => {
   test('names a single free row with singular grammar', () => {
     const result = report([
       ticket({ appPlan: 'free', createdAt: '2026-08-18T09:00:00+07:00' }),
-    ]).openByPlan.createdInRange;
-    expect(result.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
-    expect(result.freeNote).toContain('1 of 1 open Dev Fixing or Dev Done ticket');
+    ]).openByPlan;
+    expect(result.createdInRange.rows).toEqual([{ key: 'free', label: 'Free', count: 1 }]);
+    expect(result.createdInRange.freeNote).toContain(
+      '1 of 1 Dev Fixing or Dev Done ticket created in the selected range'
+    );
+    expect(result.stillOpen.freeNote).toContain(
+      '1 of 1 Dev Fixing or Dev Done ticket created in the selected range and still open'
+    );
   });
 
   test('pins the absent plan last even when it is the largest row', () => {
@@ -1100,7 +1105,7 @@ describe('open tickets by merchant', () => {
       { key: 'hegen store', label: 'hegen  store', count: 2 },
     ]);
     expect(result.concentrationNote).toContain(
-      '4 of 4 open Dev Fixing or Dev Done tickets right now (100%)'
+      '4 of 4 Dev Fixing or Dev Done tickets created in the selected range (100%)'
     );
   });
 
@@ -1128,7 +1133,7 @@ describe('open tickets by merchant', () => {
     ]).openByMerchant.createdInRange;
     expect(result.rows).toEqual([{ key: 'only shop', label: 'Only Shop', count: 1 }]);
     expect(result.concentrationNote).toContain(
-      'The busiest merchant holds 1 of 1 open Dev Fixing or Dev Done ticket'
+      'The busiest merchant holds 1 of 1 Dev Fixing or Dev Done ticket created in the selected range'
     );
     expect(result.tailNote).toBeNull();
   });
@@ -1831,21 +1836,21 @@ describe('the panels agree with each other', () => {
     expect(result.openBacklog.total).toBe(result.openRightNow);
   });
 
-  test('accounts for every open ticket in the plan and merchant rows', () => {
+  test('accounts for every created-in-range ticket in the plan, merchant and range totals', () => {
+    // Both breakdowns sit in the range band, so their default reading reconciles
+    // to the range comparison rather than to the live backlog below that band.
     const result = report([
-      ticket({ ticketId: 'a', appPlan: 'free', store: [{ shopName: 'A' }] }),
-      ticket({ ticketId: 'b', appPlan: null, store: [{ shopName: 'B' }] }),
-      ticket({ ticketId: 'c', appPlan: 'pro', store: [{ shopName: 'C' }] }),
-      ticket({ ticketId: 'd', appPlan: 'pro', store: [{ shopName: 'D' }] }),
-      ticket({ ticketId: 'e', appPlan: 'pro', store: [{ shopName: 'E' }] }),
-      ticket({ ticketId: 'f', appPlan: 'pro', store: [{ shopName: 'F' }] }),
-      ticket({ ticketId: 'absent', appPlan: 'free' }),
+      ticket({ ticketId: 'a', appPlan: 'free', store: [{ shopName: 'A' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'b', appPlan: null, store: [{ shopName: 'B' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'c', appPlan: 'pro', store: [{ shopName: 'C' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'd', appPlan: 'pro', store: [{ shopName: 'D' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'e', appPlan: 'pro', store: [{ shopName: 'E' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'f', appPlan: 'pro', store: [{ shopName: 'F' }], createdAt: '2026-08-18T09:00:00+07:00' }),
+      ticket({ ticketId: 'absent', appPlan: 'free', createdAt: '2026-08-18T09:00:00+07:00' }),
     ]);
     expect(
       result.openByPlan.createdInRange.rows.reduce((total, row) => total + row.count, 0)
-    ).toBe(
-      result.openBacklog.total
-    );
+    ).toBe(result.rangeComparison.current);
     const noMerchant =
       result.openByMerchant.createdInRange.rows.find((row) => row.key === '(no merchant)')?.count ??
       0;
@@ -1853,7 +1858,7 @@ describe('the panels agree with each other', () => {
       .filter((row) => row.key !== '(no merchant)')
       .reduce((total, row) => total + row.count, 0);
     expect(topFive + result.openByMerchant.createdInRange.tailCount + noMerchant).toBe(
-      result.openBacklog.total
+      result.rangeComparison.current
     );
   });
 
@@ -2222,15 +2227,27 @@ describe('the strings the page prints', () => {
     expect(result.backlogTitle).toBe('Backlog at each week end, and so far this week');
   });
 
-  test('lets each all-open panel carry its own scope rather than the divider', () => {
-    // The divider no longer claims the range does not reach this section, so a
-    // panel below it that is all-open has to say so in its own words.
+  test('lets each reading of each panel carry its own scope', () => {
+    // Both panels now sit in the range band and share one scope control. Each
+    // server-written caption names the selected reading so the figures remain
+    // truthful when the control changes them together.
     const result = report([
-      ticket({ ticketId: 'free', appPlan: 'free', store: [{ shopName: 'Hegen' }] }),
+      ticket({
+        ticketId: 'free',
+        appPlan: 'free',
+        store: [{ shopName: 'Hegen' }],
+        createdAt: '2026-08-18T09:00:00+07:00',
+      }),
     ]);
 
-    expect(result.openByPlan.createdInRange.freeNote).toContain('right now');
-    expect(result.openByMerchant.createdInRange.concentrationNote).toContain('right now');
+    expect(result.openByPlan.createdInRange.freeNote).toContain('created in the selected range');
+    expect(result.openByPlan.createdInRange.freeNote).not.toContain('right now');
+    expect(result.openByMerchant.createdInRange.concentrationNote).toContain(
+      'created in the selected range'
+    );
+    expect(result.openByMerchant.createdInRange.concentrationNote).not.toContain('right now');
+    expect(result.openByPlan.stillOpen.freeNote).toContain('still open');
+    expect(result.openByMerchant.stillOpen.concentrationNote).toContain('still open');
   });
 
   test('names the all-open scope, its count and the mirror reach-back date', () => {
@@ -2706,11 +2723,53 @@ describe('comparison direction declarations', () => {
 });
 
 describe('the all-open panels over the real fixture', () => {
-  test('accounts for every open ticket in every panel', () => {
+  test('decomposes every open ticket around the still-open range reading', () => {
     // Derived from the fixture, never hardcoded: `bun run fixture:pull` replaces
     // it with whichever tickets were open that day.
-    const result = aggregateWeeklyReport(loadFixtureTickets(), { weeks: 52, now: NOW, year: YEAR });
+    const fixture = loadFixtureTickets();
+    const result = aggregateWeeklyReport(fixture, { weeks: 52, now: NOW, year: YEAR });
     const open = result.devFixOpenRightNow;
+    const rangeStartMs = weekStartMs(NOW.getTime()) - 51 * WEEK;
+    const timestamp = (value: unknown) => {
+      if (typeof value !== 'string' || value.trim() === '') return null;
+      return new Date(value).getTime();
+    };
+    const isOpenDevFix = (ticket: HelpDeskTicket) =>
+      ticket.ticketStatus === 'open' &&
+      typeof ticket.tsStatus === 'string' &&
+      ['dev_fixing', 'dev_done'].includes(ticket.tsStatus.trim());
+    const survivesCounted = (ticket: HelpDeskTicket) => {
+      if (typeof ticket.deletedAt === 'string' && ticket.deletedAt.trim() !== '') return false;
+      const createdMs = timestamp(ticket.createdAt);
+      const doneMs = timestamp(ticket.doneAt);
+      return !Number.isNaN(createdMs) && !Number.isNaN(doneMs) && !(createdMs === null && doneMs === null);
+    };
+    const openCreatedBeforeRange = fixture.filter((ticket) => {
+      const createdMs = timestamp(ticket.createdAt);
+      return (
+        isOpenDevFix(ticket) &&
+        survivesCounted(ticket) &&
+        createdMs !== null &&
+        createdMs < rangeStartMs
+      );
+    }).length;
+    const openNoCreatedDate = fixture.filter(
+      (ticket) =>
+        isOpenDevFix(ticket) &&
+        survivesCounted(ticket) &&
+        timestamp(ticket.createdAt) === null
+    ).length;
+    const openDevFixRejectedByCounted = fixture.filter(
+      (ticket) => isOpenDevFix(ticket) && !survivesCounted(ticket)
+    ).length;
+    const planStillOpen = result.openByPlan.stillOpen.rows.reduce(
+      (total, row) => total + row.count,
+      0
+    );
+    const planCreatedInRange = result.openByPlan.createdInRange.rows.reduce(
+      (total, row) => total + row.count,
+      0
+    );
 
     expect(result.openBacklog.total).toBe(open);
     expect(
@@ -2718,7 +2777,7 @@ describe('the all-open panels over the real fixture', () => {
         result.openBacklog.noCreatedDate
     ).toBe(open);
     expect(
-      result.openByPlan.stillOpen.rows.reduce((total, row) => total + row.count, 0)
+      planStillOpen + openCreatedBeforeRange + openNoCreatedDate + openDevFixRejectedByCounted
     ).toBe(open);
 
     const named = result.openByMerchant.stillOpen.rows.filter(
@@ -2728,11 +2787,19 @@ describe('the all-open panels over the real fixture', () => {
       (row) => row.key === '(no merchant)'
     );
     expect(named.length).toBeLessThanOrEqual(5);
-    expect(
+    const merchantStillOpen =
       named.reduce((total, row) => total + row.count, 0) +
-        result.openByMerchant.stillOpen.tailCount +
-        (noMerchant?.count ?? 0)
+      result.openByMerchant.stillOpen.tailCount +
+      (noMerchant?.count ?? 0);
+    expect(
+      merchantStillOpen +
+        openCreatedBeforeRange +
+        openNoCreatedDate +
+        openDevFixRejectedByCounted
     ).toBe(open);
+    expect(merchantStillOpen).toBe(planStillOpen);
+    expect(planStillOpen).toBeLessThanOrEqual(planCreatedInRange);
+    expect(planCreatedInRange).toBeLessThanOrEqual(open);
 
     expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(open);
     expect(result.openBacklog.oldest.length).toBeLessThanOrEqual(5);

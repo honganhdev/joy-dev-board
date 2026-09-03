@@ -352,17 +352,16 @@ describe('the four printed shapes stay distinguishable', () => {
 describe('the dev-fix narrowing reaches every panel at once', () => {
   /**
    * One open ticket in each bucket, so a panel that forgot the narrowing counts
-   * two where every other panel counts one. `openRightNow` is deliberately not
-   * the denominator here: it is the all-open figure the page reconciles against
-   * in prose, and asserting a panel against it would pass only while every
-   * ticket in the fixture happens to be a dev-fix one.
+   * two. The live panels answer to `devFixOpenRightNow`; the range breakdowns
+   * answer to `rangeComparison.current`. The fixture makes both denominators one,
+   * so naming each one explicitly is what prevents a coincidence-passing test.
    */
   const tickets = [
     ticket({ ticketId: 'bug', subject: 'widget broken', appPlan: 'free', store: [{ shopName: 'A' }], createdAt: '2026-08-03T00:00:00.000Z' }),
     ticket({ ticketId: 'not-a-bug', tsStatus: 'pending', subject: 'point balance wrong', appPlan: 'pro', store: [{ shopName: 'B' }], createdAt: '2026-08-03T00:00:00.000Z' }),
   ];
 
-  test('gives every open-side panel the same denominator', () => {
+  test('gives each panel the denominator its own scope implies', () => {
     const result = report(tickets);
     const bucketed =
       result.openBacklog.buckets.reduce((total, bucket) => total + bucket.count, 0) +
@@ -377,8 +376,8 @@ describe('the dev-fix narrowing reaches every panel at once', () => {
     expect(bucketed).toBe(result.devFixOpenRightNow);
     expect(
       result.openByPlan.createdInRange.rows.reduce((total, row) => total + row.count, 0)
-    ).toBe(result.devFixOpenRightNow);
-    expect(merchants).toBe(result.devFixOpenRightNow);
+    ).toBe(result.rangeComparison.current);
+    expect(merchants).toBe(result.rangeComparison.current);
     expect(result.openByFeature.rows.reduce((total, row) => total + row.open, 0)).toBe(
       result.devFixOpenRightNow
     );
