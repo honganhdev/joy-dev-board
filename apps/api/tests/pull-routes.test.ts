@@ -14,8 +14,7 @@ const PASSWORD_HASH = await Bun.password.hash(PASSWORD, { algorithm: 'argon2id' 
 
 function authConfig(): AuthConfig {
   return {
-    username: USERNAME,
-    passwordHash: PASSWORD_HASH,
+    users: [{ username: USERNAME, passwordHash: PASSWORD_HASH }],
     sessionTtlMs: 7 * 24 * 60 * 60 * 1000,
     cookieSecure: false,
     trustProxy: false,

@@ -4,7 +4,7 @@
  * Nothing in here logs a password, a session id, or a cookie header — not at
  * any level. A failed login logs the username and the reason and stops there.
  */
-import type { AuthConfig } from '../config';
+import type { AuthConfig, AuthUser } from '../config';
 import type { Db } from '../db/client';
 import { json } from '../http';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookie';
@@ -43,6 +43,15 @@ function parseCredentials(body: unknown): { username: string; password: string }
 
 export type AuthDeps = { db: Db; auth: AuthConfig; throttle: LoginThrottle };
 
+/** Chooses one real argon2 hash even when the submitted username is unknown. */
+export function selectVerificationTarget(
+  users: readonly AuthUser[],
+  username: string
+): { hash: string; matched: boolean; user: AuthUser | null } {
+  const user = users.find((candidate) => candidate.username === username) ?? null;
+  return { hash: user?.passwordHash ?? users[0]!.passwordHash, matched: user !== null, user };
+}
+
 export function createAuthHandlers({ db, auth, throttle }: AuthDeps) {
   async function login(request: Request, server: ClientAddress): Promise<Response> {
     const body = await request.json().catch(() => null);
@@ -64,18 +73,19 @@ export function createAuthHandlers({ db, auth, throttle }: AuthDeps) {
       return json({ error: 'invalid_credentials', message: GENERIC_FAILURE }, 401);
     }
 
-    // Verify unconditionally, then check the username: an unknown username must
+    // Verify unconditionally, then check the match: an unknown username must
     // cost the same argon2 work as a wrong password, or the response time says
     // which one it was.
+    const target = selectVerificationTarget(auth.users, credentials.username);
     const passwordOk = await Bun.password
-      .verify(credentials.password, auth.passwordHash)
+      .verify(credentials.password, target.hash)
       .catch((cause: unknown) => {
         // A hash that argon2 cannot read is a misconfigured deployment. Say so
         // in the log, and still answer the client with the same refusal.
         console.error('[auth] AUTH_PASSWORD_HASH is unusable:', cause instanceof Error ? cause.message : cause);
         return false;
       });
-    if (!passwordOk || credentials.username !== auth.username) {
+    if (!passwordOk || !target.matched || !target.user) {
       throttle.recordFailure(keys);
       console.warn(`[auth] failed login for "${credentials.username}" (ip ${ip})`);
       return json({ error: 'invalid_credentials', message: GENERIC_FAILURE }, 401);
@@ -83,10 +93,10 @@ export function createAuthHandlers({ db, auth, throttle }: AuthDeps) {
 
     throttle.reset(keys);
     deleteExpiredSessions(db);
-    const id = createSession(db, auth.username, auth.sessionTtlMs);
-    console.log(`[auth] signed in "${auth.username}" (ip ${ip})`);
+    const id = createSession(db, target.user.username, auth.sessionTtlMs);
+    console.log(`[auth] signed in "${target.user.username}" (ip ${ip})`);
 
-    return json({ username: auth.username }, 200, {
+    return json({ username: target.user.username }, 200, {
       'Set-Cookie': sessionCookie(id, auth.sessionTtlMs, auth.cookieSecure),
     });
   }

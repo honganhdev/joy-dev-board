@@ -4,7 +4,7 @@ import { openDatabase, type Db } from '../src/db/client';
 import { sessions } from '../src/db/schema';
 import { createRouter } from '../src/routes';
 import { readSessionCookie, SESSION_COOKIE } from '../src/auth/cookie';
-import { clientIp } from '../src/auth/handlers';
+import { clientIp, selectVerificationTarget } from '../src/auth/handlers';
 import { createSession, touchSession } from '../src/auth/session-store';
 import { eq } from 'drizzle-orm';
 import { rmSync } from 'node:fs';
@@ -13,17 +13,19 @@ import { join } from 'node:path';
 
 const USERNAME = 'boarduser';
 const PASSWORD = 'correct horse battery staple';
+const SECOND_USERNAME = 'teammate';
+const SECOND_PASSWORD = 'another correct battery staple';
 
 /**
  * Hashed once for the whole file: argon2id is deliberately slow, and every test
  * here logs in at least once.
  */
 const PASSWORD_HASH = await Bun.password.hash(PASSWORD, { algorithm: 'argon2id' });
+const SECOND_PASSWORD_HASH = await Bun.password.hash(SECOND_PASSWORD, { algorithm: 'argon2id' });
 
 function authConfig(overrides: Partial<AuthConfig> = {}): AuthConfig {
   return {
-    username: USERNAME,
-    passwordHash: PASSWORD_HASH,
+    users: [{ username: USERNAME, passwordHash: PASSWORD_HASH }],
     sessionTtlMs: 7 * 24 * 60 * 60 * 1000,
     cookieSecure: true,
     trustProxy: false,
@@ -117,6 +119,88 @@ describe('login', () => {
 
     expect(unknownUser.status).toBe(wrongPassword.status);
     expect(await unknownUser.json()).toEqual(await wrongPassword.json());
+  });
+
+  test('selects a real decoy hash for an unknown username', () => {
+    const users = [
+      { username: USERNAME, passwordHash: PASSWORD_HASH },
+      { username: SECOND_USERNAME, passwordHash: SECOND_PASSWORD_HASH },
+    ];
+
+    expect(selectVerificationTarget(users, 'nobody')).toEqual({
+      hash: PASSWORD_HASH,
+      matched: false,
+      user: null,
+    });
+    expect(selectVerificationTarget(users, SECOND_USERNAME)).toEqual({
+      hash: SECOND_PASSWORD_HASH,
+      matched: true,
+      user: users[1]!,
+    });
+  });
+
+  test('every configured account gets a session under its own username', async () => {
+    const users = [
+      { username: USERNAME, passwordHash: PASSWORD_HASH },
+      { username: SECOND_USERNAME, passwordHash: SECOND_PASSWORD_HASH },
+    ];
+    const { db, handle } = harness({ auth: { users } });
+
+    const first = await handle(post('/api/auth/login', { username: USERNAME, password: PASSWORD }));
+    const second = await handle(
+      post('/api/auth/login', { username: SECOND_USERNAME, password: SECOND_PASSWORD })
+    );
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(db.select().from(sessions).all().map((row) => row.username).sort()).toEqual(
+      [USERNAME, SECOND_USERNAME].sort()
+    );
+    const me = await handle(get('/api/auth/me', { cookie: cookieHeader(second) }));
+    expect(await me.json()).toEqual({ username: SECOND_USERNAME });
+  });
+
+  test('unknown usernames pay the same coarse argon2 cost as wrong passwords', async () => {
+    const { handle } = harness({ maxFailures: 20 });
+    const elapsed = async (username: string, password: string) => {
+      const startedAt = performance.now();
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await handle(post('/api/auth/login', { username, password }));
+      }
+      return performance.now() - startedAt;
+    };
+
+    const unknown = await elapsed('nobody', 'wrong');
+    const known = await elapsed(USERNAME, 'wrong');
+    expect(unknown).toBeGreaterThanOrEqual(known * 0.5);
+  });
+
+  test('logging in with another account cookie mints a new session', async () => {
+    const users = [
+      { username: USERNAME, passwordHash: PASSWORD_HASH },
+      { username: SECOND_USERNAME, passwordHash: SECOND_PASSWORD_HASH },
+    ];
+    const { db, handle } = harness({ auth: { users } });
+    const first = await handle(post('/api/auth/login', { username: USERNAME, password: PASSWORD }));
+    const firstCookie = cookieHeader(first);
+    const firstId = readSessionCookie(get('/', { cookie: firstCookie }))!;
+
+    const second = await handle(
+      post(
+        '/api/auth/login',
+        { username: SECOND_USERNAME, password: SECOND_PASSWORD },
+        { cookie: firstCookie }
+      )
+    );
+    const secondId = readSessionCookie(get('/', { cookie: cookieHeader(second) }))!;
+
+    expect(secondId).not.toBe(firstId);
+    expect(db.select().from(sessions).where(eq(sessions.id, firstId)).all()[0]?.username).toBe(
+      USERNAME
+    );
+    expect(db.select().from(sessions).where(eq(sessions.id, secondId)).all()[0]?.username).toBe(
+      SECOND_USERNAME
+    );
   });
 
   test('a malformed body is rejected without a crash', async () => {
@@ -261,11 +345,41 @@ describe('throttling', () => {
     await handle(post('/api/auth/login', { username: USERNAME, password: 'wrong' }));
     expect((await handle(post('/api/auth/login', { username: USERNAME, password: PASSWORD }))).status).toBe(200);
   });
+
+  test('locking one username does not lock another person out', async () => {
+    const users = [
+      { username: USERNAME, passwordHash: PASSWORD_HASH },
+      { username: SECOND_USERNAME, passwordHash: SECOND_PASSWORD_HASH },
+    ];
+    const { handle } = harness({ auth: { users, trustProxy: true }, maxFailures: 3 });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await handle(
+        post(
+          '/api/auth/login',
+          { username: SECOND_USERNAME, password: 'wrong' },
+          { 'x-forwarded-for': '192.0.2.10' }
+        )
+      );
+      expect(response.status).toBe(401);
+    }
+
+    const firstAccount = await handle(
+      post(
+        '/api/auth/login',
+        { username: USERNAME, password: PASSWORD },
+        { 'x-forwarded-for': '192.0.2.11' }
+      )
+    );
+    expect(firstAccount.status).toBe(200);
+  });
 });
 
 describe('unusable password hash', () => {
   test('every login is refused, and no request 500s', async () => {
-    const { handle } = harness({ auth: { passwordHash: '$argon2id$not-a-real-hash' } });
+    const { handle } = harness({
+      auth: { users: [{ username: USERNAME, passwordHash: '$argon2id$not-a-real-hash' }] },
+    });
     const response = await handle(
       post('/api/auth/login', { username: USERNAME, password: PASSWORD })
     );

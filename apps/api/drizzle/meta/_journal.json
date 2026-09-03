@@ -50,6 +50,13 @@
       "when": 1787739648234,
       "tag": "0006_normal_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788411320632,
+      "tag": "0007_worried_morlocks",
+      "breakpoints": true
     }
   ]
 }

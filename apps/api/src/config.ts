@@ -25,10 +25,8 @@ export type Config = {
 };
 
 export type AuthConfig = {
-  /** The single account that may sign in. There is no user-management UI. */
-  username: string;
-  /** Decoded `Bun.password` (argon2id) PHC string. See `decodePasswordHash`. */
-  passwordHash: string;
+  /** Accounts that may sign in. There is no user-management UI. */
+  users: readonly AuthUser[];
   /** Sliding session lifetime, refreshed on every authenticated request. */
   sessionTtlMs: number;
   /**
@@ -42,6 +40,12 @@ export type AuthConfig = {
    * login throttle.
    */
   trustProxy: boolean;
+};
+
+export type AuthUser = {
+  username: string;
+  /** Decoded `Bun.password` (argon2id) PHC string. See `decodePasswordHash`. */
+  passwordHash: string;
 };
 
 /**
@@ -109,6 +113,42 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
 
+  const users: AuthUser[] = [
+    { username, passwordHash: decodePasswordHash(passwordHash) },
+  ];
+  const usernames = new Set([username]);
+  for (let index = 2; index <= 20; index += 1) {
+    const nameKey = `AUTH_USER_${index}_NAME`;
+    const hashKey = `AUTH_USER_${index}_HASH`;
+    const candidateUsername = env[nameKey]?.trim();
+    const candidateHash = env[hashKey]?.trim();
+
+    if (!candidateUsername && !candidateHash) continue;
+    if (!candidateUsername) {
+      console.error(`[config] ${nameKey} is missing; skipping account entry ${index}.`);
+      continue;
+    }
+    if (!candidateHash) {
+      console.error(`[config] ${hashKey} is missing; skipping account entry ${index}.`);
+      continue;
+    }
+    if (usernames.has(candidateUsername)) {
+      console.error(
+        `[config] ${nameKey} duplicates an earlier username; skipping account entry ${index}.`
+      );
+      continue;
+    }
+
+    try {
+      users.push({ username: candidateUsername, passwordHash: decodePasswordHash(candidateHash) });
+      usernames.add(candidateUsername);
+    } catch {
+      console.error(
+        `[config] ${hashKey} is not a usable argon2id hash; skipping account entry ${index}.`
+      );
+    }
+  }
+
   return {
     apiKey,
     webhookSecret,
@@ -119,8 +159,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appName: env.HELPDESK_APP_NAME?.trim() || 'JOY Loyalty',
     databasePath: env.DATABASE_PATH?.trim() || DEFAULT_DATABASE_PATH,
     auth: {
-      username,
-      passwordHash: decodePasswordHash(passwordHash),
+      users,
       sessionTtlMs: Number(env.SESSION_TTL_MS ?? DEFAULT_SESSION_TTL_MS),
       cookieSecure: env.COOKIE_SECURE?.trim() !== 'false',
       trustProxy: env.TRUST_PROXY?.trim() === 'true',

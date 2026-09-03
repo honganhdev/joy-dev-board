@@ -34,8 +34,7 @@ const config = {
   appName: 'JOY Loyalty',
   databasePath: ':memory:',
   auth: {
-    username: 'boarduser',
-    passwordHash: 'unused',
+    users: [{ username: 'boarduser', passwordHash: 'unused' }],
     sessionTtlMs: 604_800_000,
     cookieSecure: false,
     trustProxy: false,

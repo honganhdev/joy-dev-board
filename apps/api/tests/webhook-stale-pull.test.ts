@@ -12,8 +12,7 @@ import { createPullRunner } from '../src/pull-service';
 import { createRouter } from '../src/routes';
 
 const auth: AuthConfig = {
-  username: 'boarduser',
-  passwordHash: 'unused',
+  users: [{ username: 'boarduser', passwordHash: 'unused' }],
   sessionTtlMs: 604_800_000,
   cookieSecure: false,
   trustProxy: false,
@@ -77,7 +76,7 @@ function harness(options: { finishedAt: string; withTicket: boolean }) {
     webhooks: { process: async () => {} },
     year: config.year,
   });
-  const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+  const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
   const request = () =>
     new Request('http://localhost/api/tickets', {
       headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
@@ -194,7 +193,7 @@ describe('reconciliation boundaries and single-flight', () => {
       webhooks: { process: async () => {} },
       year: config.year,
     });
-    const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+    const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
 
     await handle(
       new Request('http://localhost/api/tickets', {
@@ -241,7 +240,7 @@ describe('a failing upstream and the opportunistic pull', () => {
       webhooks: { process: async () => {} },
       year: config.year,
     });
-    const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+    const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
     const load = async () => {
       await handle(
         new Request('http://localhost/api/tickets', {
@@ -299,7 +298,7 @@ describe('a failing upstream and the opportunistic pull', () => {
       webhooks: { process: async () => {} },
       year: config.year,
     });
-    const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+    const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
 
     await handle(
       new Request('http://localhost/api/tickets', {

@@ -141,6 +141,25 @@ export const sessions = sqliteTable(
 export type SessionRow = typeof sessions.$inferSelect;
 
 /**
+ * One row per personal MCP credential. The random secret is stored only as a
+ * SHA-256 digest; `publicId` is the non-secret lookup key safe to identify in
+ * logs. This table stays deliberately unindexed beyond its primary key because
+ * it holds only a handful of rows and every verification is by `publicId`.
+ */
+export const mcpTokens = sqliteTable('mcp_tokens', {
+  publicId: text('publicId').primaryKey(),
+  label: text('label').notNull(),
+  username: text('username').notNull(),
+  secretHash: text('secretHash').notNull(),
+  createdAt: text('createdAt').notNull(),
+  lastUsedAt: text('lastUsedAt'),
+  expiresAt: text('expiresAt'),
+  revokedAt: text('revokedAt'),
+});
+
+export type McpTokenRow = typeof mcpTokens.$inferSelect;
+
+/**
  * One shared set of optional board columns for the single shared login.
  *
  * `version` is bumped by every accepted write and quoted back by the writer it

@@ -43,7 +43,13 @@ bun run auth:hash 'your password'  # convenient, but your shell keeps a copy
 ```
 
 It prints one line to paste into `.env` and never prints the password itself. There is no
-user-management UI and no signup: one account, from the environment.
+user-management UI and no signup: accounts are configured in the environment. Keep the existing
+`AUTH_USERNAME` / `AUTH_PASSWORD_HASH` pair as entry 1, then add numbered pairs for teammates:
+
+```dotenv
+AUTH_USER_2_NAME=teammate
+AUTH_USER_2_HASH=<base64 hash from auth:hash>
+```
 
 The hash is emitted **base64-encoded**, not as the raw `$argon2id$...` string. `bun --env-file`
 expands `$argon2id`, `$v` and `$m` as shell variables — inside single quotes too — so a pasted PHC
@@ -51,9 +57,11 @@ string arrives mangled and every login fails with an unsupported-algorithm error
 `env_file` expands nothing and no single escaping works in both. Base64 has no `$` and so means the
 same thing everywhere. Paste the whole printed line, unquoted.
 
-The API refuses to start without `AUTH_USERNAME` and `AUTH_PASSWORD_HASH`, the same way it refuses to
-start without `API_KEY_HELPDESK`. A board with real customer data and no login should not come up at
-all.
+The API refuses to start without entry 1 (`AUTH_USERNAME` and `AUTH_PASSWORD_HASH`), the same way it
+refuses to start without `API_KEY_HELPDESK`. A board with real customer data and no login should not
+come up at all. Numbered entries 2 through 20 fail safely: a missing partner key or unusable hash is
+logged with the exact offending key and that account is skipped. Duplicate usernames keep the first
+entry and log the losing name key, so a typo cannot take the board down for everyone.
 
 ## Run
 
@@ -125,8 +133,10 @@ A failing tag directory degrades a detail view to raw tag ids; it never fails th
 | `HELPDESK_APP_NAME` | `JOY Loyalty` | App filter. |
 | `HELPDESK_YEAR` | current year | Year window for the `by-date` query. |
 | `HELPDESK_BASE_URL` | `https://helpdesk.avada.net/api/external` | Upstream base. |
-| `AUTH_USERNAME` | *(required)* | The one account that may sign in. |
-| `AUTH_PASSWORD_HASH` | *(required)* | Base64 of the argon2id hash. From `bun run auth:hash`. |
+| `AUTH_USERNAME` | *(required)* | Entry 1 username. The existing login keeps these keys unchanged. |
+| `AUTH_PASSWORD_HASH` | *(required)* | Entry 1 base64 argon2id hash. From `bun run auth:hash`. |
+| `AUTH_USER_2_NAME` … `AUTH_USER_20_NAME` | *(optional)* | Additional usernames, paired by number with a hash. |
+| `AUTH_USER_2_HASH` … `AUTH_USER_20_HASH` | *(optional)* | Additional base64 argon2id hashes. Invalid or half-configured entries are logged and skipped. |
 | `SESSION_TTL_MS` | `604800000` (7d) | Session lifetime, refreshed on every authenticated request. |
 | `COOKIE_SECURE` | `true` | `Secure` on the session cookie. Set to `false` **only** for local http — over plain http a `Secure` cookie is never sent and no login will stick. |
 | `TRUST_PROXY` | `false` | Believe `X-Forwarded-For`. Set `true` **only** behind a real reverse proxy; otherwise a client can set the header itself and get a fresh bucket for every login guess. |
@@ -145,7 +155,8 @@ A failing tag directory degrades a detail view to raw tag ids; it never fails th
   lock that key out for fifteen. A wrong password, an unknown username and a lockout all return the
   same message and the same body — nothing in the response says which one it was. The counters are in
   memory, so restarting the API clears them; the alternative is a SQLite write per failed guess,
-  which is its own denial-of-service surface.
+  which is its own denial-of-service surface. With `TRUST_PROXY=true` behind Caddy, failures against
+  one teammate's username do not lock out another teammate from a different address.
 - Passwords, session ids and cookie headers are never logged, at any level.
 
 The `Access-Control-Allow-Origin: *` on the API is deliberate and safe here: without

@@ -11,8 +11,7 @@ import { createPullRunner } from '../src/pull-service';
 import { createRouter } from '../src/routes';
 
 const auth: AuthConfig = {
-  username: 'boarduser',
-  passwordHash: 'unused',
+  users: [{ username: 'boarduser', passwordHash: 'unused' }],
   sessionTtlMs: 604_800_000,
   cookieSecure: false,
   trustProxy: false,
@@ -54,7 +53,7 @@ test('the board reports the latest successful webhook separately from full-pull 
     webhooks: { process: async () => {} },
     year: config.year,
   });
-  const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+  const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
   const boardRequest = () =>
     new Request('http://localhost/api/tickets', {
       headers: { Cookie: `${SESSION_COOKIE}=${sessionId}` },
@@ -98,7 +97,7 @@ test('a mirror fed only by webhooks is treated as never pulled and kicks a full 
     webhooks: { process: async () => {} },
     year: config.year,
   });
-  const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+  const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
 
   const webhookId = reserveDelivery(db, 'delivery-only')!;
   finishPull(db, webhookId, { pulled: 1, inserted: 0, statusChanges: 1 });
@@ -139,7 +138,7 @@ test('a webhook that fails after a successful one does not roll the webhook time
     webhooks: { process: async () => {} },
     year: config.year,
   });
-  const sessionId = createSession(db, auth.username, auth.sessionTtlMs);
+  const sessionId = createSession(db, auth.users[0]!.username, auth.sessionTtlMs);
   const board = async () =>
     (await (
       await handle(

@@ -15,7 +15,9 @@
     "fixture:pull": "bun run --cwd apps/api fixture:pull",
     "db:generate": "bun run --cwd apps/api db:generate",
     "db:backup": "bun run --cwd apps/api db:backup",
-    "auth:hash": "bun run --cwd apps/api auth:hash"
+    "auth:hash": "bun run --cwd apps/api auth:hash",
+    "mcp:issue": "bun run --cwd apps/api mcp:issue",
+    "mcp:revoke": "bun run --cwd apps/api mcp:revoke"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

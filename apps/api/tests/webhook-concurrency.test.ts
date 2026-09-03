@@ -15,8 +15,7 @@ const SECRET = 'concurrency-test-secret';
 const PATH = '/api/webhooks/avada-ticket';
 
 const auth: AuthConfig = {
-  username: 'boarduser',
-  passwordHash: 'unused',
+  users: [{ username: 'boarduser', passwordHash: 'unused' }],
   sessionTtlMs: 604_800_000,
   cookieSecure: false,
   trustProxy: false,
