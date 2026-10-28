@@ -22,6 +22,9 @@ data/       SQLite database and backups. Gitignored — it holds real merchant d
 
 ## Setup
 
+New to the project and just want it running locally? Follow the step-by-step guide in
+[docs/setup-guide.md](docs/setup-guide.md) (Vietnamese).
+
 Requires [Bun](https://bun.sh) (built with 1.3.14).
 
 ```bash
