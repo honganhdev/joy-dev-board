@@ -27,8 +27,8 @@ Cần có:
 ## 2. Tải code về
 
 ```bash
-git clone https://github.com/honganhdev/issue-board.git
-cd issue-board
+git clone https://github.com/honganhdev/joy-dev-board.git
+cd joy-dev-board
 bun install
 ```
 
@@ -74,12 +74,12 @@ Mở trình duyệt vào **http://localhost:5173** và đăng nhập bằng user
 Lần chạy đầu tiên app sẽ tạo database `data/board.db` và kéo ticket từ HelpDesk, nên có thể mất vài giây.
 Những lần sau board hiện ngay.
 
-Muốn tắt: bấm `Ctrl + C` trong Terminal. Muốn chạy lại: `cd issue-board` rồi `bun run dev`.
+Muốn tắt: bấm `Ctrl + C` trong Terminal. Muốn chạy lại: `cd joy-dev-board` rồi `bun run dev`.
 
 ## 5. Cập nhật bản mới
 
 ```bash
-cd issue-board
+cd joy-dev-board
 git pull
 bun install
 bun run dev
